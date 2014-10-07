@@ -19,7 +19,7 @@ executable rarecoal
   main-is:             Main.hs
   -- other-modules:       
   -- other-extensions:    
-  build-depends:       base >=4.7 && <4.8,
+  build-depends:       base >=4.6 && <4.8,
                        exact-combinatorics >=0.2 && <0.3,
                        mtl >=2.2 && <2.3,
                        containers >=0.5 && <0.6,
@@ -32,7 +32,7 @@ executable vcf2histogram
   main-is:             vcf2histogram.hs
   -- other-modules:       
   -- other-extensions:    
-  build-depends:       base >=4.7 && <4.8,
+  build-depends:       base >=4.6 && <4.8,
                        containers >=0.5 && <0.6,
                        split >=0.2 && <0.3,
                        assert >= 0.0.1.2 && < 0.0.2,
