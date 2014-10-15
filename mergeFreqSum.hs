@@ -9,7 +9,7 @@ import Pipes ((>->), runEffect)
 import Control.Exception (assert)
 import Control.Monad (liftM)
 
-data MyOpts = MyOpts String String
+data MyOpts = MyOpts FilePath FilePath
 
 main = OP.execParser opts >>= runWithOptions
   where
@@ -40,5 +40,6 @@ freqSumCombine :: Int -> Int -> (Maybe FreqSumEntry, Maybe FreqSumEntry) -> Freq
 freqSumCombine n1 n2 (Just fs1, Nothing) = fs1 {fsCounts = fsCounts fs1 ++ replicate n2 0}
 freqSumCombine n1 n2 (Nothing, Just fs2) = fs2 {fsCounts = replicate n1 0 ++ fsCounts fs2}
 freqSumCombine n1 n2 (Just fs1, Just fs2) =
-    let ass = assert (fsChrom fs1 == fsChrom fs2 && fsRef fs1 == fsRef fs2 && fsAlt fs1 == fsAlt fs2)
-    in  ass fs1 {fsCounts = fsCounts fs1 ++ fsCounts fs2}
+    if fsChrom fs1 == fsChrom fs2 && fsRef fs1 == fsRef fs2 && fsAlt fs1 == fsAlt fs2
+        then fs1 {fsCounts = fsCounts fs1 ++ fsCounts fs2}
+        else fs1 {fsCounts = fsCounts fs1 ++ replicate n2 0}

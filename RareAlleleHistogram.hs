@@ -24,7 +24,6 @@ instance Show RareAlleleHistogram where
 -- instance Read RareAlleleHistogram where
 --     readsPrec _ s =
         
-
 data SitePattern = Pattern [Int] | Higher deriving (Eq, Ord)
 instance Show SitePattern where
     show (Pattern nVec) = commaSep nVec
