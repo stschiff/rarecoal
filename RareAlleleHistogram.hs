@@ -1,8 +1,10 @@
-module RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..)) where
+module RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..), addHistograms) where
 
 import qualified Data.Map.Strict as Map
 import Data.List (intercalate, sortBy)
 import Data.List.Split (splitOn)
+import Control.Exception (assert)
+import Debug.Trace (trace)
 
 data RareAlleleHistogram = RareAlleleHistogram {
     raNVec :: [Int],
@@ -21,9 +23,25 @@ instance Show RareAlleleHistogram where
             body = [show k ++ " " ++ show v | (k, v) <- sorted]
         in  unlines (head1:head2:body)
 
--- instance Read RareAlleleHistogram where
---     readsPrec _ s =
+instance Read RareAlleleHistogram where
+    readsPrec _ s =
+        let lines_ = lines s
+            nVec = map read $ splitOn "," $ drop 2 (lines_!!0)
+            maxM = read $ drop 6 (lines_!!1)
+            body = map readBodyLine $ (filter (/="") $ drop 2 lines_)
+        in  [(RareAlleleHistogram nVec maxM (Map.fromList body), "")]
+        where
+            readBodyLine :: String -> (SitePattern, Int)
+            readBodyLine line =
+                let fields = words line
+                in  (read $ head fields, read $ last fields)
+
+addHistograms :: RareAlleleHistogram -> RareAlleleHistogram -> RareAlleleHistogram
+addHistograms hist1 hist2 = 
+    let ass = assert (raNVec hist1 == raNVec hist2 && raMaxAf hist1 == raMaxAf hist2)
+    in  ass $ hist1 {raCounts = Map.unionWith (+) (raCounts hist1) (raCounts hist2)}
         
+
 data SitePattern = Pattern [Int] | Higher deriving (Eq, Ord)
 instance Show SitePattern where
     show (Pattern nVec) = commaSep nVec
