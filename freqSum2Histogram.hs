@@ -32,12 +32,12 @@ runWithOptions :: MyOpts -> IO ()
 runWithOptions (MyOpts nVec maxM popIndices) = do
     let prod = P.stdinLn >-> P.map (mkPat maxM popIndices)
     res <- P.fold insertPattern Map.empty id prod
-    print $ RareAlleleHistogram (map (*2) $ selectFromList nVec popIndices) maxM res
+    putStr $ show $ RareAlleleHistogram (map (*2) $ selectFromList nVec popIndices) maxM False res
 
 mkPat :: Int -> [Int] -> String -> SitePattern
 mkPat maxM popIndices line =
     let pattern = selectFromList (fsCounts $ read line) popIndices
-    in if any (>maxM) pattern then Higher else Pattern $ pattern
+    in if any (>maxM) pattern then Higher else Pattern pattern
 
 insertPattern :: Map.Map SitePattern Int -> SitePattern -> Map.Map SitePattern Int
 insertPattern m p = Map.insertWith (\_ v -> v + 1) p 1 m

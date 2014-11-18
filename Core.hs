@@ -1,10 +1,18 @@
-module Core (defaultTimes, getProb, Join) where
+module Core (defaultTimes, getProb, ModelSpec(..), Join) where
 
 import Math.Combinatorics.Exact.Binomial (choose)
 import Control.Monad.State (State, get, put, execState)
 import Data.List (sortBy)
+import Debug.Trace (trace)
 
 type Join = (Double, Int, Int, Double) -- t, k, l, N
+
+data ModelSpec = ModelSpec {
+    msTimeSteps :: [Double],
+    msLambda :: [Double],
+    msJoins :: [Join],
+    msTheta :: Double
+}
 
 data CoalState = CoalState {
     csA :: [Double],
@@ -19,8 +27,8 @@ data ModelCoalState = ModelCoalState {
     mcsCoalState :: CoalState
 } deriving (Show)
 
-getProb :: [Double] -> [Double] -> [Join] -> Double -> [Int] -> [Int] -> Either String Double
-getProb timeSteps lambda joins theta nVec config = do
+getProb :: ModelSpec -> [Int] -> [Int] -> Either String Double
+getProb (ModelSpec timeSteps lambda joins theta) nVec config = do
     let sortedJoins = sortBy (\(t1,_,_,_) (t2,_,_,_) -> t1 `compare` t2) joins
         lambda' = if length lambda > 0 then lambda else replicate (length nVec) 1.0
         initState = ModelCoalState 0.0 sortedJoins lambda' (makeInitCoalState nVec config)
@@ -65,6 +73,8 @@ singleStep nextTime = do
                  c = updateCoalState deltaT lambda coalState
              in  ModelCoalState nextTime joins lambda c
     put ms
+    -- if nextTime < 0.0002 then trace (show nextTime ++ " " ++ show (mcsCoalState ms)) (put ms) else put ms
+
 
 updateCoalState :: Double -> [Double] -> CoalState -> CoalState
 updateCoalState deltaT lambda coalState =    
@@ -74,8 +84,9 @@ updateCoalState deltaT lambda coalState =
     in  CoalState aNew bNew dNew
 
 updateA :: Double -> [Double] -> [Double] -> [Double]
-updateA deltaT = zipWith go where
-    go lambdaK aK = aK * exp(-0.5 * (aK - 1) * lambdaK * deltaT)
+updateA deltaT = zipWith go
+  where
+    go lambdaK aK = aK * approx_exp(-0.5 * (aK - 1.0) * lambdaK * deltaT)
 
 updateB :: Double -> [Double] -> [Double] -> [[Double]] -> [[Double]]
 updateB deltaT = zipWith3 (updateBk deltaT)
@@ -83,8 +94,8 @@ updateB deltaT = zipWith3 (updateBk deltaT)
 updateBk :: Double -> Double -> Double -> [Double] -> [Double] 
 updateBk deltaT lambdaK aK bK = zipWith3 go [0..] bK (tail bK ++ [0.0])
   where
-    go i bKi bKi' = bKi * exp(-(i * (i - 1) / 2 * lambdaK + i * aK * lambdaK) * deltaT)
-                              + bKi' * (1.0 - exp(-(i * (i + 1)) / 2.0 * lambdaK * deltaT))
+    go i bKi bKi' = bKi * approx_exp(-(i * (i - 1) / 2 * lambdaK + i * aK * lambdaK) * deltaT)
+                              + bKi' * (1.0 - approx_exp(-(i * (i + 1)) / 2.0 * lambdaK * deltaT))
 
 updateD :: Double -> [[Double]] -> Double -> Double
 updateD deltaT b d =
@@ -113,17 +124,17 @@ joinProbs :: [Double] -> [Double] -> Int -> Double
 joinProbs bVec1 bVec2 i = sum $ zipWith (*) (take' (i + 1) bVec1) (reverse . take' (i + 1) $ bVec2)
     where take' i vec = take i (vec ++ repeat 0)
 
-defaultTimes = getTimeSteps 20000.0 400 20.0
+defaultTimes = getTimeSteps 20000 400 20.0
 
-getTimeSteps :: Double -> Int -> Double -> [Double]
-getTimeSteps n0 lingen tMax = map (getTimeStep alpha nr_steps tMax) [1..nr_steps]
-    where tMin     = 1.0 / (2.0 * n0)
-          alpha    = fromIntegral lingen / (2.0 * n0)
+approx_exp :: Double -> Double
+approx_exp arg = exp arg --if abs arg < 0.05 then 1.0 + arg else exp arg
+
+getTimeSteps :: Int -> Int -> Double -> [Double]
+getTimeSteps n0 lingen tMax = map (getTimeStep alpha nr_steps tMax) [1..nr_steps-1]
+    where tMin     = 1.0 / (2.0 * fromIntegral n0)
+          alpha    = fromIntegral lingen / (2.0 * fromIntegral n0)
           nr_steps = floor $ log(1.0 + tMax / alpha) / log(1.0 + tMin / alpha)
 
 getTimeStep :: Double -> Int -> Double -> Int -> Double
 getTimeStep alpha nr_steps tMax i =
-    alpha * exp(fromIntegral i / fromIntegral nr_steps * log(1.0 + tMax / alpha)) - alpha
-
--- delete :: Int -> [a] -> [a]
--- delete i vec = let (x, y:ys) = splitAt i vec in x ++ ys
+    alpha * exp (fromIntegral i / fromIntegral nr_steps * log (1.0 + tMax / alpha)) - alpha
