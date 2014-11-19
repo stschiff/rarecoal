@@ -6,6 +6,7 @@ import qualified Options.Applicative as OP
 import Pipes ((>->), runEffect)
 import qualified Pipes.Prelude as P
 import FreqSumEntry (FreqSumEntry(..))
+import Data.Int (Int64)
 
 data MyOpts = MyOpts [Int] Int [Int]
 
@@ -39,7 +40,7 @@ mkPat maxM popIndices line =
     let pattern = selectFromList (fsCounts $ read line) popIndices
     in if any (>maxM) pattern then Higher else Pattern pattern
 
-insertPattern :: Map.Map SitePattern Int -> SitePattern -> Map.Map SitePattern Int
+insertPattern :: Map.Map SitePattern Int64 -> SitePattern -> Map.Map SitePattern Int64
 insertPattern m p = Map.insertWith (\_ v -> v + 1) p 1 m
 
 selectFromList :: [a] -> [Int] -> [a]

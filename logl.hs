@@ -1,8 +1,10 @@
-module Logl (computeLikelihood) where
+module Logl (computeLikelihood, writeSpectrumFile) where
 
 import RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..))
 import Core (ModelSpec(..), getProb)
 import qualified Data.Map.Strict as Map
+import System.Log.Logger (errorM)
+import System.Exit (exitFailure)
 
 computeLikelihood :: ModelSpec -> RareAlleleHistogram -> Either String Double
 computeLikelihood modelSpec histogram = do
@@ -17,14 +19,25 @@ computeLikelihood modelSpec histogram = do
   where
     defaultLookup sitePattern = Map.findWithDefault 0 sitePattern (raCounts histogram)
 
+writeSpectrumFile :: FilePath -> ModelSpec -> RareAlleleHistogram -> IO ()
+writeSpectrumFile spectrumFile modelSpec histogram = do
+    let standardOrder = computeStandardOrder histogram
+        nVec = raNVec histogram
+    case mapM (getProb modelSpec nVec) standardOrder of
+        Left err -> do
+            errorM "rarecoal" $ "Error: " ++ err
+            exitFailure
+        Right vec ->
+            writeFile spectrumFile $ unlines $ zipWith (\p val -> show (Pattern p) ++ "\t" ++ show val) standardOrder vec
+
 computeStandardOrder :: RareAlleleHistogram -> [[Int]]
 computeStandardOrder histogram =
     let nrPop = length $ raNVec histogram
         maxPowerNum = (raMaxAf histogram + 1) ^ nrPop
         order = map (digitize (raMaxAf histogram + 1) nrPop) [1..maxPowerNum]
-    in  if raIsCompleteMax histogram
+    in  if raGlobalMax histogram
             then filter (\v -> sum v <= raMaxAf histogram) order
-            else order        
+            else order
     
 digitize :: Int -> Int -> Int -> [Int]
 digitize base nrDigit num 

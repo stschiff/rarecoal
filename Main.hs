@@ -8,19 +8,21 @@ import qualified Options.Applicative as OP
 import Data.Monoid ((<>))
 import System.Exit (exitFailure)
 import RareAlleleHistogram (RareAlleleHistogram(..), loadHistogram, InputSpec(..))
-import Logl (computeLikelihood)
+import Logl (computeLikelihood, writeSpectrumFile)
+import System.Log.Logger (updateGlobalLogger, setLevel, Priority(..), errorM)
 
 data Options = Options {
     optCommand :: Command
 }
 
-data Command = CmdView InputSpec | CmdProb ModelSpec [Int] [Int] | CmdLogl ModelSpec InputSpec
+data Command = CmdView InputSpec | CmdProb ModelSpec [Int] [Int] | CmdLogl FilePath ModelSpec InputSpec
 
 main :: IO ()
 main = run =<< OP.execParser (parseOptions `withInfo` "Rarecoal: Implementation of the Rarecoal algorithm")
 
 run :: Options -> IO ()
 run (Options cmd) = do
+    updateGlobalLogger "rarecoal" (setLevel INFO)
     case cmd of
         CmdView inputSpec -> do
             hist <- loadHistogram inputSpec
@@ -28,14 +30,21 @@ run (Options cmd) = do
         CmdProb modelSpec nVec mVec -> do
             case getProb modelSpec nVec mVec of
                 Left err -> do
-                    putStrLn $ "Error: " ++ err
+                    errorM "rarecoal" $ "Error: " ++ err
                     exitFailure
                 Right result -> do
                     print result
-        CmdLogl modelSpec inputSpec -> do
+        CmdLogl spectrumFile modelSpec inputSpec -> do
             hist <- loadHistogram inputSpec
-            print $ computeLikelihood modelSpec hist
-    
+            writeSpectrumFile spectrumFile modelSpec hist
+            case computeLikelihood modelSpec hist of
+                Left err -> do
+                    errorM "rarecoal" $ "Error: " ++ err
+                    exitFailure
+                Right result -> do
+                    print result
+
+
 parseOptions :: OP.Parser Options
 parseOptions = Options <$> parseCommand
 
@@ -57,7 +66,12 @@ parseProb = CmdProb <$> parseModelSpec
                     <*> OP.argument OP.auto (OP.metavar "MVec")
 
 parseLogl :: OP.Parser Command
-parseLogl = CmdLogl <$> parseModelSpec <*> parseInputSpec
+parseLogl = CmdLogl <$> parseSpectrumFile <*> parseModelSpec <*> parseInputSpec
+  where
+    parseSpectrumFile = OP.option OP.str $ OP.short 's' <> OP.long "spectrumFile"
+                                                        <> OP.metavar "<Output Spectrum File>"
+                                                        <> OP.value "/dev/null"
+                                                        <> OP.help "Output the allele frequencies to file"
 
 parseInputSpec :: OP.Parser InputSpec
 parseInputSpec = InputSpec <$> parseIndices <*> parseMaxAf <*> parseNrCalledSites
@@ -77,15 +91,15 @@ parseInputSpec = InputSpec <$> parseIndices <*> parseMaxAf <*> parseNrCalledSite
                                                   <> OP.help "set the nr of called sites (default:2064554803)"
 
 parseModelSpec :: OP.Parser ModelSpec
-parseModelSpec = ModelSpec defaultTimes <$> parseLambda <*> parseJoins <*> parseTheta
+parseModelSpec = ModelSpec defaultTimes <$> parsePopSize <*> parseJoins <*> parseTheta
   where
-    parseLambda = OP.option OP.auto $ OP.short 'p' <> OP.long "pop_size"
-                                                   <> OP.metavar "[l1,l2,...]"
-                                                   <> OP.value []
-                                                   <> OP.help "Initial inverse population sizes"
+    parsePopSize = OP.option OP.auto $ OP.short 'p' <> OP.long "pop_size"
+                                                    <> OP.metavar "[p1,p2,...]"
+                                                    <> OP.value []
+                                                    <> OP.help "Initial population sizes"
     
     parseJoins = OP.option OP.auto $ OP.short 'j' <> OP.long "joins"
-                                                  <> OP.metavar "[(t1,k1,l1,lambda1),(t2,k2,l2,lambda2),...]"
+                                                  <> OP.metavar "[(t1,k1,l1,p1),(t2,k2,l2,p2),...]"
                                                   <> OP.value []
                                                   <> OP.help "Joins"
 

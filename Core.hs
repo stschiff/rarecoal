@@ -9,7 +9,7 @@ type Join = (Double, Int, Int, Double) -- t, k, l, N
 
 data ModelSpec = ModelSpec {
     msTimeSteps :: [Double],
-    msLambda :: [Double],
+    msPopSize :: [Double],
     msJoins :: [Join],
     msTheta :: Double
 }
@@ -23,27 +23,27 @@ data CoalState = CoalState {
 data ModelCoalState = ModelCoalState {
     mcsT :: Double,
     mcsJoins :: [Join],
-    mcsLambda :: [Double],
+    mcsPopSize :: [Double],
     mcsCoalState :: CoalState
 } deriving (Show)
 
 getProb :: ModelSpec -> [Int] -> [Int] -> Either String Double
-getProb (ModelSpec timeSteps lambda joins theta) nVec config = do
+getProb (ModelSpec timeSteps popSize joins theta) nVec config = do
     let sortedJoins = sortBy (\(t1,_,_,_) (t2,_,_,_) -> t1 `compare` t2) joins
-        lambda' = if length lambda > 0 then lambda else replicate (length nVec) 1.0
-        initState = ModelCoalState 0.0 sortedJoins lambda' (makeInitCoalState nVec config)
+        popSize' = if length popSize > 0 then popSize else replicate (length nVec) 1.0
+        initState = ModelCoalState 0.0 sortedJoins popSize' (makeInitCoalState nVec config)
         finalState = mcsCoalState $ execState (mapM_ singleStep timeSteps) initState
-    checkLengths nVec config lambda'
-    checkPopSizes lambda sortedJoins
+    checkLengths nVec config popSize'
+    checkPopSizes popSize sortedJoins
     checkJoins sortedJoins (length nVec)
     return $ csD finalState * theta * fromIntegral (product $ zipWith choose nVec config)
   where
     checkLengths n m l =
         if length n /= length m || length n /= length l
-            then Left "nVec, mVec, lambda have incompatible lengths"
+            then Left "nVec, mVec, popsize have incompatible lengths"
             else Right ()
-    checkPopSizes lambda joins =
-        if any (\l -> l < 0.001 || l > 100.0) (lambda ++ map (\(_,_,_,l) -> l) joins)
+    checkPopSizes popSize joins =
+        if any (\p -> p < 0.001 || p > 100.0) (popSize ++ map (\(_,_,_,p) -> p) joins)
             then Left "Population sizes must be between 0.001 and 100.0"
             else Right ()
     checkJoins [] nrPops = Right ()
@@ -60,46 +60,46 @@ makeInitCoalState nVec config =
 
 singleStep :: Double -> State ModelCoalState ()
 singleStep nextTime = do
-    ModelCoalState t joins lambda coalState <- get
+    ModelCoalState t joins popSize coalState <- get
     let (t', k, l, n) = if null joins then (1.0/0.0, 0, 0, 0.0) else head joins
         ms = if t' < nextTime
             then let deltaT = t' - t
-                     c = updateCoalState deltaT lambda coalState
+                     c = updateCoalState deltaT popSize coalState
                      c' = performJoin k l c
-                     lambda' = update k (1.0 / n) lambda
-                     c'' = updateCoalState (nextTime - t') lambda' c'
-                 in  ModelCoalState nextTime (tail joins) lambda' c''
+                     popSize' = update k n popSize
+                     c'' = updateCoalState (nextTime - t') popSize' c'
+                 in  ModelCoalState nextTime (tail joins) popSize' c''
         else let deltaT = nextTime - t
-                 c = updateCoalState deltaT lambda coalState
-             in  ModelCoalState nextTime joins lambda c
+                 c = updateCoalState deltaT popSize coalState
+             in  ModelCoalState nextTime joins popSize c
     put ms
     -- if nextTime < 0.0002 then trace (show nextTime ++ " " ++ show (mcsCoalState ms)) (put ms) else put ms
 
 
 updateCoalState :: Double -> [Double] -> CoalState -> CoalState
-updateCoalState deltaT lambda coalState =    
-    let aNew = updateA deltaT lambda (csA coalState)
-        bNew = updateB deltaT lambda (csA coalState) (csB coalState)
+updateCoalState deltaT popSize coalState =    
+    let aNew = updateA deltaT popSize (csA coalState)
+        bNew = updateB deltaT popSize (csA coalState) (csB coalState)
         dNew = updateD deltaT (csB coalState) (csD coalState)
     in  CoalState aNew bNew dNew
 
 updateA :: Double -> [Double] -> [Double] -> [Double]
 updateA deltaT = zipWith go
   where
-    go lambdaK aK = aK * approx_exp(-0.5 * (aK - 1.0) * lambdaK * deltaT)
+    go popSizeK aK = aK * approx_exp(-0.5 * (aK - 1.0) * (1.0 / popSizeK) * deltaT)
 
 updateB :: Double -> [Double] -> [Double] -> [[Double]] -> [[Double]]
 updateB deltaT = zipWith3 (updateBk deltaT)
 
 updateBk :: Double -> Double -> Double -> [Double] -> [Double] 
-updateBk deltaT lambdaK aK bK = zipWith3 go [0..] bK (tail bK ++ [0.0])
+updateBk deltaT popSizeK aK bK = zipWith3 go [0..] bK (tail bK ++ [0.0])
   where
-    go i bKi bKi' = bKi * approx_exp(-(i * (i - 1) / 2 * lambdaK + i * aK * lambdaK) * deltaT)
-                              + bKi' * (1.0 - approx_exp(-(i * (i + 1)) / 2.0 * lambdaK * deltaT))
+    go i bKi bKi' = bKi * approx_exp(-(i * (i - 1) / 2 * (1.0 / popSizeK) + i * aK * (1.0 / popSizeK)) * deltaT)
+                              + bKi' * (1.0 - approx_exp(-(i * (i + 1)) / 2.0 * (1.0 / popSizeK) * deltaT))
 
 updateD :: Double -> [[Double]] -> Double -> Double
 updateD deltaT b d =
-    let kn = length b in  d + deltaT * sum (map go [0..(kn - 1)])
+    let kn = length b in d + deltaT * sum (map go [0..(kn - 1)])
   where
     go k = if length (b!!k) == 1 then 0.0 else product (update k (b!!k!!1) $ map head b)
 
