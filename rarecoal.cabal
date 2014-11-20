@@ -28,8 +28,9 @@ executable rarecoal
                        hslogger >= 1.2 && < 1.3
   -- hs-source-dirs:      
   default-language:    Haskell2010
-  ghc-options:         -fno-ignore-asserts -O2
---rtsopts -prof -fprof-auto
+  ghc-options:         -fno-ignore-asserts -O2 -rtsopts
+
+--prof -fprof-auto
  
 executable vcf2FreqSum
   main-is:             vcf2FreqSum.hs
