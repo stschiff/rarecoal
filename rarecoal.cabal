@@ -29,7 +29,8 @@ executable rarecoal
                        vector >= 0.9 && < 1.0
   -- hs-source-dirs:      
   default-language:    Haskell2010
-  ghc-options:         -fno-ignore-asserts -O2 -rtsopts -prof -fprof-auto
+  ghc-options:         -fno-ignore-asserts -O2 -rtsopts
+--prof -fprof-auto
  
 executable vcf2FreqSum
   main-is:             vcf2FreqSum.hs
