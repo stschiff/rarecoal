@@ -4,6 +4,10 @@ import Math.Combinatorics.Exact.Binomial (choose)
 import Control.Monad.State (State, get, put, execState)
 import Data.List (sortBy)
 import Debug.Trace (trace)
+import qualified Data.Vector.Unboxed as V
+
+(!) = (V.!)
+(//) = (V.//)
 
 type Join = (Double, Int, Int, Double) -- t, k, l, N
 
@@ -15,8 +19,8 @@ data ModelSpec = ModelSpec {
 }
 
 data CoalState = CoalState {
-    csA :: [Double],
-    csB :: [[Double]],
+    csA :: V.Vector Double,
+    csB :: [V.Vector Double],
     csD :: Double
 } deriving (Show)
 
@@ -54,8 +58,8 @@ getProb (ModelSpec timeSteps popSize joins theta) nVec config = do
         
 makeInitCoalState :: [Int] -> [Int] -> CoalState
 makeInitCoalState nVec config = 
-    let a = zipWith (\n m -> fromIntegral (n - m)) nVec config
-        b = [take m [0, 0..] ++ [1.0] | m <- config]
+    let a = V.fromList $ zipWith (\n m -> fromIntegral (n - m)) nVec config
+        b = [V.generate (m + 1) (\i -> if i == m then 1.0 else 0.0) | m <- config]
     in  CoalState a b 0.0
 
 singleStep :: Double -> State ModelCoalState ()
@@ -83,46 +87,55 @@ updateCoalState deltaT popSize coalState =
         dNew = updateD deltaT (csB coalState) (csD coalState)
     in  CoalState aNew bNew dNew
 
-updateA :: Double -> [Double] -> [Double] -> [Double]
-updateA deltaT = zipWith go
+updateA :: Double -> [Double] -> V.Vector Double -> V.Vector Double
+updateA deltaT popSize a = V.zipWith go (V.fromList popSize) a
   where
     go popSizeK aK = aK * approx_exp(-0.5 * (aK - 1.0) * (1.0 / popSizeK) * deltaT)
 
-updateB :: Double -> [Double] -> [Double] -> [[Double]] -> [[Double]]
-updateB deltaT = zipWith3 (updateBk deltaT)
+updateB :: Double -> [Double] -> V.Vector Double -> [V.Vector Double] -> [V.Vector Double]
+updateB deltaT popSize a b = zipWith3 (updateBk deltaT) popSize (V.toList a) b
 
-updateBk :: Double -> Double -> Double -> [Double] -> [Double] 
-updateBk deltaT popSizeK aK bK = zipWith3 go [0..] bK (tail bK ++ [0.0])
+updateBk :: Double -> Double -> Double -> V.Vector Double -> V.Vector Double
+updateBk deltaT popSizeK aK bK =
+    let m = (V.length bK - 1)
+    in  V.generate (m + 1) go
   where
-    go i bKi bKi' = bKi * approx_exp(-(i * (i - 1) / 2 * (1.0 / popSizeK) + i * aK * (1.0 / popSizeK)) * deltaT)
-                              + bKi' * (1.0 - approx_exp(-(i * (i + 1)) / 2.0 * (1.0 / popSizeK) * deltaT))
+    go i =
+        let bKi = bK!i
+            bKi' = if i < (V.length bK - 1) then bK!(i + 1) else 0.0
+            i' = fromIntegral i
+        in  bKi * approx_exp(-(i' * (i' - 1) / 2.0 * (1.0 / popSizeK) + i' * aK * (1.0 / popSizeK)) * deltaT)
+            + bKi' * (1.0 - approx_exp(-(i' * (i' + 1)) / 2.0 * (1.0 / popSizeK) * deltaT))
 
-updateD :: Double -> [[Double]] -> Double -> Double
-updateD deltaT b d =
-    let kn = length b in d + deltaT * sum (map go [0..(kn - 1)])
+updateD :: Double -> [V.Vector Double] -> Double -> Double
+updateD deltaT b d = d + deltaT * sum (map go [0..(kn - 1)])
   where
-    go k = if length (b!!k) == 1 then 0.0 else product (update k (b!!k!!1) $ map head b)
+    kn   = length b 
+    go k = if V.length (b!!k) == 1 then 0.0 else product $ zipWith (\l bl -> bl!(if l /= k then 0 else 1)) [0..] b
 
 performJoin :: Int -> Int -> CoalState -> CoalState
 performJoin k l state =
     let aVec = csA state
         bVec = csB state
-        new_aK = aVec !! k + aVec !! l
-        new_a  = update k new_aK aVec
-        new_a' = update l 0.0 new_a
-        new_m = length (bVec !! k) + length (bVec !! l) - 2
-        new_b_k = map (joinProbs (bVec !! k) (bVec !! l)) [0..new_m]
-        new_b_l = [1.0]
+        new_aK = aVec!k + aVec!l
+        new_a  = aVec // [(k, new_aK), (l, 0.0)]
+        bk = bVec !! k
+        bl = bVec !! l
+        new_m = V.length bk + V.length bl - 2
+        new_b_k = V.generate (new_m + 1) (joinProbs bk bl)
+        new_b_l = V.singleton 1.0
         new_b = update k new_b_k bVec
         new_b' = update l new_b_l new_b
-    in  CoalState new_a' new_b' (csD state)
+    in  CoalState new_a new_b' (csD state)
 
 update :: Int -> a -> [a] -> [a]
 update i val vec = let (x, y:ys) = splitAt i vec in x ++ (val:ys)
 
-joinProbs :: [Double] -> [Double] -> Int -> Double
-joinProbs bVec1 bVec2 i = sum $ zipWith (*) (take' (i + 1) bVec1) (reverse . take' (i + 1) $ bVec2)
-    where take' i vec = take i (vec ++ repeat 0)
+joinProbs :: V.Vector Double -> V.Vector Double -> Int -> Double
+joinProbs bVec1 bVec2 i =
+    let m1 = V.length bVec1 - 1
+        m2 = V.length bVec2 - 1
+    in  sum [bVec1!j * bVec2!(i - j) | j <- [0..i], j <= m1 && (i-j) <= m2]
 
 defaultTimes = getTimeSteps 20000 400 20.0
 
