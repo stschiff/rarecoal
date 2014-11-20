@@ -5,12 +5,13 @@ import Core (ModelSpec(..), getProb)
 import qualified Data.Map.Strict as Map
 import System.Log.Logger (errorM)
 import System.Exit (exitFailure)
+import Control.Parallel.Strategies (rdeepseq, parMap)
 
 computeLikelihood :: ModelSpec -> RareAlleleHistogram -> Either String Double
 computeLikelihood modelSpec histogram = do
     let standardOrder = computeStandardOrder histogram
         nVec = raNVec histogram
-    patternProbs <- mapM (getProb modelSpec nVec) standardOrder
+    patternProbs <- sequence $ parMap rdeepseq (getProb modelSpec nVec) standardOrder
     let patternCounts = map (\o -> defaultLookup $ Pattern o) standardOrder
         ll = sum $ zipWith (\p c -> log p * fromIntegral c) patternProbs patternCounts
         zeroPattern = Pattern $ replicate (length nVec) 0
@@ -23,7 +24,7 @@ writeSpectrumFile :: FilePath -> ModelSpec -> RareAlleleHistogram -> IO ()
 writeSpectrumFile spectrumFile modelSpec histogram = do
     let standardOrder = computeStandardOrder histogram
         nVec = raNVec histogram
-    case mapM (getProb modelSpec nVec) standardOrder of
+    case sequence $ parMap rdeepseq (getProb modelSpec nVec) standardOrder of
         Left err -> do
             errorM "rarecoal" $ "Error: " ++ err
             exitFailure

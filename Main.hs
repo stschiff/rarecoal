@@ -36,7 +36,7 @@ run (Options cmd) = do
                     print result
         CmdLogl spectrumFile modelSpec inputSpec -> do
             hist <- loadHistogram inputSpec
-            writeSpectrumFile spectrumFile modelSpec hist
+            when (spectrumFile /= "/dev/null") $ writeSpectrumFile spectrumFile modelSpec hist
             case computeLikelihood modelSpec hist of
                 Left err -> do
                     errorM "rarecoal" $ "Error: " ++ err
