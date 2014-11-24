@@ -28,6 +28,7 @@ run (Options cmd) = do
             hist <- loadHistogram inputSpec
             putStr $ show hist
         CmdProb modelSpec nVec mVec -> do
+            -- print $ mEvents modelSpec
             case getProb modelSpec nVec mVec of
                 Left err -> do
                     errorM "rarecoal" $ "Error: " ++ err

@@ -3,6 +3,7 @@ module Core (ModelEvent(..), EventType(..), ModelSpec(..), defaultTimes, getProb
 import Math.Combinatorics.Exact.Binomial (choose)
 import Control.Monad.State (State, get, put, execState)
 import Data.List (sortBy)
+import Control.Monad (when)
 import Debug.Trace (trace)
 import qualified Data.Vector.Unboxed as V
 
@@ -79,6 +80,7 @@ makeInitCoalState nVec config =
 singleStep :: Double -> State (ModelState, CoalState) ()
 singleStep nextTime = do
     (ms, cs) <- get
+    -- when (nextTime < 0.0002) $ trace (show nextTime ++ " " ++ show (msT ms) ++ " " ++ show (msPopSize ms) ++ " " ++ show (csA cs)) (return ())
     let events = msEventQueue ms
         ModelEvent t e = if null events then ModelEvent (1.0/0.0) undefined else head $ events
     if  t < nextTime then do
@@ -89,7 +91,6 @@ singleStep nextTime = do
         let deltaT = nextTime - msT ms
         updateCoalState deltaT
         updateModelState deltaT
-    -- if nextTime < 0.0002 then trace (show nextTime ++ " " ++ show cs ()(put ms) else put ms
 
 performEvent :: State (ModelState, CoalState) ()
 performEvent = do
