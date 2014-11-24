@@ -1,9 +1,9 @@
-import Core (defaultTimes, getProb, ModelSpec(..), Join(..))
+import Core (defaultTimes, getProb, EventType(..), ModelSpec(..), ModelEvent(..))
 import System.Environment (getArgs)
 import Data.List.Split (splitOn)
 import Data.Monoid (mempty)
 import Control.Monad (liftM, when)
-import Control.Applicative ((<$>), (<*>), pure)
+import Control.Applicative ((<$>), (<*>), pure, many, (<|>))
 import qualified Options.Applicative as OP
 import Data.Monoid ((<>))
 import System.Exit (exitFailure)
@@ -91,19 +91,38 @@ parseInputSpec = InputSpec <$> parseIndices <*> parseMaxAf <*> parseNrCalledSite
                                                   <> OP.help "set the nr of called sites (default:2064554803)"
 
 parseModelSpec :: OP.Parser ModelSpec
-parseModelSpec = ModelSpec defaultTimes <$> parsePopSize <*> parseJoins <*> parseTheta
+parseModelSpec = ModelSpec defaultTimes <$> parseTheta <*> many parseEvent
   where
-    parsePopSize = OP.option OP.auto $ OP.short 'p' <> OP.long "pop_size"
-                                                    <> OP.metavar "[p1,p2,...]"
-                                                    <> OP.value []
-                                                    <> OP.help "Initial population sizes"
-    
-    parseJoins = OP.option OP.auto $ OP.short 'j' <> OP.long "joins"
-                                                  <> OP.metavar "[(t1,k1,l1,p1),(t2,k2,l2,p2),...]"
-                                                  <> OP.value []
-                                                  <> OP.help "Joins"
-
     parseTheta = OP.option OP.auto $ OP.short 't' <> OP.long "theta"
                                                   <> OP.metavar "DOUBLE"
                                                   <> OP.value 0.0005
                                                   <> OP.help "set the scaled mutation rate [default:0.005]"
+    parseEvent = parseJoin <|> parseSetP <|> parseSetR
+
+parseJoin :: OP.Parser ModelEvent
+parseJoin = OP.option readJoin $ OP.short 'j' <> OP.long "join"
+                                              <> OP.metavar "t,k,l"
+                                              <> OP.help "Join at time t from l into k. Can be given multiple times"
+  where
+    -- readJoin :: Monad m => String -> m ModelEvent
+    readJoin s = do
+        let [t, k, l] = splitOn "," s
+        return $ ModelEvent (read t) (Join (read k) (read l))
+
+parseSetP :: OP.Parser ModelEvent
+parseSetP = OP.option readSetP $ OP.short 'p' <> OP.long "popSize"
+                                                           <> OP.metavar "t,k,p"
+                                                           <> OP.help "At time t, set population size in k to p, and set growth rate to 0"
+  where
+    readSetP s = do
+        let [t, k, p] = splitOn "," s
+        return $ ModelEvent (read t) (SetPopSize (read k) (read p))
+
+parseSetR :: OP.Parser ModelEvent
+parseSetR = OP.option readSetR $ OP.short 'r' <> OP.long "growthRate"
+                                                           <> OP.metavar "t,k,r"
+                                                           <> OP.help "At time t, set growth rate in k to r"
+  where
+    readSetR s = do
+        let [t, k, r] = splitOn "," s
+        return $ ModelEvent (read t) (SetGrowthRate (read k) (read r))
