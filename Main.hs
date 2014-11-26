@@ -47,7 +47,7 @@ run (Options cmd) = do
                 Left err -> errorM "rarecoal" $ "Error: " ++ err
                 Right (s, p) -> do
                     reportMaxResult modelSpec s 
-                    reportTrace p path 
+                    reportTrace modelSpec p path 
 
 parseOptions :: OP.Parser Options
 parseOptions = Options <$> parseCommand

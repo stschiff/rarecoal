@@ -5,6 +5,7 @@ import Logl (computeLikelihood)
 import Numeric.LinearAlgebra.Data (Matrix, format)
 import Numeric.GSL.Minimization (minimize, MinimizeMethod(..))
 import Core (ModelSpec(..), ModelEvent(..), EventType(..))
+import Data.List (intercalate)
 
 maximizeLikelihood :: ModelSpec -> RareAlleleHistogram -> Int -> Either String ([Double], Matrix Double) 
 maximizeLikelihood modelSpec hist maxCycles =
@@ -20,8 +21,17 @@ reportMaxResult modelSpec result = do
     let model = paramsToModelSpec modelSpec result
     putStr $ unlines $ map show (mEvents model)
 
-reportTrace :: Matrix Double -> FilePath -> IO ()
-reportTrace trace path = writeFile path (format "\t" show trace)    
+reportTrace :: ModelSpec -> Matrix Double -> FilePath -> IO ()
+reportTrace modelSpec trace path = do
+    let header = intercalate "\t" $ ["Nr", "-Log-Likelihood", "SimplexSize"] ++ makeParamNames modelSpec
+    writeFile path $ header ++ "\n" ++ format "\t" show trace 
+
+makeParamNames :: ModelSpec -> [String]
+makeParamNames modelSpec =
+    let events = mEvents modelSpec
+    in ["P_" ++ show k | ModelEvent 0.0 (SetPopSize k _) <- events] ++
+       ["t_(" ++ show k ++ "<-" ++ show l ++ ")" | ModelEvent _ (Join k l) <- events] ++
+       ["P_(" ++ show k ++ "<-" ++ show l ++ ")" | ModelEvent _ (Join k l) <- events]
 
 minFunc :: ModelSpec -> RareAlleleHistogram -> [Double] -> Double
 minFunc initialModelSpec hist params =
@@ -52,7 +62,6 @@ paramsToModelSpec m@(ModelSpec _ _ events) params =
     makeNewJoins _ _ = undefined
     makeNewPopSizeChanges (ModelEvent t (Join k _)) p = ModelEvent t (SetPopSize k p)
     makeNewPopSizeChanges _ _ = undefined
-
 
 makeInitialParams :: ModelSpec -> [Double]
 makeInitialParams (ModelSpec _ _ events) =
