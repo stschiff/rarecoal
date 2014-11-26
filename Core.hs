@@ -3,11 +3,11 @@ module Core (ModelEvent(..), EventType(..), ModelSpec(..), defaultTimes, getProb
 import Math.Combinatorics.Exact.Binomial (choose)
 import Control.Monad.State (State, get, put, execState)
 import Data.List (sortBy)
-import Control.Monad (when)
-import Debug.Trace (trace)
 import qualified Data.Vector.Unboxed as V
 
+(!) :: V.Vector Double -> Int -> Double
 (!) = (V.!)
+(//) :: V.Vector Double -> [(Int, Double)] -> V.Vector Double
 (//) = (V.//)
 
 data ModelEvent = ModelEvent {
@@ -36,16 +36,18 @@ data ModelState = ModelState {
     msGrowthRates :: [Double]
 } deriving (Show)
 
+defaultTimes :: [Double]
 defaultTimes = getTimeSteps 20000 400 20.0
 
 getTimeSteps :: Int -> Int -> Double -> [Double]
 getTimeSteps n0 lingen tMax =
     let tMin     = 1.0 / (2.0 * fromIntegral n0)
         alpha    = fromIntegral lingen / (2.0 * fromIntegral n0)
-        nr_steps = floor $ log(1.0 + tMax / alpha) / log(1.0 + tMin / alpha)
-    in  map (getTimeStep alpha nr_steps tMax) [1..nr_steps-1]
+        nr_steps = floor $ logBase (1.0 + tMin / alpha) (1.0 + tMax / alpha) 
+    in  map (getTimeStep alpha nr_steps) [1..nr_steps-1]
   where
-    getTimeStep alpha nr_steps tMax i =
+    getTimeStep :: Double -> Int -> Int -> Double
+    getTimeStep alpha nr_steps i =
         alpha * exp (fromIntegral i / fromIntegral nr_steps * log (1.0 + tMax / alpha)) - alpha
 
 getProb :: ModelSpec -> [Int] -> [Int] -> Either String Double
@@ -53,19 +55,20 @@ getProb modelSpec nVec config = do
     let timeSteps = mTimeSteps modelSpec
         ims = makeInitModelState modelSpec (length nVec)
         ics = makeInitCoalState nVec config
-    checkJoins [e | ModelEvent t e@(Join _ _) <- msEventQueue ims]
-    let (fms, fcs) = execState (mapM_ singleStep timeSteps) (ims, ics)
-    return $ csD fcs * (mTheta modelSpec) * fromIntegral (product $ zipWith choose nVec config)
+    checkJoins [e | ModelEvent _ e@(Join _ _) <- msEventQueue ims]
+    let (_, fcs) = execState (mapM_ singleStep timeSteps) (ims, ics)
+    return $ csD fcs * mTheta modelSpec * fromIntegral (product $ zipWith choose nVec config)
   where
     checkJoins [] = Right ()
     checkJoins (Join k l:rest) =
         if k == l || any (\(Join k' l') -> k' == l || l' == l) rest
             then Left "Illegal joins"
             else checkJoins rest
- 
+    checkJoins _ = undefined
+
 makeInitModelState :: ModelSpec -> Int -> ModelState
-makeInitModelState (ModelSpec timeSteps theta events) k =
-    let sortedEvents = sortBy (\(ModelEvent time1 type1) (ModelEvent time2 type2) -> time1 `compare` time2) events
+makeInitModelState (ModelSpec _ _ events) k =
+    let sortedEvents = sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) -> time1 `compare` time2) events
         t = 0.0
         popSize = replicate k 1.0
         growthRates = replicate k 0.0
@@ -79,10 +82,10 @@ makeInitCoalState nVec config =
 
 singleStep :: Double -> State (ModelState, CoalState) ()
 singleStep nextTime = do
-    (ms, cs) <- get
+    (ms, _) <- get
     -- when (nextTime < 0.0002) $ trace (show nextTime ++ " " ++ show (msT ms) ++ " " ++ show (msPopSize ms) ++ " " ++ show (csA cs)) (return ())
     let events = msEventQueue ms
-        ModelEvent t e = if null events then ModelEvent (1.0/0.0) undefined else head $ events
+        ModelEvent t _ = if null events then ModelEvent (1.0/0.0) undefined else head events
     if  t < nextTime then do
         singleStep t
         performEvent
@@ -94,7 +97,7 @@ singleStep nextTime = do
 
 performEvent :: State (ModelState, CoalState) ()
 performEvent = do
-    (ModelState t events popSize growthRates, cs) <- get
+    (ModelState _ events popSize growthRates, cs) <- get
     let ModelEvent t' e = head events
     case e of
         Join k l -> do
@@ -130,7 +133,7 @@ joinProbs bVec1 bVec2 i =
     in  sum [bVec1!j * bVec2!(i - j) | j <- [0..i], j <= m1 && (i-j) <= m2]
 
 update :: Int -> a -> [a] -> [a]
-update i val vec = let (x, y:ys) = splitAt i vec in x ++ (val:ys)
+update i val vec = let (x, _:ys) = splitAt i vec in x ++ (val:ys)
 
 updateCoalState :: Double -> State (ModelState, CoalState) ()
 updateCoalState deltaT = do
@@ -142,15 +145,15 @@ updateCoalState deltaT = do
     put (ms, CoalState aNew bNew dNew)
 
 updateA :: Double -> [Double] -> V.Vector Double -> V.Vector Double
-updateA deltaT popSize a = V.zipWith go (V.fromList popSize) a
+updateA deltaT popSize = V.zipWith go (V.fromList popSize)
   where
-    go popSizeK aK = aK * approx_exp(-0.5 * (aK - 1.0) * (1.0 / popSizeK) * deltaT)
+    go popSizeK aK = aK * approxExp(-0.5 * (aK - 1.0) * (1.0 / popSizeK) * deltaT)
 
-approx_exp :: Double -> Double
-approx_exp arg = exp arg --if abs arg < 0.05 then 1.0 + arg else exp arg
+approxExp :: Double -> Double
+approxExp = exp --if abs arg < 0.05 then 1.0 + arg else exp arg
 
 updateB :: Double -> [Double] -> V.Vector Double -> [V.Vector Double] -> [V.Vector Double]
-updateB deltaT popSize a b = zipWith3 (updateBk deltaT) popSize (V.toList a) b
+updateB deltaT popSize a = zipWith3 (updateBk deltaT) popSize (V.toList a)
 
 updateBk :: Double -> Double -> Double -> V.Vector Double -> V.Vector Double
 updateBk deltaT popSizeK aK bK =
@@ -161,8 +164,8 @@ updateBk deltaT popSizeK aK bK =
         let bKi = bK!i
             bKi' = if i < (V.length bK - 1) then bK!(i + 1) else 0.0
             i' = fromIntegral i
-        in  bKi * approx_exp(-(i' * (i' - 1) / 2.0 * (1.0 / popSizeK) + i' * aK * (1.0 / popSizeK)) * deltaT)
-            + bKi' * (1.0 - approx_exp(-(i' * (i' + 1)) / 2.0 * (1.0 / popSizeK) * deltaT))
+        in  bKi * approxExp(-(i' * (i' - 1) / 2.0 * (1.0 / popSizeK) + i' * aK * (1.0 / popSizeK)) * deltaT)
+            + bKi' * (1.0 - approxExp(-(i' * (i' + 1)) / 2.0 * (1.0 / popSizeK) * deltaT))
 
 updateD :: Double -> [V.Vector Double] -> Double -> Double
 updateD deltaT b d = d + deltaT * sum (map go [0..(kn - 1)])

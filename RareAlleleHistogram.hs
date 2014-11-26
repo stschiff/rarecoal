@@ -8,8 +8,8 @@ import qualified Data.Map.Strict as Map
 import Data.List (intercalate, sortBy)
 import Data.List.Split (splitOn)
 import Control.Exception (assert)
-import Debug.Trace (trace)
-import Control.Monad (liftM, when)
+--import Debug.Trace (trace)
+import Control.Monad (liftM)
 import System.Log.Logger (infoM)
 import Data.Int (Int64)
 
@@ -39,10 +39,10 @@ instance Show RareAlleleHistogram where
 instance Read RareAlleleHistogram where
     readsPrec _ s =
         let lines_ = lines s
-            nVec = map read $ splitOn "," $ drop 2 (lines_!!0)
+            nVec = map read $ splitOn "," $ drop 2 (head lines_)
             maxM = read $ drop 6 (lines_!!1)
             max_type = read $ drop 11 (lines_!!2)
-            body = map readBodyLine $ (filter (/="") $ drop 3 lines_)
+            body = map readBodyLine (filter (/="") $ drop 3 lines_)
         in  [(RareAlleleHistogram nVec maxM max_type (Map.fromList body), "")]
         where
             readBodyLine :: String -> (SitePattern, Int64)
@@ -95,18 +95,18 @@ filterMaxAf maxAf hist =
 reduceIndices :: [Int] -> RareAlleleHistogram -> RareAlleleHistogram
 reduceIndices indices hist =
     if null indices || indices == [0..(length $ raNVec hist)] then hist else
-        let ass = assert $ raGlobalMax hist == False
+        let ass = assert $ not (raGlobalMax hist)
             newNvec = selectFromList (raNVec hist) indices
             newBody = Map.mapKeysWith (+) (prunePatternIndices indices) (raCounts hist)
         in  ass $ hist {raNVec = newNvec, raCounts = newBody}
 
 prunePatternIndices :: [Int] -> SitePattern -> SitePattern
 prunePatternIndices indices (Pattern pattern) = Pattern $ selectFromList pattern indices
-prunePatternIndices indices Higher = Higher
+prunePatternIndices _ Higher = Higher
 
 prunePatternTotalFreq :: Int -> SitePattern -> SitePattern
 prunePatternTotalFreq maxM (Pattern pattern) = if sum pattern > maxM then Higher else Pattern pattern
-prunePatternTotalFreq maxM Higher = Higher
+prunePatternTotalFreq _ Higher = Higher
 
 selectFromList :: [a] -> [Int] -> [a]
 selectFromList l [] = l

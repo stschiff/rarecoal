@@ -7,13 +7,15 @@ import Data.Monoid ((<>))
 import System.Exit (exitFailure)
 import RareAlleleHistogram (loadHistogram, InputSpec(..))
 import Logl (computeLikelihood, writeSpectrumFile)
+import Maxl (maximizeLikelihood, reportMaxResult, reportTrace)
 import System.Log.Logger (updateGlobalLogger, setLevel, Priority(..), errorM)
 
-data Options = Options {
-    optCommand :: Command
-}
+data Options = Options Command
 
-data Command = CmdView InputSpec | CmdProb ModelSpec [Int] [Int] | CmdLogl FilePath ModelSpec InputSpec
+data Command = CmdView InputSpec
+             | CmdProb ModelSpec [Int] [Int]
+             | CmdLogl FilePath ModelSpec InputSpec
+             | CmdMaxl ModelSpec InputSpec Int FilePath
 
 main :: IO ()
 main = run =<< OP.execParser (parseOptions `withInfo` "Rarecoal: Implementation of the Rarecoal algorithm")
@@ -25,14 +27,12 @@ run (Options cmd) = do
         CmdView inputSpec -> do
             hist <- loadHistogram inputSpec
             putStr $ show hist
-        CmdProb modelSpec nVec mVec -> do
-            -- print $ mEvents modelSpec
+        CmdProb modelSpec nVec mVec -> 
             case getProb modelSpec nVec mVec of
                 Left err -> do
                     errorM "rarecoal" $ "Error: " ++ err
                     exitFailure
-                Right result -> do
-                    print result
+                Right result -> print result
         CmdLogl spectrumFile modelSpec inputSpec -> do
             hist <- loadHistogram inputSpec
             when (spectrumFile /= "/dev/null") $ writeSpectrumFile spectrumFile modelSpec hist
@@ -40,9 +40,14 @@ run (Options cmd) = do
                 Left err -> do
                     errorM "rarecoal" $ "Error: " ++ err
                     exitFailure
-                Right result -> do
-                    print result
-
+                Right result -> print result
+        CmdMaxl modelSpec inputSpec maxCycles path -> do
+            hist <- loadHistogram inputSpec
+            case maximizeLikelihood modelSpec hist maxCycles of
+                Left err -> errorM "rarecoal" $ "Error: " ++ err
+                Right (s, p) -> do
+                    reportMaxResult modelSpec s 
+                    reportTrace p path 
 
 parseOptions :: OP.Parser Options
 parseOptions = Options <$> parseCommand
@@ -54,7 +59,8 @@ parseCommand :: OP.Parser Command
 parseCommand = OP.subparser $
     OP.command "view" (parseView `withInfo` "View the input file") <>
     OP.command "prob" (parseProb `withInfo` "Compute probability for a given configuration") <>
-    OP.command "logl" (parseLogl `withInfo` "Compute the likelihood of the given model for the given data set")
+    OP.command "logl" (parseLogl `withInfo` "Compute the likelihood of the given model for the given data set") <>
+    OP.command "maxl" (parseMaxl `withInfo` "Maximize the likelihood of the model given the data set")
 
 parseView :: OP.Parser Command
 parseView = CmdView <$> parseInputSpec
@@ -71,6 +77,18 @@ parseLogl = CmdLogl <$> parseSpectrumFile <*> parseModelSpec <*> parseInputSpec
                                                         <> OP.metavar "<Output Spectrum File>"
                                                         <> OP.value "/dev/null"
                                                         <> OP.help "Output the allele frequencies to file"
+
+parseMaxl :: OP.Parser Command
+parseMaxl = CmdMaxl <$> parseModelSpec <*> parseInputSpec <*> parseMaxCycles <*> parseTraceFile
+  where
+    parseMaxCycles = OP.option OP.auto $ OP.short 'c' <> OP.long "maxCycles"
+                                                      <> OP.metavar "<NR_MAX_CYCLES>"
+                                                      <> OP.value 100
+                                                      <> OP.help "Specifies the maximum number of cycles in the minimization routine"
+
+    parseTraceFile = OP.option OP.str $ OP.long "traceFile" <> OP.metavar "<FILE>"
+                                                             <> OP.value "/dev/null"
+                                                             <> OP.help "The file to write the trace"
 
 parseInputSpec :: OP.Parser InputSpec
 parseInputSpec = InputSpec <$> parseIndices <*> parseMaxAf <*> parseNrCalledSites

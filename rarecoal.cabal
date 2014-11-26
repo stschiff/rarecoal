@@ -27,10 +27,12 @@ executable rarecoal
                        optparse-applicative >= 0.10 && < 0.11,
                        hslogger >= 1.2 && < 1.3,
                        vector >= 0.9 && < 1.0,
-                       parallel >= 3.2 && < 3.3
+                       parallel >= 3.2 && < 3.3,
+                       hmatrix >= 0.16 && < 0.17,
+                       hmatrix-gsl >= 0.16 && < 0.17
   -- hs-source-dirs:      
   default-language:    Haskell2010
-  ghc-options:         -fno-ignore-asserts -O2 -rtsopts -threaded -with-rtsopts=-A10m
+  ghc-options:         -fno-ignore-asserts -O2 -rtsopts -threaded -with-rtsopts=-A10m -L/usr/lib
 --prof -fprof-auto
  
 executable vcf2FreqSum
