@@ -1,13 +1,11 @@
 import Core (defaultTimes, getProb, EventType(..), ModelSpec(..), ModelEvent(..))
-import System.Environment (getArgs)
 import Data.List.Split (splitOn)
-import Data.Monoid (mempty)
-import Control.Monad (liftM, when)
-import Control.Applicative ((<$>), (<*>), pure, many, (<|>))
+import Control.Monad (when)
+import Control.Applicative ((<$>), (<*>), many, (<|>))
 import qualified Options.Applicative as OP
 import Data.Monoid ((<>))
 import System.Exit (exitFailure)
-import RareAlleleHistogram (RareAlleleHistogram(..), loadHistogram, InputSpec(..))
+import RareAlleleHistogram (loadHistogram, InputSpec(..))
 import Logl (computeLikelihood, writeSpectrumFile)
 import System.Log.Logger (updateGlobalLogger, setLevel, Priority(..), errorM)
 
