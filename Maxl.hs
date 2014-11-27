@@ -18,8 +18,7 @@ maximizeLikelihood modelSpec hist maxCycles =
 
 reportMaxResult :: ModelSpec -> [Double] -> IO ()
 reportMaxResult modelSpec result = do
-    let model = paramsToModelSpec modelSpec result
-    putStr $ unlines $ map show (mEvents model)
+    putStr $ unlines $ zipWith (\p v -> p ++ "\t" ++ show v) (makeParamNames modelSpec) result
 
 reportTrace :: ModelSpec -> Matrix Double -> FilePath -> IO ()
 reportTrace modelSpec trace path = do
