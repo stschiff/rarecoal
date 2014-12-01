@@ -41,6 +41,11 @@ minFunc initialModelSpec hist params =
         Left _ -> penalty
         Right val -> -val
 
+minFuncGradient :: ModelSpec -> RareAlleleHistogram -> [Double] -> [Double]
+minFuncGradient modelSpec hist params =
+    let f = minFunc modelSpec hist params
+    in  [
+
 penalty :: Double
 penalty = 1.0e20
 

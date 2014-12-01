@@ -43,7 +43,7 @@ getTimeSteps :: Int -> Int -> Double -> [Double]
 getTimeSteps n0 lingen tMax =
     let tMin     = 1.0 / (2.0 * fromIntegral n0)
         alpha    = fromIntegral lingen / (2.0 * fromIntegral n0)
-        nr_steps = floor $ logBase (1.0 + tMin / alpha) (1.0 + tMax / alpha) 
+        nr_steps = floor $ logBase (1.0 + tMin / alpha) (1.0 + tMax / alpha)
     in  map (getTimeStep alpha nr_steps) [1..nr_steps-1]
   where
     getTimeStep :: Double -> Int -> Int -> Double
@@ -73,9 +73,9 @@ makeInitModelState (ModelSpec _ _ events) k =
         popSize = replicate k 1.0
         growthRates = replicate k 0.0
     in  ModelState t sortedEvents popSize growthRates
-   
+
 makeInitCoalState :: [Int] -> [Int] -> CoalState
-makeInitCoalState nVec config = 
+makeInitCoalState nVec config =
     let a = V.fromList $ zipWith (\n m -> fromIntegral (n - m)) nVec config
         b = [V.generate (m + 1) (\i -> if i == m then 1.0 else 0.0) | m <- config]
     in  CoalState a b 0.0
@@ -112,7 +112,7 @@ performEvent = do
             put (ModelState t' (tail events) popSize growthRates', cs)
 
 popJoin :: Int -> Int -> CoalState -> CoalState
-popJoin k l cs =               
+popJoin k l cs =
     let aVec = csA cs
         bVec = csB cs
         new_aK = aVec!k + aVec!l
@@ -170,7 +170,7 @@ updateBk deltaT popSizeK aK bK =
 updateD :: Double -> [V.Vector Double] -> Double -> Double
 updateD deltaT b d = d + deltaT * sum (map go [0..(kn - 1)])
   where
-    kn   = length b 
+    kn   = length b
     go k = if V.length (b!!k) == 1 then 0.0 else product $ zipWith (\l bl -> bl!(if l /= k then 0 else 1)) [0..] b
 
 updateModelState :: Double -> State (ModelState, CoalState) ()
