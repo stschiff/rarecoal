@@ -6,7 +6,7 @@ import Control.Monad (liftM)
 main = do
     args <- getArgs
     newHist <- combine args
-    print newHist
+    putStr $ show newHist
 
 combine :: [FilePath] -> IO RareAlleleHistogram
 combine filenames = do

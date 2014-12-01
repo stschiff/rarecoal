@@ -18,8 +18,7 @@ maximizeLikelihood modelSpec hist maxCycles =
 
 reportMaxResult :: ModelSpec -> [Double] -> IO ()
 reportMaxResult modelSpec result = do
-    let model = paramsToModelSpec modelSpec result
-    putStr $ unlines $ map show (mEvents model)
+    putStr $ unlines $ zipWith (\p v -> p ++ "\t" ++ show v) (makeParamNames modelSpec) result
 
 reportTrace :: ModelSpec -> Matrix Double -> FilePath -> IO ()
 reportTrace modelSpec trace path = do
@@ -36,10 +35,16 @@ makeParamNames modelSpec =
 minFunc :: ModelSpec -> RareAlleleHistogram -> [Double] -> Double
 minFunc initialModelSpec hist params =
     let newModelSpec = paramsToModelSpec initialModelSpec params
-        result = computeLikelihood newModelSpec hist
-    in  case result of
-        Left _ -> penalty
-        Right val -> -val
+    in  if validModel newModelSpec then
+            let result = computeLikelihood newModelSpec hist
+            in  case result of
+                Left _ -> penalty
+                Right val -> -val
+        else penalty
+
+validModel :: ModelSpec -> Bool
+validModel (ModelSpec _ _ events) = 
+    all (\p -> p >= 0.001 && p <= 100.0) [p | ModelEvent _ (SetPopSize _ p) <- events]
 
 minFuncGradient :: ModelSpec -> RareAlleleHistogram -> [Double] -> [Double]
 minFuncGradient modelSpec hist params =
