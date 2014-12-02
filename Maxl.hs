@@ -58,7 +58,7 @@ validModel (ModelSpec _ _ events) =
 minFuncGradient :: ModelSpec -> RareAlleleHistogram -> [Double] -> [Double] -> [Double]
 minFuncGradient modelSpec hist scalingFactors params =
     let f = minFunc modelSpec hist scalingFactors params
-        newPlist = [makeNewStep params i 1.0e-8 | i <- [0 .. (length params)]]
+        newPlist = [makeNewStep params i 1.0e-8 | i <- [0 .. (length params - 1)]]
         valList = map (minFunc modelSpec hist scalingFactors) newPlist
     in  [(v - f)/1.0e-8 | v <- valList]
   where
