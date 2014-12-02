@@ -14,9 +14,11 @@ import System.Log.Logger (updateGlobalLogger, setLevel, Priority(..), errorM)
 data Options = Options Command
 
 data Command = CmdView InputSpec
-             | CmdProb ModelSpec [Int] [Int]
+             | CmdProb ModelOpt [Int] [Int]
              | CmdLogl FilePath ModelSpec InputSpec
              | CmdMaxl ModelSpec InputSpec Int FilePath
+
+data ModelOpt = ModelTemplateOpt FilePath [Double] Double | ModelSpecOpt ModelSpec
 
 main :: IO ()
 main = run =<< OP.execParser (parseOptions `withInfo` "Rarecoal: Implementation of the Rarecoal algorithm")
@@ -28,7 +30,12 @@ run (Options cmd) = do
         CmdView inputSpec -> do
             hist <- loadHistogram inputSpec
             putStr $ show hist
-        CmdProb modelSpec nVec mVec -> 
+        CmdProb modelOpt nVec mVec -> 
+            let modelSpec =
+                case modelOpt of
+                    ModelTemplateOpt path params theta -> 
+                        mt <- (liftM read . readFile) path
+
             case getProb modelSpec nVec mVec of
                 Left err -> do
                     errorM "rarecoal" $ "Error: " ++ err
