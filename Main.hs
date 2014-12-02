@@ -1,4 +1,5 @@
-import Core (defaultTimes, getProb, EventType(..), ModelSpec(..), ModelEvent(..))
+import Core (defaultTimes, getProb)
+import ModelSpec (EventType(..), ModelSpec(..), ModelEvent(..))
 import Data.List.Split (splitOn)
 import Control.Monad (when)
 import Control.Applicative ((<$>), (<*>), many, (<|>))

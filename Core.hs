@@ -1,27 +1,15 @@
-module Core (ModelEvent(..), EventType(..), ModelSpec(..), defaultTimes, getProb, update) where
+module Core (defaultTimes, getProb, update) where
 
 import Math.Combinatorics.Exact.Binomial (choose)
 import Control.Monad.State (State, get, put, execState)
 import Data.List (sortBy)
 import qualified Data.Vector.Unboxed as V
+import ModelSpec (ModelSpec(..), ModelEvent(..), EventType(..))
 
 (!) :: V.Vector Double -> Int -> Double
 (!) = (V.!)
 (//) :: V.Vector Double -> [(Int, Double)] -> V.Vector Double
 (//) = (V.//)
-
-data ModelEvent = ModelEvent {
-    meTime :: Double,
-    meEventType ::EventType
-} deriving (Show, Read)
-
-data EventType = Join Int Int | SetPopSize Int Double | SetGrowthRate Int Double deriving (Show, Read)
-
-data ModelSpec = ModelSpec {
-    mTimeSteps :: [Double],
-    mTheta :: Double,
-    mEvents :: [ModelEvent]
-} deriving (Show)
 
 data CoalState = CoalState {
     csA :: V.Vector Double,

@@ -1,7 +1,8 @@
 module Logl (computeLikelihood, writeSpectrumFile) where
 
 import RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..))
-import Core (ModelSpec(..), getProb)
+import Core (getProb)
+import ModelSpec (ModelSpec(..))
 import qualified Data.Map.Strict as Map
 import System.Log.Logger (errorM)
 import System.Exit (exitFailure)
@@ -12,7 +13,7 @@ computeLikelihood modelSpec histogram = do
     let standardOrder = computeStandardOrder histogram
         nVec = raNVec histogram
     patternProbs <- sequence $ parMap rdeepseq (getProb modelSpec nVec) standardOrder
-    let patternCounts = map (\o -> defaultLookup $ Pattern o) standardOrder
+    let patternCounts = map (defaultLookup . Pattern) standardOrder
         ll = sum $ zipWith (\p c -> log p * fromIntegral c) patternProbs patternCounts
         zeroPattern = Pattern $ replicate (length nVec) 0
         otherCounts = defaultLookup zeroPattern + defaultLookup Higher
