@@ -1,4 +1,4 @@
-module Core (ModelEvent(..), EventType(..), ModelSpec(..), defaultTimes, getProb) where
+module Core (ModelEvent(..), EventType(..), ModelSpec(..), defaultTimes, getProb, update) where
 
 import Math.Combinatorics.Exact.Binomial (choose)
 import Control.Monad.State (State, get, put, execState)
