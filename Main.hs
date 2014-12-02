@@ -1,5 +1,5 @@
 import Core (defaultTimes, getProb)
-import ModelSpec (EventType(..), ModelSpec(..), ModelEvent(..))
+import ModelSpec (EventType(..), ModelSpec(..), ModelEvent(..), instantiateModel, readModelTemplate)
 import Data.List.Split (splitOn)
 import Control.Monad (when)
 import Control.Applicative ((<$>), (<*>), many, (<|>))
@@ -15,10 +15,10 @@ data Options = Options Command
 
 data Command = CmdView InputSpec
              | CmdProb ModelOpt [Int] [Int]
-             | CmdLogl FilePath ModelSpec InputSpec
-             | CmdMaxl ModelSpec InputSpec Int FilePath
+             | CmdLogl FilePath ModelOpt InputSpec
+             | CmdMaxl ModelOpt InputSpec Int FilePath
 
-data ModelOpt = ModelTemplateOpt FilePath [Double] Double | ModelSpecOpt ModelSpec
+data ModelOpt = ModelTemplateOpt Double FilePath [Double] | ModelSpecOpt ModelSpec
 
 main :: IO ()
 main = run =<< OP.execParser (parseOptions `withInfo` "Rarecoal: Implementation of the Rarecoal algorithm")
@@ -30,18 +30,15 @@ run (Options cmd) = do
         CmdView inputSpec -> do
             hist <- loadHistogram inputSpec
             putStr $ show hist
-        CmdProb modelOpt nVec mVec -> 
-            let modelSpec =
-                case modelOpt of
-                    ModelTemplateOpt path params theta -> 
-                        mt <- (liftM read . readFile) path
-
+        CmdProb modelOpt nVec mVec -> do
+            modelSpec <- getModelSpec modelOpt
             case getProb modelSpec nVec mVec of
                 Left err -> do
                     errorM "rarecoal" $ "Error: " ++ err
                     exitFailure
                 Right result -> print result
-        CmdLogl spectrumFile modelSpec inputSpec -> do
+        CmdLogl spectrumFile modelOpt inputSpec -> do
+            modelSpec <- getModelSpec modelOpt
             hist <- loadHistogram inputSpec
             when (spectrumFile /= "/dev/null") $ writeSpectrumFile spectrumFile modelSpec hist
             case computeLikelihood modelSpec hist of
@@ -49,13 +46,22 @@ run (Options cmd) = do
                     errorM "rarecoal" $ "Error: " ++ err
                     exitFailure
                 Right result -> print result
-        CmdMaxl modelSpec inputSpec maxCycles path -> do
+        CmdMaxl (ModelTemplateOpt theta mtPath params) inputSpec maxCycles path -> do
             hist <- loadHistogram inputSpec
-            case maximizeLikelihood modelSpec hist maxCycles of
+            modelTemplate <- readModelTemplate mtPath theta defaultTimes
+            case maximizeLikelihood modelTemplate params hist maxCycles of
                 Left err -> errorM "rarecoal" $ "Error: " ++ err
                 Right (s, p) -> do
-                    reportMaxResult modelSpec s 
-                    reportTrace modelSpec p path 
+                    reportMaxResult modelTemplate s 
+                    reportTrace modelTemplate p path 
+
+getModelSpec :: ModelOpt -> IO ModelSpec
+getModelSpec modelOpt = do
+    case modelOpt of
+        ModelTemplateOpt theta path params -> do
+            mt <- readModelTemplate path theta defaultTimes
+            return $ instantiateModel mt params
+        ModelSpecOpt modelSpec -> return modelSpec
 
 parseOptions :: OP.Parser Options
 parseOptions = Options <$> parseCommand
@@ -74,12 +80,12 @@ parseView :: OP.Parser Command
 parseView = CmdView <$> parseInputSpec
 
 parseProb :: OP.Parser Command
-parseProb = CmdProb <$> parseModelSpec
+parseProb = CmdProb <$> parseModelOpt
                     <*> OP.argument OP.auto (OP.metavar "NVec")
                     <*> OP.argument OP.auto (OP.metavar "MVec")
 
 parseLogl :: OP.Parser Command
-parseLogl = CmdLogl <$> parseSpectrumFile <*> parseModelSpec <*> parseInputSpec
+parseLogl = CmdLogl <$> parseSpectrumFile <*> parseModelOpt <*> parseInputSpec
   where
     parseSpectrumFile = OP.option OP.str $ OP.short 's' <> OP.long "spectrumFile"
                                                         <> OP.metavar "<Output Spectrum File>"
@@ -87,7 +93,7 @@ parseLogl = CmdLogl <$> parseSpectrumFile <*> parseModelSpec <*> parseInputSpec
                                                         <> OP.help "Output the allele frequencies to file"
 
 parseMaxl :: OP.Parser Command
-parseMaxl = CmdMaxl <$> parseModelSpec <*> parseInputSpec <*> parseMaxCycles <*> parseTraceFile
+parseMaxl = CmdMaxl <$> parseModelOpt <*> parseInputSpec <*> parseMaxCycles <*> parseTraceFile
   where
     parseMaxCycles = OP.option OP.auto $ OP.short 'c' <> OP.long "maxCycles"
                                                       <> OP.metavar "<NR_MAX_CYCLES>"
@@ -111,18 +117,32 @@ parseInputSpec = InputSpec <$> parseIndices <*> parseMaxAf <*> parseNrCalledSite
                                                   <> OP.value 10
                                                   <> OP.help "set the maximum allele frequency (default:10)"
     parseNrCalledSites = OP.option OP.auto $ OP.short 'n' <> OP.long "nr_called_sites"
-                                                  <> OP.metavar "INT"
-                                                  <> OP.value 2064554803
-                                                  <> OP.help "set the nr of called sites (default:2064554803)"
+                                                          <> OP.metavar "INT"
+                                                          <> OP.value 2064554803
+                                                          <> OP.help "set the nr of called sites (default:2064554803)"
 
+parseModelOpt :: OP.Parser ModelOpt
+parseModelOpt = parseModelTemplateOpt <|> parseModelSpecOpt
+
+parseModelTemplateOpt :: OP.Parser ModelOpt
+parseModelTemplateOpt = ModelTemplateOpt <$> parseTheta <*> parseFilePath <*> parseParams
+  where
+    parseFilePath = OP.argument OP.str (OP.metavar "<Input Template File>")
+    parseParams = OP.argument OP.auto (OP.metavar "[p1,p2,...]")
+
+parseModelSpecOpt :: OP.Parser ModelOpt
+parseModelSpecOpt = ModelSpecOpt <$> parseModelSpec 
+
+parseTheta :: OP.Parser Double
+parseTheta = OP.option OP.auto $ OP.short 't' <> OP.long "theta"
+                                              <> OP.metavar "DOUBLE"
+                                              <> OP.value 0.0005
+                                              <> OP.help "set the scaled mutation rate [default:0.005]"
+ 
 parseModelSpec :: OP.Parser ModelSpec
 parseModelSpec = ModelSpec defaultTimes <$> parseTheta <*> many parseEvent
   where
-    parseTheta = OP.option OP.auto $ OP.short 't' <> OP.long "theta"
-                                                  <> OP.metavar "DOUBLE"
-                                                  <> OP.value 0.0005
-                                                  <> OP.help "set the scaled mutation rate [default:0.005]"
-    parseEvent = parseJoin <|> parseSetP <|> parseSetR
+   parseEvent = parseJoin <|> parseSetP <|> parseSetR
 
 parseJoin :: OP.Parser ModelEvent
 parseJoin = OP.option readJoin $ OP.short 'j' <> OP.long "join"

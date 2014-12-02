@@ -1,7 +1,8 @@
-module ModelSpec (ModelEvent(..), EventType(..), ModelSpec(..), ModelTemplate(..), instantiateModel) where
+module ModelSpec (ModelEvent(..), EventType(..), ModelSpec(..), ModelTemplate(..), instantiateModel, readModelTemplate) where
 
 import Data.String.Utils (replace)
 import Data.List.Split (splitOn)
+import Control.Monad (liftM)
 
 data ModelEvent = ModelEvent {
     meTime :: Double,
@@ -18,17 +19,19 @@ data ModelSpec = ModelSpec {
 
 data ModelTemplate = ModelTemplate {
     mtParams :: [String],
+    mtTheta :: Double,
+    mtTimeSteps :: [Double],
     mtBody :: String
 }
 
-instance Read ModelTemplate where
-    readsPrec _ s = 
-        let (pL:bL) = lines s
-            names = splitOn "," pL
-        in  [(ModelTemplate names (unlines bL), "")]
+readModelTemplate ::  FilePath -> Double -> [Double] -> IO ModelTemplate
+readModelTemplate path theta timeSteps = do
+    (pL:bL) <- liftM lines . readFile $ path
+    let names = splitOn "," pL
+    return $ ModelTemplate names theta timeSteps (unlines bL)
 
-instantiateModel :: ModelTemplate -> Double -> [Double] -> [Double] -> ModelSpec
-instantiateModel (ModelTemplate pNames body) theta timeSteps params =
+instantiateModel :: ModelTemplate -> [Double] -> ModelSpec
+instantiateModel (ModelTemplate pNames theta timeSteps body) params =
     let body' = substituteParams pNames params body
     in  ModelSpec timeSteps theta (parseBody body')
   where
