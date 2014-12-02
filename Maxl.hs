@@ -50,7 +50,7 @@ minFunc modelTemplate hist scalingFactors params =
 
 validateModel :: ModelSpec -> Either String ()
 validateModel (ModelSpec _ _ events) = 
-    when (any (\p -> p >= 0.001 && p <= 100.0) [p | ModelEvent _ (SetPopSize _ p) <- events]) $ Left "illegal population sizes"
+    when (any (\p -> p < 0.001 || p > 100.0) [p | ModelEvent _ (SetPopSize _ p) <- events]) $ Left "illegal population sizes"
 
 minFuncGradient :: ModelTemplate -> RareAlleleHistogram -> [Double] -> [Double] -> [Double]
 minFuncGradient modelTemplate hist scalingFactors params =
