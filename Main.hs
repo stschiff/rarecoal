@@ -7,9 +7,11 @@ import System.Exit (exitFailure)
 import RareAlleleHistogram (loadHistogram, InputSpec(..))
 import Logl (computeLikelihood, writeSpectrumFile)
 import Maxl (maximizeLikelihood, reportMaxResult, reportTrace)
-import Mcmc (runMcmc, reportMcmcResult, reportMcmcTrace)
+import Mcmc (runMcmc, reportMcmcResult, reportMcmcTrace, readMaxResult)
 import System.Log.Logger (updateGlobalLogger, setLevel, Priority(..), errorM, infoM)
 import Data.Time.Clock (getCurrentTime)
+import ModelSpec (ModelSpec(..), readModelTemplate, ModelEvent(..), EventType(..), instantiateModel)
+import Core (getProb, defaultTimes)
 
 data Options = Options Command
 
@@ -17,7 +19,7 @@ data Command = CmdView InputSpec
              | CmdProb ModelOpt [Int] [Int]
              | CmdLogl FilePath ModelOpt InputSpec
              | CmdMaxl Double FilePath [Double] Int FilePath InputSpec
-             | CmdMcmc DOuble FilePath [Double] Int FilePath InputSpec
+             | CmdMcmc Double FilePath FilePath Int FilePath InputSpec
 
 data ModelOpt = ModelTemplateOpt Double FilePath [Double] | ModelSpecOpt ModelSpec
 
@@ -49,7 +51,7 @@ run (Options cmd) = do
                     errorM "rarecoal" $ "Error: " ++ err
                     exitFailure
                 Right result -> print result
-        CmdMaxl theta mtPath params inputSpec maxCycles path -> do
+        CmdMaxl theta mtPath params maxCycles path inputSpec -> do
             hist <- loadHistogram inputSpec
             modelTemplate <- readModelTemplate mtPath theta defaultTimes
             case maximizeLikelihood modelTemplate params hist maxCycles of
@@ -57,10 +59,11 @@ run (Options cmd) = do
                 Right (s, p) -> do
                     reportMaxResult modelTemplate s 
                     reportTrace modelTemplate p path 
-        CmdMcmc theta mtPath params inputSpec maxCycles path -> do
+        CmdMcmc theta mtPath maxResultPath maxCycles path inputSpec -> do
             hist <- loadHistogram inputSpec
             modelTemplate <- readModelTemplate mtPath theta defaultTimes
-            case runMcmc modelTemplate params hist maxCycles of
+            initParams <- readMaxResult maxResultPath
+            case runMcmc modelTemplate initParams hist maxCycles of
                 Left err -> errorM "rarecoal" $ "Error: " ++ err
                 Right (s, p) -> do
                     reportMcmcResult modelTemplate s 
@@ -195,5 +198,8 @@ parseTraceFilePath = OP.option OP.str $ OP.long "traceFile" <> OP.metavar "<FILE
                                                             <> OP.help "The file to write the trace"
 
 parseMcmc :: OP.Parser Command
-parseMcmc = CmdMcmc <$> parseTheta <*> parseTemplateFilePath <*> parseParams <*> parseMaxCycles <*> parseTraceFilePath <*> parseInputSpec
+parseMcmc = CmdMcmc <$> parseTheta <*> parseTemplateFilePath <*> parseMaxResultFilePath <*> parseMaxCycles <*> parseTraceFilePath <*> parseInputSpec
+  where
+    parseMaxResultFilePath = OP.option OP.str $ OP.long "maxResultFile" <> OP.metavar "<FILE>"
+                                                                        <> OP.help "The result of the maximization step containing the maximimum likelihood estimates"
 
