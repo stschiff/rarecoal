@@ -138,9 +138,8 @@ parseTheta = OP.option OP.auto $ OP.short 't' <> OP.long "theta"
                                               <> OP.value 0.0005
                                               <> OP.help "set the scaled mutation rate [default:0.005]"
 parseTemplateFilePath :: OP.Parser FilePath
-parseTemplateFilePath = OP.option OP.str $ OP.short 'm' <> OP.long "template"
-                                                    <> OP.metavar "<Input Template File>"
-                                                    <> OP.help "Specify that the model should be read from a template file"
+parseTemplateFilePath = OP.option OP.str $ OP.long "template" <> OP.metavar "<Input Template File>"
+                                                              <> OP.help "Specify that the model should be read from a template file"
 
 parseParams :: OP.Parser [Double]
 parseParams = OP.option OP.auto $ OP.short 'x' <> OP.long "params"
