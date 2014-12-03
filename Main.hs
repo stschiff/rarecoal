@@ -1,5 +1,3 @@
-import Core (defaultTimes, getProb)
-import ModelSpec (EventType(..), ModelSpec(..), ModelEvent(..), instantiateModel, readModelTemplate)
 import Data.List.Split (splitOn)
 import Control.Monad (when)
 import Control.Applicative ((<$>), (<*>), many, (<|>))
@@ -10,7 +8,8 @@ import RareAlleleHistogram (loadHistogram, InputSpec(..))
 import Logl (computeLikelihood, writeSpectrumFile)
 import Maxl (maximizeLikelihood, reportMaxResult, reportTrace)
 import Mcmc (runMcmc, reportMcmcResult, reportMcmcTrace)
-import System.Log.Logger (updateGlobalLogger, setLevel, Priority(..), errorM)
+import System.Log.Logger (updateGlobalLogger, setLevel, Priority(..), errorM, infoM)
+import Data.Time.Clock (getCurrentTime)
 
 data Options = Options Command
 
@@ -28,6 +27,8 @@ main = run =<< OP.execParser (parseOptions `withInfo` "Rarecoal: Implementation 
 run :: Options -> IO ()
 run (Options cmd) = do
     updateGlobalLogger "rarecoal" (setLevel INFO)
+    currentT <- getCurrentTime
+    infoM "rarecoal" $ "Starting at " ++ show currentT
     case cmd of
         CmdView inputSpec -> do
             hist <- loadHistogram inputSpec
@@ -64,10 +65,11 @@ run (Options cmd) = do
                 Right (s, p) -> do
                     reportMcmcResult modelTemplate s 
                     reportMcmcTrace modelTemplate p path 
-
+    currentTafter <- getCurrentTime
+    infoM "rarecoal" $ "Finished at " ++ show currentTafter
 
 getModelSpec :: ModelOpt -> IO ModelSpec
-getModelSpec modelOpt = do
+getModelSpec modelOpt =
     case modelOpt of
         ModelTemplateOpt theta path params -> do
             mt <- readModelTemplate path theta defaultTimes
@@ -112,6 +114,14 @@ parseProb :: OP.Parser Command
 parseProb = CmdProb <$> parseModelOpt
                     <*> OP.argument OP.auto (OP.metavar "NVec")
                     <*> OP.argument OP.auto (OP.metavar "MVec")
+
+parseLogl :: OP.Parser Command
+parseLogl = CmdLogl <$> parseSpectrumFile <*> parseModelOpt <*> parseInputSpec
+  where
+    parseSpectrumFile = OP.option OP.str $ OP.short 's' <> OP.long "spectrumFile"
+                                                        <> OP.metavar "<Output Spectrum File>"
+                                                        <> OP.value "/dev/null"
+                                                        <> OP.help "Output the allele frequencies to file"
 
 parseModelOpt :: OP.Parser ModelOpt
 parseModelOpt = parseModelTemplateOpt <|> parseModelSpecOpt
@@ -170,14 +180,6 @@ parseSetR = OP.option readSetR $ OP.short 'r' <> OP.long "growthRate"
         let [t, k, r] = splitOn "," s
         return $ ModelEvent (read t) (SetGrowthRate (read k) (read r))
 
-parseLogl :: OP.Parser Command
-parseLogl = CmdLogl <$> parseSpectrumFilePath <*> parseModelOpt <*> parseInputSpec
-  where
-    parseSpectrumFilePath = OP.option OP.str $ OP.short 's' <> OP.long "spectrumFile"
-                                                            <> OP.metavar "<Output Spectrum File>"
-                                                            <> OP.value "/dev/null"
-                                                            <> OP.help "Output the allele frequencies to file"
-
 parseMaxl :: OP.Parser Command
 parseMaxl = CmdMaxl <$> parseTheta <*> parseTemplateFilePath <*> parseParams <*> parseMaxCycles <*> parseTraceFilePath <*> parseInputSpec
 
@@ -194,5 +196,4 @@ parseTraceFilePath = OP.option OP.str $ OP.long "traceFile" <> OP.metavar "<FILE
 
 parseMcmc :: OP.Parser Command
 parseMcmc = CmdMcmc <$> parseTheta <*> parseTemplateFilePath <*> parseParams <*> parseMaxCycles <*> parseTraceFilePath <*> parseInputSpec
-
 
