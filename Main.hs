@@ -9,7 +9,8 @@ import System.Exit (exitFailure)
 import RareAlleleHistogram (loadHistogram, InputSpec(..))
 import Logl (computeLikelihood, writeSpectrumFile)
 import Maxl (maximizeLikelihood, reportMaxResult, reportTrace)
-import System.Log.Logger (updateGlobalLogger, setLevel, Priority(..), errorM)
+import System.Log.Logger (updateGlobalLogger, setLevel, Priority(..), errorM, infoM)
+import Data.Time.Clock (getCurrentTime)
 
 data Options = Options Command
 
@@ -26,6 +27,8 @@ main = run =<< OP.execParser (parseOptions `withInfo` "Rarecoal: Implementation 
 run :: Options -> IO ()
 run (Options cmd) = do
     updateGlobalLogger "rarecoal" (setLevel INFO)
+    currentT <- getCurrentTime
+    infoM "rarecoal" $ "Starting at " ++ show currentT
     case cmd of
         CmdView inputSpec -> do
             hist <- loadHistogram inputSpec
@@ -54,9 +57,11 @@ run (Options cmd) = do
                 Right (s, p) -> do
                     reportMaxResult modelTemplate s 
                     reportTrace modelTemplate p path 
+    currentTafter <- getCurrentTime
+    infoM "rarecoal" $ "Finished at " ++ show currentTafter
 
 getModelSpec :: ModelOpt -> IO ModelSpec
-getModelSpec modelOpt = do
+getModelSpec modelOpt =
     case modelOpt of
         ModelTemplateOpt theta path params -> do
             mt <- readModelTemplate path theta defaultTimes
@@ -97,7 +102,7 @@ parseMaxl = CmdMaxl <$> parseModelOpt <*> parseInputSpec <*> parseMaxCycles <*> 
   where
     parseMaxCycles = OP.option OP.auto $ OP.short 'c' <> OP.long "maxCycles"
                                                       <> OP.metavar "<NR_MAX_CYCLES>"
-                                                      <> OP.value 100
+                                                      <> OP.value 20000
                                                       <> OP.help "Specifies the maximum number of cycles in the minimization routine"
 
     parseTraceFile = OP.option OP.str $ OP.long "traceFile" <> OP.metavar "<FILE>"
