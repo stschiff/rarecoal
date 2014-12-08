@@ -1,7 +1,7 @@
 module Core (defaultTimes, getProb, update) where
 
 import Math.Combinatorics.Exact.Binomial (choose)
-import Control.Monad.State (State, get, put, execState)
+import Control.Monad.Trans.State.Lazy (State, get, put, execState)
 import Data.List (sortBy)
 import qualified Data.Vector.Unboxed as V
 import ModelSpec (ModelSpec(..), ModelEvent(..), EventType(..))

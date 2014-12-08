@@ -3,6 +3,7 @@ module ModelSpec (ModelEvent(..), EventType(..), ModelSpec(..), ModelTemplate(..
 import Data.String.Utils (replace)
 import Data.List.Split (splitOn)
 import Control.Monad (liftM)
+import qualified Data.Vector.Unboxed as V
 
 data ModelEvent = ModelEvent {
     meTime :: Double,
@@ -30,9 +31,9 @@ readModelTemplate path theta timeSteps = do
     let names = splitOn "," pL
     return $ ModelTemplate names theta timeSteps (unlines bL)
 
-instantiateModel :: ModelTemplate -> [Double] -> ModelSpec
+instantiateModel :: ModelTemplate -> V.Vector Double -> ModelSpec
 instantiateModel (ModelTemplate pNames theta timeSteps body) params =
-    let body' = substituteParams pNames params body
+    let body' = substituteParams pNames (V.toList params) body
     in  ModelSpec timeSteps theta (parseBody body')
   where
     substituteParams [] [] b = b

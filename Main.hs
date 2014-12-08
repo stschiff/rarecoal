@@ -12,6 +12,9 @@ import System.Log.Logger (updateGlobalLogger, setLevel, Priority(..), errorM, in
 import Data.Time.Clock (getCurrentTime)
 import ModelSpec (ModelSpec(..), readModelTemplate, ModelEvent(..), EventType(..), instantiateModel)
 import Core (getProb, defaultTimes)
+import Control.Monad.IO.Class (liftIO)
+import Control.Error.Script (runScript)
+import qualified Data.Vector.Unboxed as V
 
 data Options = Options Command
 
@@ -19,7 +22,7 @@ data Command = CmdView InputSpec
              | CmdProb ModelOpt [Int] [Int]
              | CmdLogl FilePath ModelOpt InputSpec
              | CmdMaxl Double FilePath [Double] Int FilePath InputSpec
-             | CmdMcmc Double FilePath FilePath Int FilePath InputSpec
+             | CmdMcmc Double FilePath FilePath Int FilePath InputSpec Int
 
 data ModelOpt = ModelTemplateOpt Double FilePath [Double] | ModelSpecOpt ModelSpec
 
@@ -54,20 +57,18 @@ run (Options cmd) = do
         CmdMaxl theta mtPath params maxCycles path inputSpec -> do
             hist <- loadHistogram inputSpec
             modelTemplate <- readModelTemplate mtPath theta defaultTimes
-            case maximizeLikelihood modelTemplate params hist maxCycles of
+            case maximizeLikelihood modelTemplate (V.fromList params) hist maxCycles of
                 Left err -> errorM "rarecoal" $ "Error: " ++ err
                 Right (s, p) -> do
                     reportMaxResult modelTemplate s 
                     reportTrace modelTemplate p path 
-        CmdMcmc theta mtPath maxResultPath maxCycles path inputSpec -> do
-            hist <- loadHistogram inputSpec
-            modelTemplate <- readModelTemplate mtPath theta defaultTimes
-            initParams <- readMaxResult maxResultPath
-            case runMcmc modelTemplate initParams hist maxCycles of
-                Left err -> errorM "rarecoal" $ "Error: " ++ err
-                Right (s, p) -> do
-                    reportMcmcResult modelTemplate s 
-                    reportMcmcTrace modelTemplate p path 
+        CmdMcmc theta mtPath maxResultPath maxCycles path inputSpec seed -> runScript $ do
+            hist <- liftIO $ loadHistogram inputSpec
+            modelTemplate <- liftIO $ readModelTemplate mtPath theta defaultTimes
+            initParams <- liftIO $ readMaxResult maxResultPath
+            (res, trace) <- runMcmc modelTemplate (V.fromList initParams) hist maxCycles seed
+            liftIO $ reportMcmcResult modelTemplate res 
+            liftIO $ reportMcmcTrace modelTemplate trace path 
     currentTafter <- getCurrentTime
     infoM "rarecoal" $ "Finished at " ++ show currentTafter
 
@@ -76,7 +77,7 @@ getModelSpec modelOpt =
     case modelOpt of
         ModelTemplateOpt theta path params -> do
             mt <- readModelTemplate path theta defaultTimes
-            return $ instantiateModel mt params
+            return $ instantiateModel mt (V.fromList params)
         ModelSpecOpt modelSpec -> return modelSpec
 
 parseOptions :: OP.Parser Options
@@ -197,8 +198,15 @@ parseTraceFilePath = OP.option OP.str $ OP.long "traceFile" <> OP.metavar "<FILE
                                                             <> OP.help "The file to write the trace"
 
 parseMcmc :: OP.Parser Command
-parseMcmc = CmdMcmc <$> parseTheta <*> parseTemplateFilePath <*> parseMaxResultFilePath <*> parseMaxCycles <*> parseTraceFilePath <*> parseInputSpec
+parseMcmc = CmdMcmc <$> parseTheta
+                    <*> parseTemplateFilePath
+                    <*> parseMaxResultFilePath
+                    <*> parseMaxCycles
+                    <*> parseTraceFilePath
+                    <*> parseInputSpec
+                    <*> parseSeed
   where
     parseMaxResultFilePath = OP.option OP.str $ OP.long "maxResultFile" <> OP.metavar "<FILE>"
                                                                         <> OP.help "The result of the maximization step containing the maximimum likelihood estimates"
+    parseSeed = OP.option OP.auto $ OP.long "seed" <> OP.metavar "<INT>" <> OP.help "Random Seed"
 
