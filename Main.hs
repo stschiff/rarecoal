@@ -49,13 +49,19 @@ parseView :: OP.Parser Command
 parseView = CmdView <$> parseViewOpt
 
 parseViewOpt :: OP.Parser ViewOpt
-parseViewOpt = ViewOpt <$> parseIndices <*> parseMaxAf <*> parseNrCalledSites <*> parseHistPath
+parseViewOpt = ViewOpt <$> parseIndices <*> parseCombineIndices <*> parseMaxAf <*> parseNrCalledSites <*> parseHistPath
 
 parseIndices :: OP.Parser [Int]
 parseIndices = OP.option OP.auto $ OP.short 'I' <> OP.long "indices"
                                                 <> OP.metavar "[i1,i2,...]"
                                                 <> OP.value []
                                                 <> OP.help "Read only these indices from the input file"
+
+parseCombineIndices :: OP.Parser [Int]
+parseCombineIndices = OP.option OP.auto $ OP.long "combine"
+                                                <> OP.metavar "[i1,i2,...]"
+                                                <> OP.value []
+                                                <> OP.help "combine these indices into one"
 
 parseMaxAf :: OP.Parser Int
 parseMaxAf = OP.option OP.auto $ OP.short 'm' <> OP.long "max_af"
@@ -138,7 +144,7 @@ parseLogl = CmdLogl <$> parseLoglOpt
 
 parseLoglOpt :: OP.Parser LoglOpt
 parseLoglOpt = LoglOpt <$> parseSpectrumPath <*> parseTheta <*> parseTemplateFilePath <*> parseParams
-                                 <*> parseModelEvents <*> parseIndices <*> parseMaxAf
+                                 <*> parseModelEvents <*> parseMaxAf
                                  <*> parseNrCalledSites <*> parseHistPath
 
 parseSpectrumPath :: OP.Parser FilePath
@@ -153,7 +159,7 @@ parseMaxl = CmdMaxl <$> parseMaxlOpt
 
 parseMaxlOpt :: OP.Parser MaxlOpt
 parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams <*> parseMaxCycles
-                       <*> parseTraceFilePath <*> parseIndices <*> parseMaxAf
+                       <*> parseTraceFilePath  <*> parseMaxAf
                        <*> parseNrCalledSites <*> parseHistPath
   where
     parseMaxCycles = OP.option OP.auto $ OP.short 'c' <> OP.long "maxCycles"
@@ -172,7 +178,7 @@ parseMcmc = CmdMcmc <$> parseMcmcOpt
 parseMcmcOpt :: OP.Parser McmcOpt
 parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams
                        <*> parseNrBurninCycles <*> parseNrMainCycles <*> parseTraceFilePath
-                       <*> parseIndices <*> parseMaxAf <*> parseNrCalledSites
+                       <*> parseMaxAf <*> parseNrCalledSites
                        <*> parseHistPath <*> parseRandomSeed
   where
     parseRandomSeed = OP.option OP.auto $ OP.short 'S' <> OP.long "seed" <> OP.metavar "<INT>" <> OP.help "Random Seed"

@@ -25,7 +25,6 @@ data McmcOpt = McmcOpt {
    mcNrBurninCycles :: Int,
    mcNrMainCycles :: Int,
    mcTracePath :: FilePath,
-   mcIndices :: [Int],
    mcMaxAf :: Int,
    mcNrCalledSites :: Int64,
    mcHistPath :: FilePath,
@@ -45,7 +44,7 @@ data MCMCstate = MCMCstate {
 runMcmc :: McmcOpt -> Script ()
 runMcmc opts = do
     modelTemplate <- scriptIO $ readModelTemplate (mcTemplatePath opts) (mcTheta opts) defaultTimes
-    hist <- loadHistogram (mcIndices opts) (mcMaxAf opts) (mcNrCalledSites opts) (mcHistPath opts)
+    hist <- loadHistogram (mcMaxAf opts) (mcNrCalledSites opts) (mcHistPath opts)
     modelSpec <- hoistEither $ instantiateModel modelTemplate (V.fromList $ mcInitialParams opts)
     hoistEither $ validateModel modelSpec
     let minFunc' = minFunc modelTemplate hist

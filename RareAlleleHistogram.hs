@@ -1,12 +1,12 @@
 module RareAlleleHistogram (RareAlleleHistogram(..),
                             SitePattern(..),
                             addHistograms,
-                            loadHistogram) where
+                            loadHistogram, reduceIndices, combineIndices) where
 
 import qualified Data.Map.Strict as Map
 import Data.List (intercalate, sortBy)
 import Data.List.Split (splitOn)
-import Control.Monad (liftM, when, (<=<), unless)
+import Control.Monad (liftM, when, (<=<))
 import System.Log.Logger (infoM)
 import Data.Int (Int64)
 import Control.Error.Script (Script, scriptIO)
@@ -61,12 +61,12 @@ instance Read SitePattern where
         let val = if s == "HIGHER" then Higher else Pattern $ map read . splitOn "," $ s
         in  [(val, "")]
 
-loadHistogram :: [Int] -> Int -> Int64 -> FilePath -> Script RareAlleleHistogram
-loadHistogram indices maxAf nrCalledSites path = do
+loadHistogram :: Int -> Int64 -> FilePath -> Script RareAlleleHistogram
+loadHistogram maxAf nrCalledSites path = do
     scriptIO $ infoM "rarecoal" "Loading histogram ... "
     hist <- scriptIO $ liftM read $ readFile path
     scriptIO $ infoM "rarecoal" "... Done loading"
-    hoistEither $ (setNrCalledSites nrCalledSites <=< filterMaxAf maxAf <=< reduceIndices indices <=< return) hist
+    hoistEither $ (setNrCalledSites nrCalledSites <=< filterMaxAf maxAf <=< return) hist
 
 setNrCalledSites :: Int64 -> RareAlleleHistogram -> Either String RareAlleleHistogram
 setNrCalledSites nrCalledSites hist = do
@@ -87,10 +87,30 @@ filterMaxAf maxAf hist = do
 reduceIndices :: [Int] -> RareAlleleHistogram -> Either String RareAlleleHistogram
 reduceIndices indices hist =
     if null indices || indices == [0..(length $ raNVec hist)] then return hist else do
-        unless (raGlobalMax hist) $ Left "Histogram cannot have global maxAF for this operation"
+        when (raGlobalMax hist) $ Left "Histogram cannot have global maxAF for this operation"
         let newNvec = selectFromList (raNVec hist) indices
             newBody = Map.mapKeysWith (+) (prunePatternIndices indices) (raCounts hist)
         return $ hist {raNVec = newNvec, raCounts = newBody}
+
+combineIndices :: [Int] -> RareAlleleHistogram -> RareAlleleHistogram
+combineIndices indices hist = 
+    if null indices then
+        hist
+    else
+        let newNvec = combineInPattern indices (raNVec hist)
+            newBody = Map.mapKeysWith (+) transformPattern (raCounts hist)
+        in  hist {raNVec = newNvec, raCounts = newBody}
+  where
+    transformPattern Higher = Higher
+    transformPattern (Pattern pattern) =
+        let newPattern = combineInPattern indices pattern
+        in  if sum newPattern > raMaxAf hist then Higher else Pattern newPattern
+
+combineInPattern :: [Int] -> [Int] -> [Int]
+combineInPattern indices pattern =
+    let newCount = sum $ map (pattern!!) indices
+        restPattern = removeFromList pattern indices
+    in  insertIntoList restPattern (head indices) newCount
 
 prunePatternIndices :: [Int] -> SitePattern -> SitePattern
 prunePatternIndices indices (Pattern pattern) = Pattern $ selectFromList pattern indices
@@ -103,4 +123,12 @@ prunePatternTotalFreq _ Higher = Higher
 selectFromList :: [a] -> [Int] -> [a]
 selectFromList l [] = l
 selectFromList l i = map (l!!) i
+
+insertIntoList :: [a] -> Int -> a -> [a]
+insertIntoList l i el =
+    let (l1,l2) = splitAt i l in l1 ++ [el] ++ l2
+
+removeFromList :: [a] -> [Int] -> [a]
+removeFromList l indices =
+    [el | (el, i) <- zip l [0..],  i `notElem` indices]
 

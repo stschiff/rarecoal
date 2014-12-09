@@ -14,7 +14,6 @@ data LoglOpt = LoglOpt {
    loTemplatePath :: FilePath,
    loParams :: [Double],
    loModelEvents :: [ModelEvent],
-   loIndices :: [Int],
    loMaxAf :: Int,
    loNrCalledSites :: Int64,
    loHistPath :: FilePath
@@ -23,7 +22,7 @@ data LoglOpt = LoglOpt {
 runLogl :: LoglOpt -> Script ()
 runLogl opts = do
     modelSpec <- getModelSpec (loTemplatePath opts) (loTheta opts) (loParams opts) (loModelEvents opts)
-    hist <- loadHistogram (loIndices opts) (loMaxAf opts) (loNrCalledSites opts) (loHistPath opts)
+    hist <- loadHistogram (loMaxAf opts) (loNrCalledSites opts) (loHistPath opts)
     scriptIO $ print $ computeLikelihood modelSpec hist 
     scriptIO $ writeSpectrumFile (loSpectrumPath opts) modelSpec hist
 

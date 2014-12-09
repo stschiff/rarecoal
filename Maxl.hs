@@ -19,7 +19,6 @@ data MaxlOpt = MaxlOpt {
    maInitialParams :: [Double],
    maMaxCycles :: Int,
    maTracePath :: FilePath,
-   maIndices :: [Int],
    maMaxAf :: Int,
    maNrCalledSites :: Int64,
    maHistPath :: FilePath
@@ -28,7 +27,7 @@ data MaxlOpt = MaxlOpt {
 runMaxl :: MaxlOpt -> Script ()
 runMaxl opts = do
     modelTemplate <- scriptIO $ readModelTemplate (maTemplatePath opts) (maTheta opts) defaultTimes
-    hist <- loadHistogram (maIndices opts) (maMaxAf opts) (maNrCalledSites opts) (maHistPath opts)
+    hist <- loadHistogram (maMaxAf opts) (maNrCalledSites opts) (maHistPath opts)
     modelSpec <- hoistEither $ instantiateModel modelTemplate (V.fromList $ maInitialParams opts)
     hoistEither $ validateModel modelSpec
     let k = length $ maInitialParams opts
