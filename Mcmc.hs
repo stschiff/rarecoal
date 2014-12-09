@@ -57,7 +57,7 @@ runMcmc opts = do
         nrCycles = mcNrBurninCycles opts + mcNrMainCycles opts
     states <- evalStateT (replicateM nrCycles (mcmcCycle minFunc')) initState
     scriptIO $ reportPosteriorStats (mcNrBurninCycles opts) (mtParams modelTemplate) states
-    scriptIO $ reportTrace (mtParams modelTemplate) states
+    scriptIO $ reportTrace (mtParams modelTemplate) states (mcTracePath opts)
 
 mcmcCycle :: (V.Vector Double -> Either String Double) -> StateT MCMCstate Script MCMCstate
 mcmcCycle posterior = do
@@ -144,8 +144,8 @@ adaptStepWidths i = do
 reportPosteriorStats :: Int -> [String] -> [MCMCstate] -> IO ()
 reportPosteriorStats nrBurninCycles paramNames states = do
     let dim = V.length $ mcmcCurrentPoint (head states)
-        points = map mcmcCurrentPoint . drop (nrBurninCycles * dim) $ states
-        scores = map mcmcCurrentValue . drop (nrBurninCycles * dim) $ states
+        points = map mcmcCurrentPoint . drop nrBurninCycles $ states
+        scores = map mcmcCurrentValue . drop nrBurninCycles $ states
         orderStats = [getOrderStats $ map (!i) points | i <- [0..dim-1]]
         orderStatsScore = getOrderStats scores
         paramLines = zipWith (\n s -> intercalate "\t" $ (n:map show s)) paramNames orderStats
@@ -155,11 +155,11 @@ reportPosteriorStats nrBurninCycles paramNames states = do
   where
     getOrderStats vals =
         let nPoints = fromIntegral $ length vals :: Double
-            [lowCIindex, midIndex, highCIindex] = map (round . (*nPoints)) [0.025, 0.5, 0.975]
+            [lowCIindex, midIndex, highCIindex] = map (floor . (*nPoints)) [0.025, 0.5, 0.975]
         in  map (vals!!) [lowCIindex, midIndex, highCIindex] 
     
-reportTrace :: [String] -> [MCMCstate] -> IO ()
-reportTrace paramNames states = do
+reportTrace :: [String] -> [MCMCstate] -> FilePath -> IO ()
+reportTrace paramNames states traceFilePath = do
     let body = [intercalate "\t" . map show . V.toList $ V.concat [V.singleton (mcmcCurrentValue s), mcmcCurrentPoint s, mcmcStepWidths s, mcmcSuccesRate s] | s <- states]
         headerLine = intercalate "\t" $ ["Score"] ++ paramNames ++ map (++"_delta") paramNames ++ map (++"_success") paramNames
-    putStr $ unlines (headerLine:body)
+    writeFile traceFilePath $ unlines (headerLine:body)
