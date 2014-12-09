@@ -8,7 +8,7 @@ import Maxl (minFunc, validateModel)
 import Control.Monad.Trans.State.Lazy (StateT, get, gets, put, evalStateT, modify)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad (when, replicateM)
+import Control.Monad (when, replicateM, forM_)
 import Data.List (intercalate)
 import Control.Error (Script, scriptIO)
 import RareAlleleHistogram (loadHistogram)
@@ -34,6 +34,7 @@ data McmcOpt = McmcOpt {
 
 data MCMCstate = MCMCstate {
     mcmcNrSteps :: Int,
+    mcmcNrCycles :: Int,
     mcmcCurrentValue :: Double,
     mcmcCurrentPoint :: V.Vector Double,
     mcmcStepWidths :: V.Vector Double,
@@ -50,10 +51,10 @@ runMcmc opts = do
     let minFunc' = minFunc modelTemplate hist
         params = V.fromList $ mcInitialParams opts
     initV <- hoistEither $ minFunc' params
-    let stepWidths = V.map (/100.0) params
+    let stepWidths = V.map (\p -> max 1.0e-8 $ (abs p) / 100.0) params
         successRates = V.replicate (V.length params) 0.44
         ranGen = R.mkStdGen $ mcRandomSeed opts 
-        initState = MCMCstate 0 initV params stepWidths successRates ranGen
+        initState = MCMCstate 0 0 initV params stepWidths successRates ranGen
         nrCycles = mcNrBurninCycles opts + mcNrMainCycles opts
     states <- evalStateT (replicateM nrCycles (mcmcCycle minFunc')) initState
     scriptIO $ reportPosteriorStats (mcNrBurninCycles opts) (mtParams modelTemplate) states
@@ -67,6 +68,11 @@ mcmcCycle posterior = do
         (order, rng') = shuffle rng [0..k-1]
     modify (\s -> s {mcmcRanGen = rng'})
     mapM_ (updateMCMC posterior) order
+    let c = mcmcNrCycles state
+    modify (\s -> s {mcmcNrCycles = c + 1})
+    when ((c + 1) `mod` 10 == 0) $ do
+        liftIO (print state)
+        forM_ [0..k-1] adaptStepWidths
     get >>= return
 
 shuffle :: R.StdGen -> [Int] -> ([Int], R.StdGen)
@@ -85,11 +91,9 @@ updateMCMC posterior i = do
     if success
         then accept newPoint newVal i
         else reject i
-    adaptStepWidths i
     state <- get
     let steps = mcmcNrSteps state
         newState = state {mcmcNrSteps = steps + 1}
-    when (steps `mod` 10 == 0) $ liftIO (print state)
     put newState
     return newState
     
@@ -120,14 +124,14 @@ isSuccessFul newVal = do
 accept :: V.Vector Double -> Double -> Int -> StateT MCMCstate Script ()
 accept newPoint newVal i = do
     successRate <- gets mcmcSuccesRate
-    let newR = successRate!i * 0.99 + 0.01
+    let newR = successRate!i * 0.975 + 0.025
         successRate' = successRate // [(i, newR)]
     modify (\s -> s {mcmcCurrentPoint = newPoint, mcmcCurrentValue = newVal, mcmcSuccesRate = successRate'})
 
 reject :: Int -> StateT MCMCstate Script ()
 reject i = do
     successRate <- gets mcmcSuccesRate
-    let newR = successRate!i * 0.99
+    let newR = successRate!i * 0.975
         successRate' = successRate // [(i, newR)]
     modify (\s -> s {mcmcSuccesRate = successRate'})
 
