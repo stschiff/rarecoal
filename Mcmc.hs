@@ -1,19 +1,36 @@
-module Mcmc (runMcmc, reportMcmcResult, reportMcmcTrace, readMaxResult) where
+module Mcmc (runMcmc, McmcOpt(..)) where
 
-import RareAlleleHistogram (RareAlleleHistogram(..))
-import ModelSpec (ModelTemplate(..), instantiateModel)
+import ModelTemplate (ModelTemplate(..), instantiateModel, readModelTemplate)
+import Core (defaultTimes)
 import qualified Data.Vector.Unboxed as V
 import qualified System.Random as R
-import Logl (computeLikelihood)
 import Maxl (minFunc, validateModel)
 import Control.Monad.Trans.State.Lazy (StateT, get, gets, put, evalStateT, modify)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad (when, replicateM)
-import Control.Error (EitherT(..))
+import Data.List (intercalate)
+import Control.Error (Script, scriptIO)
+import RareAlleleHistogram (loadHistogram)
+import Control.Monad.Trans.Either (hoistEither)
+import Data.Int (Int64)
 
 (!) = (V.!)
 (//) = (V.//)
+
+data McmcOpt = McmcOpt {
+   mcTheta :: Double,
+   mcTemplatePath :: FilePath,
+   mcInitialParams :: [Double],
+   mcNrBurninCycles :: Int,
+   mcNrMainCycles :: Int,
+   mcTracePath :: FilePath,
+   mcIndices :: [Int],
+   mcMaxAf :: Int,
+   mcNrCalledSites :: Int64,
+   mcHistPath :: FilePath,
+   mcRandomSeed :: Int
+}
 
 data MCMCstate = MCMCstate {
     mcmcNrSteps :: Int,
@@ -24,21 +41,25 @@ data MCMCstate = MCMCstate {
     mcmcRanGen :: R.StdGen
 } deriving (Show)
 
-runMcmc :: ModelTemplate -> V.Vector Double -> RareAlleleHistogram -> Int -> Int -> EitherT String IO ([[Double]], [V.Vector Double])
-runMcmc modelTemplate params hist cycles seed = do
-    let initialModel = instantiateModel modelTemplate params
-    _ <- lift . return $ validateModel initialModel
-    _ <- lift . return $ computeLikelihood initialModel hist
+runMcmc :: McmcOpt -> Script ()
+runMcmc opts = do
+    modelTemplate <- scriptIO $ readModelTemplate (mcTemplatePath opts) (mcTheta opts) defaultTimes
+    hist <- loadHistogram (mcIndices opts) (mcMaxAf opts) (mcNrCalledSites opts) (mcHistPath opts)
+    modelSpec <- hoistEither $ instantiateModel modelTemplate (V.fromList $ mcInitialParams opts)
+    hoistEither $ validateModel modelSpec
     let minFunc' = minFunc modelTemplate hist
-        initV = minFunc' params
-        stepWidths = V.map (/100.0) params
+        params = V.fromList $ mcInitialParams opts
+    initV <- hoistEither $ minFunc' params
+    let stepWidths = V.map (/100.0) params
         successRates = V.replicate (V.length params) 0.44
-        ranGen = R.mkStdGen seed 
+        ranGen = R.mkStdGen $ mcRandomSeed opts 
         initState = MCMCstate 0 initV params stepWidths successRates ranGen
-    states <- liftIO $ evalStateT (replicateM cycles (mcmcCycle minFunc')) initState
-    return ([], map mcmcCurrentPoint states)
+        nrCycles = mcNrBurninCycles opts + mcNrMainCycles opts
+    states <- evalStateT (replicateM nrCycles (mcmcCycle minFunc')) initState
+    scriptIO $ reportPosteriorStats (mcNrBurninCycles opts) (mtParams modelTemplate) states
+    scriptIO $ reportTrace (mtParams modelTemplate) states
 
-mcmcCycle :: (V.Vector Double -> Double) -> StateT MCMCstate IO MCMCstate
+mcmcCycle :: (V.Vector Double -> Either String Double) -> StateT MCMCstate Script MCMCstate
 mcmcCycle posterior = do
     state <- get
     let k = V.length $ mcmcCurrentPoint state
@@ -49,12 +70,17 @@ mcmcCycle posterior = do
     get >>= return
 
 shuffle :: R.StdGen -> [Int] -> ([Int], R.StdGen)
-shuffle rng r = (r, rng) 
+shuffle rng [] = ([], rng)
+shuffle rng r =
+    let (ran, rng') = R.randomR (0, length r - 1) rng
+        val = r!!ran
+        (rest, rng'') = shuffle rng' [v | (v, i) <- zip r [0..], i /= ran]
+    in  ((val:rest), rng'')
 
-updateMCMC :: (V.Vector Double -> Double) -> Int -> StateT MCMCstate IO MCMCstate
+updateMCMC :: (V.Vector Double -> Either String Double) -> Int -> StateT MCMCstate Script MCMCstate
 updateMCMC posterior i = do
     newPoint <- propose i
-    let newVal = posterior newPoint
+    newVal <- lift . hoistEither . posterior $ newPoint
     success <- isSuccessFul newVal
     if success
         then accept newPoint newVal i
@@ -67,7 +93,7 @@ updateMCMC posterior i = do
     put newState
     return newState
     
-propose :: Int -> StateT MCMCstate IO (V.Vector Double)
+propose :: Int -> StateT MCMCstate Script (V.Vector Double)
 propose i = do
     state <- get
     let currentPoint = mcmcCurrentPoint state
@@ -78,7 +104,7 @@ propose i = do
     put state {mcmcRanGen = rng'}
     return newPoint
 
-isSuccessFul :: Double -> StateT MCMCstate IO Bool
+isSuccessFul :: Double -> StateT MCMCstate Script Bool
 isSuccessFul newVal = do
     state <- get
     if newVal < mcmcCurrentValue state
@@ -91,21 +117,21 @@ isSuccessFul newVal = do
                 then return True
                 else return False
 
-accept :: V.Vector Double -> Double -> Int -> StateT MCMCstate IO ()
+accept :: V.Vector Double -> Double -> Int -> StateT MCMCstate Script ()
 accept newPoint newVal i = do
     successRate <- gets mcmcSuccesRate
     let newR = successRate!i * 0.99 + 0.01
         successRate' = successRate // [(i, newR)]
     modify (\s -> s {mcmcCurrentPoint = newPoint, mcmcCurrentValue = newVal, mcmcSuccesRate = successRate'})
 
-reject :: Int -> StateT MCMCstate IO ()
+reject :: Int -> StateT MCMCstate Script ()
 reject i = do
     successRate <- gets mcmcSuccesRate
     let newR = successRate!i * 0.99
         successRate' = successRate // [(i, newR)]
     modify (\s -> s {mcmcSuccesRate = successRate'})
 
-adaptStepWidths :: Int -> StateT MCMCstate IO ()
+adaptStepWidths :: Int -> StateT MCMCstate Script ()
 adaptStepWidths i = do
     state <- get
     let r = (mcmcSuccesRate state)!i
@@ -115,13 +141,25 @@ adaptStepWidths i = do
             newStepWidths = (mcmcStepWidths state) // [(i, d')]
         put state {mcmcStepWidths = newStepWidths}
 
-reportMcmcResult :: ModelTemplate -> [[Double]] -> IO ()
-reportMcmcResult modelTemplate mcmcResult = undefined
-
-reportMcmcTrace :: ModelTemplate -> [V.Vector Double] -> FilePath -> IO ()
-reportMcmcTrace modelTemplate trace path = undefined
-
-readMaxResult :: FilePath -> IO [Double]
-readMaxResult maxResultPath = do
-    c <- readFile maxResultPath
-    return [read (w!!1) | w <- map words . lines $ c] 
+reportPosteriorStats :: Int -> [String] -> [MCMCstate] -> IO ()
+reportPosteriorStats nrBurninCycles paramNames states = do
+    let dim = V.length $ mcmcCurrentPoint (head states)
+        points = map mcmcCurrentPoint . drop (nrBurninCycles * dim) $ states
+        scores = map mcmcCurrentValue . drop (nrBurninCycles * dim) $ states
+        orderStats = [getOrderStats $ map (!i) points | i <- [0..dim-1]]
+        orderStatsScore = getOrderStats scores
+        paramLines = zipWith (\n s -> intercalate "\t" $ (n:map show s)) paramNames orderStats
+        scoreLine = intercalate "\t" ("Score":map show orderStatsScore)
+        headerLine = "Param\tMedian\tLowerCI\tUpperCI"
+    putStr $ unlines (headerLine:scoreLine:paramLines)
+  where
+    getOrderStats vals =
+        let nPoints = fromIntegral $ length vals :: Double
+            [lowCIindex, midIndex, highCIindex] = map (round . (*nPoints)) [0.025, 0.5, 0.975]
+        in  map (vals!!) [lowCIindex, midIndex, highCIindex] 
+    
+reportTrace :: [String] -> [MCMCstate] -> IO ()
+reportTrace paramNames states = do
+    let body = [intercalate "\t" . map show . V.toList $ V.concat [V.singleton (mcmcCurrentValue s), mcmcCurrentPoint s, mcmcStepWidths s, mcmcSuccesRate s] | s <- states]
+        headerLine = intercalate "\t" $ ["Score"] ++ paramNames ++ map (++"_delta") paramNames ++ map (++"_success") paramNames
+    putStr $ unlines (headerLine:body)

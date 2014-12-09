@@ -1,10 +1,9 @@
-module Core (defaultTimes, getProb, update) where
+module Core (defaultTimes, getProb, update, ModelEvent(..), EventType(..), ModelSpec(..)) where
 
 import Math.Combinatorics.Exact.Binomial (choose)
 import Control.Monad.Trans.State.Lazy (State, get, put, execState)
 import Data.List (sortBy)
 import qualified Data.Vector.Unboxed as V
-import ModelSpec (ModelSpec(..), ModelEvent(..), EventType(..))
 
 (!) :: V.Vector Double -> Int -> Double
 (!) = (V.!)
@@ -15,6 +14,19 @@ data CoalState = CoalState {
     csA :: V.Vector Double,
     csB :: [V.Vector Double],
     csD :: Double
+} deriving (Show)
+
+data ModelEvent = ModelEvent {
+    meTime :: Double,
+    meEventType ::EventType
+} deriving (Show, Read)
+
+data EventType = Join Int Int | SetPopSize Int Double | SetGrowthRate Int Double deriving (Show, Read)
+
+data ModelSpec = ModelSpec {
+    mTimeSteps :: [Double],
+    mTheta :: Double,
+    mEvents :: [ModelEvent]
 } deriving (Show)
 
 data ModelState = ModelState {
@@ -38,21 +50,13 @@ getTimeSteps n0 lingen tMax =
     getTimeStep alpha nr_steps i =
         alpha * exp (fromIntegral i / fromIntegral nr_steps * log (1.0 + tMax / alpha)) - alpha
 
-getProb :: ModelSpec -> [Int] -> [Int] -> Either String Double
-getProb modelSpec nVec config = do
+getProb :: ModelSpec -> [Int] -> [Int] -> Double
+getProb modelSpec nVec config =
     let timeSteps = mTimeSteps modelSpec
         ims = makeInitModelState modelSpec (length nVec)
         ics = makeInitCoalState nVec config
-    checkJoins [e | ModelEvent _ e@(Join _ _) <- msEventQueue ims]
-    let (_, fcs) = execState (mapM_ singleStep timeSteps) (ims, ics)
-    return $ csD fcs * mTheta modelSpec * fromIntegral (product $ zipWith choose nVec config)
-  where
-    checkJoins [] = Right ()
-    checkJoins (Join k l:rest) =
-        if k == l || any (\(Join k' l') -> k' == l || l' == l) rest
-            then Left "Illegal joins"
-            else checkJoins rest
-    checkJoins _ = undefined
+        (_, fcs) = execState (mapM_ singleStep timeSteps) (ims, ics)
+    in  csD fcs * mTheta modelSpec * fromIntegral (product $ zipWith choose nVec config)
 
 makeInitModelState :: ModelSpec -> Int -> ModelState
 makeInitModelState (ModelSpec _ _ events) k =

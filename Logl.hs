@@ -1,36 +1,51 @@
-module Logl (computeLikelihood, writeSpectrumFile) where
+module Logl (computeLikelihood, runLogl, LoglOpt(..)) where
 
-import RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..))
-import Core (getProb)
-import ModelSpec (ModelSpec(..))
+import RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..), loadHistogram)
+import Core (getProb, ModelSpec(..), ModelEvent(..))
+import Data.Int (Int64)
+import ModelTemplate (getModelSpec)
+import Control.Error (Script, scriptIO)
 import qualified Data.Map.Strict as Map
-import System.Log.Logger (errorM)
-import System.Exit (exitFailure)
 import Control.Parallel.Strategies (rdeepseq, parMap)
 
-computeLikelihood :: ModelSpec -> RareAlleleHistogram -> Either String Double
-computeLikelihood modelSpec histogram = do
+data LoglOpt = LoglOpt {
+   loSpectrumPath :: FilePath,
+   loTheta :: Double,
+   loTemplatePath :: FilePath,
+   loParams :: [Double],
+   loModelEvents :: [ModelEvent],
+   loIndices :: [Int],
+   loMaxAf :: Int,
+   loNrCalledSites :: Int64,
+   loHistPath :: FilePath
+}
+
+runLogl :: LoglOpt -> Script ()
+runLogl opts = do
+    modelSpec <- getModelSpec (loTemplatePath opts) (loTheta opts) (loParams opts) (loModelEvents opts)
+    hist <- loadHistogram (loIndices opts) (loMaxAf opts) (loNrCalledSites opts) (loHistPath opts)
+    scriptIO $ print $ computeLikelihood modelSpec hist 
+    scriptIO $ writeSpectrumFile (loSpectrumPath opts) modelSpec hist
+
+computeLikelihood :: ModelSpec -> RareAlleleHistogram -> Double
+computeLikelihood modelSpec histogram =
     let standardOrder = computeStandardOrder histogram
         nVec = raNVec histogram
-    patternProbs <- sequence $ parMap rdeepseq (getProb modelSpec nVec) standardOrder
-    let patternCounts = map (defaultLookup . Pattern) standardOrder
+        patternProbs = parMap rdeepseq (getProb modelSpec nVec) standardOrder
+        patternCounts = map (defaultLookup . Pattern) standardOrder
         ll = sum $ zipWith (\p c -> log p * fromIntegral c) patternProbs patternCounts
         zeroPattern = Pattern $ replicate (length nVec) 0
         otherCounts = defaultLookup zeroPattern + defaultLookup Higher
-    return $ ll + fromIntegral otherCounts * log (1.0 - sum patternProbs)
+    in  ll + fromIntegral otherCounts * log (1.0 - sum patternProbs)
   where
     defaultLookup sitePattern = Map.findWithDefault 0 sitePattern (raCounts histogram)
 
 writeSpectrumFile :: FilePath -> ModelSpec -> RareAlleleHistogram -> IO ()
-writeSpectrumFile spectrumFile modelSpec histogram = do
+writeSpectrumFile spectrumFile modelSpec histogram =
     let standardOrder = computeStandardOrder histogram
         nVec = raNVec histogram
-    case sequence $ parMap rdeepseq (getProb modelSpec nVec) standardOrder of
-        Left err -> do
-            errorM "rarecoal" $ "Error: " ++ err
-            exitFailure
-        Right vec ->
-            writeFile spectrumFile $ unlines $ zipWith (\p val -> show (Pattern p) ++ "\t" ++ show val) standardOrder vec
+        vec = parMap rdeepseq (getProb modelSpec nVec) standardOrder
+    in  writeFile spectrumFile $ unlines $ zipWith (\p val -> show (Pattern p) ++ "\t" ++ show val) standardOrder vec
 
 computeStandardOrder :: RareAlleleHistogram -> [[Int]]
 computeStandardOrder histogram =
