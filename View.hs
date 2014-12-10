@@ -2,8 +2,9 @@ module View (runView, ViewOpt(..)) where
 
 import Data.Int (Int64)
 import Control.Error.Script (Script, scriptIO)
-import RareAlleleHistogram (loadHistogram, reduceIndices, combineIndices)
+import RareAlleleHistogram (reduceIndices, combineIndices, setNrCalledSites, filterMaxAf)
 import Control.Monad.Trans.Either (hoistEither)
+import Control.Monad (liftM, (<=<))
 
 data ViewOpt = ViewOpt {
     viIndices :: [Int],
@@ -15,6 +16,11 @@ data ViewOpt = ViewOpt {
 
 runView :: ViewOpt -> Script ()
 runView opts = do
-   hist <- loadHistogram (viMaxAf opts) (viNrCalledSites opts) (viHistPath opts)
-   hist' <- hoistEither $ reduceIndices (viIndices opts) hist 
-   scriptIO $ print (combineIndices (viCombineIndices opts) hist')
+    hist <- scriptIO . liftM read $ readFile (viHistPath opts)
+    hist' <- hoistEither $ (transform <=< return) hist
+    scriptIO $ print hist'
+  where
+   transform = return . combineIndices (viCombineIndices opts)
+               <=< setNrCalledSites (viNrCalledSites opts)
+               <=< filterMaxAf (viMaxAf opts)
+               <=< reduceIndices (viIndices opts) 

@@ -1,6 +1,6 @@
 module RareAlleleHistogram (RareAlleleHistogram(..),
                             SitePattern(..),
-                            addHistograms,
+                            addHistograms, filterMaxAf, setNrCalledSites,
                             loadHistogram, reduceIndices, combineIndices) where
 
 import qualified Data.Map.Strict as Map
