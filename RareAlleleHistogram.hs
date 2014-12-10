@@ -103,8 +103,13 @@ combineIndices indices hist =
   where
     transformPattern Higher = Higher
     transformPattern (Pattern pattern) =
-        let newPattern = combineInPattern indices pattern
-        in  if sum newPattern > raMaxAf hist then Higher else Pattern newPattern
+        let newPattern = combineInPattern indices pattern 
+            maxAf = raMaxAf hist
+            tooHigh = if raGlobalMax hist then
+                          sum newPattern > raMaxAf hist
+                      else 
+                          any (>maxAf) newPattern
+        in  if tooHigh then Higher else Pattern newPattern
 
 combineInPattern :: [Int] -> [Int] -> [Int]
 combineInPattern indices pattern =
