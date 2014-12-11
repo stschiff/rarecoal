@@ -72,8 +72,8 @@ parseMaxAf = OP.option OP.auto $ OP.short 'm' <> OP.long "max_af"
 parseNrCalledSites :: OP.Parser Int64
 parseNrCalledSites = OP.option OP.auto $ OP.short 'N' <> OP.long "nr_called_sites"
                                                       <> OP.metavar "INT"
-                                                      <> OP.value 2064554803
-                                                      <> OP.help "set the nr of called sites (default:2064554803)"
+                                                      <> OP.value 0
+                                                      <> OP.help "set the nr of called sites"
 
 parseHistPath :: OP.Parser FilePath
 parseHistPath = OP.option OP.str $ OP.short 'i' <> OP.long "input"
