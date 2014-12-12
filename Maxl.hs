@@ -11,7 +11,7 @@ import Data.Int (Int64)
 import Core (defaultTimes,  ModelSpec(..), ModelEvent(..), EventType(..))
 import qualified Data.Vector.Unboxed as V
 import Control.Error (Script, scriptIO)
-import Control.Monad.Trans.Either (hoistEither)
+import Control.Monad.Trans.Either (hoistEither, left)
 
 data MaxlOpt = MaxlOpt {
    maTheta :: Double,
@@ -29,6 +29,9 @@ runMaxl opts = do
     modelTemplate <- scriptIO $ readModelTemplate (maTemplatePath opts) (maTheta opts) defaultTimes
     hist <- loadHistogram (maMaxAf opts) (maNrCalledSites opts) (maHistPath opts)
     modelSpec <- hoistEither $ instantiateModel modelTemplate (V.fromList $ maInitialParams opts)
+    let val = computeLikelihood modelSpec hist
+    scriptIO $ putStrLn $ "initital score = " ++ show val
+    when (isInfinite val) $ left "initial likelihood is Infinite"
     hoistEither $ validateModel modelSpec
     let k = length $ maInitialParams opts
         initialParams' = replicate k 1.0
@@ -60,12 +63,13 @@ minFunc :: ModelTemplate -> RareAlleleHistogram -> V.Vector Double -> Either Str
 minFunc modelTemplate hist params = do
     modelSpec <- instantiateModel modelTemplate params
     case validateModel modelSpec of
-        Right _ -> return $ -(computeLikelihood modelSpec hist)
+        Right _ -> return $ let val = computeLikelihood modelSpec hist
+                            in  if isInfinite val then penalty else -val
         Left _ -> return penalty
 
 validateModel :: ModelSpec -> Either String ()
 validateModel (ModelSpec _ _ events) = do
-    when (any (\p -> p < 0.001 || p > 100.0) [p | ModelEvent _ (SetPopSize _ p) <- events]) $ Left "illegal population sizes"
+    when (or [t < 0 | ModelEvent t _ <- events]) $ Left "Negative event times"
     let sortedEvents = sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) -> time1 `compare` time2) events
     checkEvents sortedEvents
   where

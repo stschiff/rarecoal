@@ -21,6 +21,6 @@ runView opts = do
     scriptIO $ print hist'
   where
    transform = return . combineIndices (viCombineIndices opts)
-               <=< setNrCalledSites (viNrCalledSites opts)
+               <=< if viNrCalledSites opts > 0 then setNrCalledSites (viNrCalledSites opts) else return
                <=< filterMaxAf (viMaxAf opts)
                <=< reduceIndices (viIndices opts) 

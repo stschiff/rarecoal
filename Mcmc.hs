@@ -9,11 +9,12 @@ import Control.Monad.Trans.State.Lazy (StateT, get, gets, put, evalStateT, modif
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad (when, replicateM, forM_)
-import Data.List (intercalate)
+import Data.List (intercalate, sort, minimumBy)
 import Control.Error (Script, scriptIO)
 import RareAlleleHistogram (loadHistogram)
 import Control.Monad.Trans.Either (hoistEither)
 import Data.Int (Int64)
+import Data.Ord (comparing)
 
 (!) = (V.!)
 (//) = (V.//)
@@ -149,17 +150,19 @@ reportPosteriorStats nrBurninCycles paramNames states = do
     let dim = V.length $ mcmcCurrentPoint (head states)
         points = map mcmcCurrentPoint . drop nrBurninCycles $ states
         scores = map mcmcCurrentValue . drop nrBurninCycles $ states
-        orderStats = [getOrderStats $ map (!i) points | i <- [0..dim-1]]
-        orderStatsScore = getOrderStats scores
+        minIndex = snd $ minimumBy (comparing fst) $ zip scores [0..]
+        orderStats = [getOrderStats minIndex $ map (!i) points | i <- [0..dim-1]]
+        orderStatsScore = getOrderStats minIndex scores
         paramLines = zipWith (\n s -> intercalate "\t" $ (n:map show s)) paramNames orderStats
         scoreLine = intercalate "\t" ("Score":map show orderStatsScore)
-        headerLine = "Param\tMedian\tLowerCI\tUpperCI"
+        headerLine = "Param\tMaxL\tMedian\tLowerCI\tUpperCI"
     putStr $ unlines (headerLine:scoreLine:paramLines)
   where
-    getOrderStats vals =
+    getOrderStats minI vals =
         let nPoints = fromIntegral $ length vals :: Double
             [lowCIindex, midIndex, highCIindex] = map (floor . (*nPoints)) [0.025, 0.5, 0.975]
-        in  map (vals!!) [lowCIindex, midIndex, highCIindex] 
+            sortedVals = sort vals
+        in  [vals!!minI] ++ map (sortedVals!!) [lowCIindex, midIndex, highCIindex] 
     
 reportTrace :: [String] -> [MCMCstate] -> FilePath -> IO ()
 reportTrace paramNames states traceFilePath = do

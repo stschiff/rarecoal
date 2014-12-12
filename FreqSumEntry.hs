@@ -1,5 +1,7 @@
 module FreqSumEntry (FreqSumEntry(..)) where
 
+import Data.List (intercalate)
+
 data FreqSumEntry = FreqSumEntry {
     fsChrom  :: String,
     fsPos    :: Int,
@@ -9,7 +11,7 @@ data FreqSumEntry = FreqSumEntry {
 }
 
 instance Show FreqSumEntry where
-    show (FreqSumEntry c p r a counts) = unwords $ [c, show p, [r], [a]] ++ map show counts
+    show (FreqSumEntry c p r a counts) = intercalate "\t" $ [c, show p, [r], [a]] ++ map show counts
 
 instance Read FreqSumEntry where
     readsPrec _ line =

@@ -1,21 +1,24 @@
 import qualified Data.Map.Strict as Map
 import Control.Applicative ((<$>), (<*>))
 import Data.Monoid (mempty, (<>))
-import RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..))
+import RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..), setNrCalledSites)
 import qualified Options.Applicative as OP
-import Pipes ((>->), runEffect)
+import Pipes ((>->))
 import qualified Pipes.Prelude as P
 import FreqSumEntry (FreqSumEntry(..))
 import Data.Int (Int64)
+import Control.Error.Script (scriptIO, runScript)
+import Control.Monad.Trans.Either (hoistEither)
 
-data MyOpts = MyOpts [Int] Int [Int]
+data MyOpts = MyOpts [Int] Int [Int] Int64
 
+main :: IO ()
 main = OP.execParser opts >>= runWithOptions
   where
     opts = OP.info (OP.helper <*> parser) mempty
 
 parser :: OP.Parser MyOpts
-parser = MyOpts <$> OP.argument OP.auto (OP.metavar "nVec")
+parser = MyOpts <$> OP.option OP.auto (OP.short 'n' <> OP.long "nVec" <> OP.metavar "nVec")
                 <*> OP.option OP.auto (OP.long "maxM"
                                        <> OP.short 'm'
                                        <> OP.metavar "INT"
@@ -28,12 +31,16 @@ parser = MyOpts <$> OP.argument OP.auto (OP.metavar "nVec")
                                        <> OP.value []
                                        <> OP.showDefault
                                        <> OP.help "Specify the exact populations for the histogram")
+                <*> OP.option OP.auto (OP.long "nrCalledSites" <> OP.short 'N'
+                                       <> OP.help "set the total nr of called sites")
 
 runWithOptions :: MyOpts -> IO ()
-runWithOptions (MyOpts nVec maxM popIndices) = do
+runWithOptions (MyOpts nVec maxM popIndices nrCalledSites) = runScript $ do
     let prod = P.stdinLn >-> P.map (mkPat maxM popIndices)
-    res <- P.fold insertPattern Map.empty id prod
-    putStr $ show $ RareAlleleHistogram (map (*2) $ selectFromList nVec popIndices) maxM False res
+    res <- scriptIO $ P.fold insertPattern Map.empty id prod
+    let hist = RareAlleleHistogram (map (*2) $ selectFromList nVec popIndices) maxM False res
+    hist' <- hoistEither $ setNrCalledSites nrCalledSites hist 
+    scriptIO $ putStr (show hist')
 
 mkPat :: Int -> [Int] -> String -> SitePattern
 mkPat maxM popIndices line =
