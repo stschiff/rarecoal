@@ -182,8 +182,8 @@ parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams
                        <*> parseHistPath <*> parseRandomSeed
   where
     parseRandomSeed = OP.option OP.auto $ OP.short 'S' <> OP.long "seed" <> OP.metavar "<INT>" <> OP.help "Random Seed"
-    parseNrBurninCycles = OP.option OP.auto $ OP.long "burnin" <> OP.short 'b' <> OP.value 2000 <> OP.metavar "<INT>"
+    parseNrBurninCycles = OP.option OP.auto $ OP.long "burnin" <> OP.short 'b' <> OP.value 200 <> OP.metavar "<INT>"
                                                                <> OP.help "nr of burnin cycles"
-    parseNrMainCycles = OP.option OP.auto $ OP.long "cycles" <> OP.short 'c' <> OP.value 10000 <> OP.metavar "<INT>"
+    parseNrMainCycles = OP.option OP.auto $ OP.long "cycles" <> OP.short 'c' <> OP.value 1000 <> OP.metavar "<INT>"
                                                                <> OP.help "nr of main MCMC cycles"
 
