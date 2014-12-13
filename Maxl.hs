@@ -30,7 +30,6 @@ runMaxl opts = do
     hist <- loadHistogram (maMaxAf opts) (maNrCalledSites opts) (maHistPath opts)
     modelSpec <- hoistEither $ instantiateModel modelTemplate (V.fromList $ maInitialParams opts)
     let val = computeLikelihood modelSpec hist
-    scriptIO $ putStrLn $ "initital score = " ++ show val
     when (isInfinite val) $ left "initial likelihood is Infinite"
     hoistEither $ validateModel modelSpec
     let k = length $ maInitialParams opts
