@@ -15,6 +15,7 @@ import RareAlleleHistogram (loadHistogram)
 import Control.Monad.Trans.Either (hoistEither)
 import Data.Int (Int64)
 import Data.Ord (comparing)
+import System.Log.Logger (infoM)
 
 (!) = (V.!)
 (//) = (V.//)
@@ -71,7 +72,7 @@ mcmcCycle posterior = do
     let c = mcmcNrCycles state
     modify (\s -> s {mcmcNrCycles = c + 1})
     when ((c + 1) `mod` 10 == 0) $ do
-        liftIO (print state)
+        liftIO (infoM "rarecoal" $ show state)
         forM_ [0..k-1] adaptStepWidths
     get >>= return
 
