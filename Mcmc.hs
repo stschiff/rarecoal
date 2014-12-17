@@ -30,6 +30,7 @@ data McmcOpt = McmcOpt {
    mcTracePath :: FilePath,
    mcMaxAf :: Int,
    mcNrCalledSites :: Int64,
+   mcIndices :: [Int],
    mcHistPath :: FilePath,
    mcRandomSeed :: Int
 }
@@ -47,7 +48,7 @@ data MCMCstate = MCMCstate {
 runMcmc :: McmcOpt -> Script ()
 runMcmc opts = do
     modelTemplate <- readModelTemplate (mcTemplatePath opts) (mcTheta opts) defaultTimes
-    hist <- loadHistogram (mcMaxAf opts) (mcNrCalledSites opts) (mcHistPath opts)
+    hist <- loadHistogram (mcIndices opts) (mcMaxAf opts) (mcNrCalledSites opts) (mcHistPath opts)
     modelSpec <- hoistEither $ instantiateModel modelTemplate (V.fromList $ mcInitialParams opts)
     hoistEither $ validateModel modelSpec
     let minFunc' = minFunc modelTemplate hist

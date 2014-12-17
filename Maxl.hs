@@ -21,13 +21,14 @@ data MaxlOpt = MaxlOpt {
    maTracePath :: FilePath,
    maMaxAf :: Int,
    maNrCalledSites :: Int64,
+   maIndices :: [Int],
    maHistPath :: FilePath
 }
 
 runMaxl :: MaxlOpt -> Script ()
 runMaxl opts = do
     modelTemplate <- readModelTemplate (maTemplatePath opts) (maTheta opts) defaultTimes
-    hist <- loadHistogram (maMaxAf opts) (maNrCalledSites opts) (maHistPath opts)
+    hist <- loadHistogram (maIndices opts) (maMaxAf opts) (maNrCalledSites opts) (maHistPath opts)
     modelSpec <- hoistEither $ instantiateModel modelTemplate (V.fromList $ maInitialParams opts)
     val <- hoistEither $ computeLikelihood modelSpec hist
     when (isInfinite val) $ left "initial likelihood is Infinite"

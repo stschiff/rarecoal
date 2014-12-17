@@ -2,15 +2,13 @@ module ModelTemplate (ModelTemplate(..), readModelTemplate, instantiateModel, ge
 
 import Data.String.Utils (replace)
 import Data.List.Split (splitOn)
-import Control.Monad (liftM)
-import Control.Applicative ((<$>), (<*>))
 import Control.Error (Script, scriptIO)
 import Control.Error.Safe (assertErr, readErr, justErr)
 import Control.Monad.Trans.Either (hoistEither, left, right)
 import Core (defaultTimes, ModelSpec(..), ModelEvent(..), EventType(..))
 import qualified Data.Vector.Unboxed as V
 import Text.Parsec.String (parseFromFile, Parser)
-import Text.Parsec.Char (char, string, newline, letter, oneOf, noneOf, space)
+import Text.Parsec.Char (char, newline, letter, oneOf, noneOf, space, alphaNum)
 import Text.Parsec (sepBy, many)
 
 data ModelTemplate = ModelTemplate {
@@ -54,7 +52,10 @@ parseParams = do
     return names
 
 parseParamName :: Parser String
-parseParamName = many letter
+parseParamName = do
+    s <- letter
+    s' <- many alphaNum
+    return (s:s')
 
 parseEvents :: Parser [EventTemplate]
 parseEvents = many $ do

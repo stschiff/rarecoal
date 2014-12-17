@@ -145,7 +145,7 @@ parseLogl = CmdLogl <$> parseLoglOpt
 parseLoglOpt :: OP.Parser LoglOpt
 parseLoglOpt = LoglOpt <$> parseSpectrumPath <*> parseTheta <*> parseTemplateFilePath <*> parseParams
                                  <*> parseModelEvents <*> parseMaxAf
-                                 <*> parseNrCalledSites <*> parseHistPath
+                                 <*> parseNrCalledSites <*> parseIndices <*> parseHistPath
 
 parseSpectrumPath :: OP.Parser FilePath
 parseSpectrumPath = OP.option OP.str $ OP.short 's' <> OP.long "spectrumFile"
@@ -160,7 +160,7 @@ parseMaxl = CmdMaxl <$> parseMaxlOpt
 parseMaxlOpt :: OP.Parser MaxlOpt
 parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams <*> parseMaxCycles
                        <*> parseTraceFilePath  <*> parseMaxAf
-                       <*> parseNrCalledSites <*> parseHistPath
+                       <*> parseNrCalledSites <*> parseIndices <*> parseHistPath
   where
     parseMaxCycles = OP.option OP.auto $ OP.short 'c' <> OP.long "maxCycles"
                                                       <> OP.metavar "<NR_MAX_CYCLES>"
@@ -179,6 +179,7 @@ parseMcmcOpt :: OP.Parser McmcOpt
 parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams
                        <*> parseNrCycles <*> parseTraceFilePath
                        <*> parseMaxAf <*> parseNrCalledSites
+                       <*> parseIndices
                        <*> parseHistPath <*> parseRandomSeed
   where
     parseRandomSeed = OP.option OP.auto $ OP.short 'S' <> OP.long "seed" <> OP.metavar "<INT>" <> OP.help "Random Seed"

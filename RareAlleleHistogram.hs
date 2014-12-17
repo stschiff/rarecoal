@@ -61,13 +61,13 @@ instance Read SitePattern where
         let val = if s == "HIGHER" then Higher else Pattern $ map read . splitOn "," $ s
         in  [(val, "")]
 
-loadHistogram :: Int -> Int64 -> FilePath -> Script RareAlleleHistogram
-loadHistogram maxAf nrCalledSites path = do
+loadHistogram :: [Int] -> Int -> Int64 -> FilePath -> Script RareAlleleHistogram
+loadHistogram indices maxAf nrCalledSites path = do
     scriptIO $ infoM "rarecoal" "Loading histogram ... "
     hist <- scriptIO $ liftM read $ readFile path
     scriptIO $ infoM "rarecoal" "... Done loading"
     let f = if nrCalledSites > 0 then setNrCalledSites nrCalledSites else return
-    hoistEither $ (f <=< filterMaxAf maxAf <=< return) hist
+    hoistEither $ (f <=< filterMaxAf maxAf <=< reduceIndices indices <=< return) hist
 
 setNrCalledSites :: Int64 -> RareAlleleHistogram -> Either String RareAlleleHistogram
 setNrCalledSites nrCalledSites hist = do

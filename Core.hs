@@ -61,9 +61,10 @@ getProb modelSpec nVec config = do
         ics = makeInitCoalState nVec config
         (_, fcs) = execState (mapM_ singleStep timeSteps) (ims, ics)
         combFac = product $ zipWith choose nVec config
-    assertErr "Overflow Error in getProb" $ combFac > 0
+        err = "Overflow Error in getProb for nVec=" ++ show nVec ++ ", kVec=" ++ show config
+    assertErr err $ combFac > 0
     --trace (show $ combFac) $ return ()
-    return $ csD fcs * mTheta modelSpec * fromIntegral combFac
+    return $ csD fcs * mTheta modelSpec * combFac
 
 makeInitModelState :: ModelSpec -> Int -> ModelState
 makeInitModelState (ModelSpec _ _ events) k =
@@ -194,11 +195,14 @@ validateModel (ModelSpec _ _ events) = do
             then Left "Illegal joins"
             else checkEvents rest
     checkEvents (ModelEvent _ (SetPopSize _ p):rest) =
-        if p < 0.001 then Left "illegal populaton sizes" else checkEvents rest
+        if p < 0.001 then Left $ "Illegal populaton size: " ++ show p else checkEvents rest
     checkEvents (ModelEvent _ (SetGrowthRate _ r):rest) =
         if abs r  > 1000.0 then Left "Illegal growth rates" else checkEvents rest
 
-choose :: Int -> Int -> Int64
+choose :: Int -> Int -> Double
 choose _ 0 = 1
-choose 0 _ = 0
-choose n k = choose (n-1) (k-1) * (fromIntegral $ n `div` k )
+choose n k = product [(fromIntegral $ n + 1 - j) / fromIntegral j | j <- [1..k]]
+
+--chooseLog :: Int -> Int -> Double
+--chooseLog _ 0 = 0
+--chooseLog n k = sum [(log . fromIntegral $ n + 1 - j) - log $ fromIntegral j | j <- [1..k]]

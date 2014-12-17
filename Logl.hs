@@ -17,13 +17,14 @@ data LoglOpt = LoglOpt {
    loModelEvents :: [ModelEvent],
    loMaxAf :: Int,
    loNrCalledSites :: Int64,
+   loIndices :: [Int],
    loHistPath :: FilePath
 }
 
 runLogl :: LoglOpt -> Script ()
 runLogl opts = do
     modelSpec <- getModelSpec (loTemplatePath opts) (loTheta opts) (loParams opts) (loModelEvents opts)
-    hist <- loadHistogram (loMaxAf opts) (loNrCalledSites opts) (loHistPath opts)
+    hist <- loadHistogram (loIndices opts) (loMaxAf opts) (loNrCalledSites opts) (loHistPath opts)
     val <- hoistEither $ computeLikelihood modelSpec hist
     scriptIO $ print val
     writeSpectrumFile (loSpectrumPath opts) modelSpec hist
