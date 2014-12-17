@@ -1,10 +1,12 @@
 module Core (defaultTimes, getProb, update, validateModel, ModelEvent(..), EventType(..), ModelSpec(..)) where
 
-import Math.Combinatorics.Exact.Binomial (choose)
 import Control.Monad.Trans.State.Lazy (State, get, put, execState)
 import Data.List (sortBy)
+import Debug.Trace (trace)
 import Control.Monad (when)
 import qualified Data.Vector.Unboxed as V
+import Data.Int (Int64)
+import Control.Error.Safe (assertErr)
 
 (!) :: V.Vector Double -> Int -> Double
 (!) = (V.!)
@@ -58,7 +60,10 @@ getProb modelSpec nVec config = do
         ims = makeInitModelState modelSpec (length nVec)
         ics = makeInitCoalState nVec config
         (_, fcs) = execState (mapM_ singleStep timeSteps) (ims, ics)
-    return $ csD fcs * mTheta modelSpec * fromIntegral (product $ zipWith choose nVec config)
+        combFac = product $ zipWith choose nVec config
+    assertErr "Overflow Error in getProb" $ combFac > 0
+    trace (show $ combFac) $ return ()
+    return $ csD fcs * mTheta modelSpec * fromIntegral combFac
 
 makeInitModelState :: ModelSpec -> Int -> ModelState
 makeInitModelState (ModelSpec _ _ events) k =
@@ -76,8 +81,9 @@ makeInitCoalState nVec config =
 
 singleStep :: Double -> State (ModelState, CoalState) ()
 singleStep nextTime = do
-    (ms, _) <- get
-    -- when (nextTime < 0.0002) $ trace (show nextTime ++ " " ++ show (msT ms) ++ " " ++ show (msPopSize ms) ++ " " ++ show (csA cs)) (return ())
+    (ms, cs) <- get
+    --when (nextTime < 0.0002) $ trace (show nextTime ++ " " ++ show (msT ms) ++ " " ++ show (csA cs) ++ " " ++ show (csB cs)) (return ())
+    --trace (show (msT ms) ++ " " ++ show (V.toList $ csA cs) ++ " " ++ show (map V.toList $ csB cs) ++ show (csD cs)) (return ())
     let events = msEventQueue ms
         ModelEvent t _ = if null events then ModelEvent (1.0/0.0) undefined else head events
     if  t < nextTime then do
@@ -192,4 +198,7 @@ validateModel (ModelSpec _ _ events) = do
     checkEvents (ModelEvent _ (SetGrowthRate _ r):rest) =
         if abs r  > 1000.0 then Left "Illegal growth rates" else checkEvents rest
 
-
+choose :: Int -> Int -> Int64
+choose _ 0 = 1
+choose 0 _ = 0
+choose n k = choose (n-1) (k-1) * (fromIntegral $ n `div` k )
