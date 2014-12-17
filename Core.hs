@@ -62,7 +62,7 @@ getProb modelSpec nVec config = do
         (_, fcs) = execState (mapM_ singleStep timeSteps) (ims, ics)
         combFac = product $ zipWith choose nVec config
     assertErr "Overflow Error in getProb" $ combFac > 0
-    trace (show $ combFac) $ return ()
+    --trace (show $ combFac) $ return ()
     return $ csD fcs * mTheta modelSpec * fromIntegral combFac
 
 makeInitModelState :: ModelSpec -> Int -> ModelState
