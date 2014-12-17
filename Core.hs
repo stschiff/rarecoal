@@ -1,8 +1,9 @@
-module Core (defaultTimes, getProb, update, ModelEvent(..), EventType(..), ModelSpec(..)) where
+module Core (defaultTimes, getProb, update, validateModel, ModelEvent(..), EventType(..), ModelSpec(..)) where
 
 import Math.Combinatorics.Exact.Binomial (choose)
 import Control.Monad.Trans.State.Lazy (State, get, put, execState)
 import Data.List (sortBy)
+import Control.Monad (when)
 import qualified Data.Vector.Unboxed as V
 
 (!) :: V.Vector Double -> Int -> Double
@@ -50,13 +51,14 @@ getTimeSteps n0 lingen tMax =
     getTimeStep alpha nr_steps i =
         alpha * exp (fromIntegral i / fromIntegral nr_steps * log (1.0 + tMax / alpha)) - alpha
 
-getProb :: ModelSpec -> [Int] -> [Int] -> Double
-getProb modelSpec nVec config =
+getProb :: ModelSpec -> [Int] -> [Int] -> Either String Double
+getProb modelSpec nVec config = do
+    validateModel modelSpec
     let timeSteps = mTimeSteps modelSpec
         ims = makeInitModelState modelSpec (length nVec)
         ics = makeInitCoalState nVec config
         (_, fcs) = execState (mapM_ singleStep timeSteps) (ims, ics)
-    in  csD fcs * mTheta modelSpec * fromIntegral (product $ zipWith choose nVec config)
+    return $ csD fcs * mTheta modelSpec * fromIntegral (product $ zipWith choose nVec config)
 
 makeInitModelState :: ModelSpec -> Int -> ModelState
 makeInitModelState (ModelSpec _ _ events) k =
@@ -173,5 +175,21 @@ updateModelState deltaT = do
         growthRates = msGrowthRates ms
         popSize' = zipWith (\p r -> p * exp(-r * deltaT)) popSize growthRates
     put (ms {msT = t + deltaT, msPopSize = popSize'}, cs)
+
+validateModel :: ModelSpec -> Either String ()
+validateModel (ModelSpec _ _ events) = do
+    when (or [t < 0 | ModelEvent t _ <- events]) $ Left "Negative event times"
+    let sortedEvents = sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) -> time1 `compare` time2) events
+    checkEvents sortedEvents
+  where
+    checkEvents [] = Right ()
+    checkEvents (ModelEvent _ (Join k l):rest) =
+        if k == l || or [k' == l || l' == l | ModelEvent _ (Join k' l') <- rest]
+            then Left "Illegal joins"
+            else checkEvents rest
+    checkEvents (ModelEvent _ (SetPopSize _ p):rest) =
+        if p < 0.001 then Left "illegal populaton sizes" else checkEvents rest
+    checkEvents (ModelEvent _ (SetGrowthRate _ r):rest) =
+        if abs r  > 1000.0 then Left "Illegal growth rates" else checkEvents rest
 
 

@@ -1,10 +1,10 @@
 module Mcmc (runMcmc, McmcOpt(..)) where
 
 import ModelTemplate (ModelTemplate(..), instantiateModel, readModelTemplate)
-import Core (defaultTimes)
+import Core (defaultTimes, validateModel)
 import qualified Data.Vector.Unboxed as V
 import qualified System.Random as R
-import Maxl (minFunc, validateModel)
+import Maxl (minFunc)
 import Control.Monad.Trans.State.Lazy (StateT, get, gets, put, evalStateT, modify)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.IO.Class (liftIO)

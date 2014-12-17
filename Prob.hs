@@ -3,6 +3,7 @@ module Prob (runProb, ProbOpt(..)) where
 import ModelTemplate (getModelSpec)
 import Core (getProb, ModelEvent(..))
 import Control.Error (Script, scriptIO)
+import Control.Monad.Trans.Either (hoistEither)
 
 data ProbOpt = ProbOpt {
     prTheta :: Double,
@@ -16,5 +17,5 @@ data ProbOpt = ProbOpt {
 runProb :: ProbOpt -> Script ()
 runProb opts = do
     modelSpec <- getModelSpec (prTemplatePath opts) (prTheta opts) (prParams opts) (prModelEvents opts)
-    scriptIO $ print $ getProb modelSpec (prNvec opts) (prKvec opts)
-    
+    val <- hoistEither $ getProb modelSpec (prNvec opts) (prKvec opts)
+    scriptIO $ print val     
