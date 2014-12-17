@@ -35,7 +35,8 @@ executable rarecoal
                        random >= 1.0.1 && < 1.0.2,
                        transformers,
                        errors,
-                       tagged < 0.7.3
+                       tagged < 0.7.3,
+                       parsec
   -- hs-source-dirs:      
   default-language:    Haskell2010
   ghc-options:         -fno-ignore-asserts -O2 -rtsopts -threaded -with-rtsopts=-A10m -L/usr/lib

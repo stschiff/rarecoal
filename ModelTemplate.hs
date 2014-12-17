@@ -1,46 +1,132 @@
-module ModelTemplate (ModelEvent(..), EventType(..), ModelSpec(..), ModelTemplate(..), instantiateModel, readModelTemplate, getModelSpec) where
+module ModelTemplate (ModelTemplate(..), readModelTemplate, instantiateModel, getModelSpec) where
 
 import Data.String.Utils (replace)
 import Data.List.Split (splitOn)
 import Control.Monad (liftM)
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), (<*>))
 import Control.Error (Script, scriptIO)
-import Control.Monad.Trans.Either (hoistEither)
+import Control.Error.Safe (assertErr, readErr, justErr)
+import Control.Monad.Trans.Either (hoistEither, left, right)
 import Core (defaultTimes, ModelSpec(..), ModelEvent(..), EventType(..))
 import qualified Data.Vector.Unboxed as V
+import Text.Parsec.String (parseFromFile, Parser)
+import Text.Parsec.Char (char, string, newline, letter, oneOf, noneOf, space)
+import Text.Parsec (sepBy, many)
 
 data ModelTemplate = ModelTemplate {
     mtParams :: [String],
     mtTheta :: Double,
     mtTimeSteps :: [Double],
-    mtBody :: String
+    mtEventTemplates :: [EventTemplate],
+    mtConstraintTemplates :: [ConstraintTemplate]
 }
+
+data EventTemplate = EventTemplate {
+    etType :: Char,
+    etBody :: String
+}
+
+data ConstraintTemplate = ConstraintTemplate {
+    ctName1 :: String,
+    ctComp :: Char,
+    ctName2 :: String
+}
+
+readModelTemplate :: FilePath -> Double -> [Double] -> Script ModelTemplate
+readModelTemplate path theta timeSteps = do
+    parseResult <- scriptIO $ parseFromFile parseModelTemplate path
+    (names, events, constraints) <- case parseResult of
+        Left p -> left $ show p
+        Right p -> right p
+    return $ ModelTemplate names theta timeSteps events constraints
+
+parseModelTemplate :: Parser ([String], [EventTemplate], [ConstraintTemplate])
+parseModelTemplate = do
+    params <- parseParams
+    events <- parseEvents
+    constrains <- parseConstraints
+    return (params, events, constrains)
+
+parseParams :: Parser [String]
+parseParams = do
+    names <- sepBy parseParamName (char ',')
+    newline
+    return names
+
+parseParamName :: Parser String
+parseParamName = many letter
+
+parseEvents :: Parser [EventTemplate]
+parseEvents = many $ do
+    eChar <- oneOf "PJR"
+    space
+    eBody <- parseLine
+    newline
+    return $ EventTemplate eChar eBody
+
+parseLine = many $ noneOf "\n"
+
+parseConstraints :: Parser [ConstraintTemplate]
+parseConstraints = many $ do
+    char 'C'
+    space
+    name1 <- parseParamName
+    comp <- oneOf "<>"
+    name2 <- parseParamName
+    return $ ConstraintTemplate name1 comp name2
+
+instantiateModel :: ModelTemplate -> V.Vector Double -> Either String ModelSpec
+instantiateModel (ModelTemplate pNames theta timeSteps ets cts) params = do
+    let params' = V.toList params
+    events <- mapM (instantiateEvent pNames params') ets
+    validated <- sequence $ [validateConstraint pNames params' c | c <- cts]
+    assertErr "Constraints not satisfied" $ and validated
+    return $ ModelSpec timeSteps theta events
+
+instantiateEvent :: [String] -> [Double] -> EventTemplate -> Either String ModelEvent
+instantiateEvent pnames params (EventTemplate et body) = do
+    newB <- substituteParams pnames params body
+    let fields = splitOn "," newB
+        t = read . head $ fields
+        err = "Illegal Modeltemplate statement, or undefined parameter in \"" ++ body ++ "\""
+    case et of
+        'P' -> do
+            k <- readErr err $ fields!!1
+            p <- readErr err $ fields!!2
+            return $ ModelEvent t (SetPopSize k p)
+        'R' -> do
+            k <- readErr err $ fields!!1
+            r <- readErr err $ fields!!2
+            return $ ModelEvent t (SetGrowthRate k r)
+        'J' -> do
+            k <- readErr err $ fields!!1
+            l <- readErr err $ fields!!2
+            return $ ModelEvent t (Join k l)
+
+validateConstraint :: [String] -> [Double] -> ConstraintTemplate -> Either String Bool
+validateConstraint pNames params (ConstraintTemplate name1 comp name2) = do
+    let l = zip pNames params
+    p1 <- justErr ("Undefined parameter in constraint: \"" ++ name1 ++ "\"") $ lookup name1 l
+    p2 <- justErr ("Undefined parameter in constraint: \"" ++ name2 ++ "\"") $ lookup name2 l
+    if comp == '<' then
+        return $ p1 < p2
+    else
+        return $ p1 > p2
+
+substituteParams :: [String] -> [Double] -> String -> Either String String
+substituteParams [] [] s = Right s
+substituteParams (name:names) (p:ps) s =
+    let newS = replace ("<" ++ name ++ ">") (show p) s
+    in  substituteParams names ps newS
+substituteParams _ _ _ = Left "wrong number of params for modelTemplate"
 
 getModelSpec :: FilePath -> Double -> [Double] -> [ModelEvent] -> Script ModelSpec
 getModelSpec path theta params events =
     if path /= "/dev/null" then do
-        template <- scriptIO $ readModelTemplate path theta defaultTimes                    
+        template <- readModelTemplate path theta defaultTimes                    
         hoistEither $ instantiateModel template (V.fromList params)
     else
         return $ ModelSpec defaultTimes theta events
-
-
-readModelTemplate ::  FilePath -> Double -> [Double] -> IO ModelTemplate
-readModelTemplate path theta timeSteps = do
-    (pL:bL) <- liftM lines . readFile $ path
-    let names = splitOn "," pL
-    return $ ModelTemplate names theta timeSteps (unlines bL)
-
-instantiateModel :: ModelTemplate -> V.Vector Double -> Either String ModelSpec
-instantiateModel (ModelTemplate pNames theta timeSteps body) params = do
-    body' <- substituteParams pNames (V.toList params) body
-    ModelSpec timeSteps theta <$> parseBody body'
-  where
-    substituteParams [] [] b = Right b
-    substituteParams (name:names) (p:ps) b =
-        let newB = replace ("<" ++ name ++ ">") (show p) b
-        in  substituteParams names ps newB
-    substituteParams _ _ _ = Left "wrong number of params for modelTemplate"
 
 parseBody :: String -> Either String [ModelEvent]
 parseBody body = mapM parseEvent $ lines body

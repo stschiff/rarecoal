@@ -26,45 +26,37 @@ data MaxlOpt = MaxlOpt {
 
 runMaxl :: MaxlOpt -> Script ()
 runMaxl opts = do
-    modelTemplate <- scriptIO $ readModelTemplate (maTemplatePath opts) (maTheta opts) defaultTimes
+    modelTemplate <- readModelTemplate (maTemplatePath opts) (maTheta opts) defaultTimes
     hist <- loadHistogram (maMaxAf opts) (maNrCalledSites opts) (maHistPath opts)
     modelSpec <- hoistEither $ instantiateModel modelTemplate (V.fromList $ maInitialParams opts)
     let val = computeLikelihood modelSpec hist
     when (isInfinite val) $ left "initial likelihood is Infinite"
     hoistEither $ validateModel modelSpec
-    let k = length $ maInitialParams opts
-        initialParams' = replicate k 1.0
-        scalingFactors = V.fromList $ maInitialParams opts
-        minFunc' = either (const penalty) id . minFunc modelTemplate hist . unscaleParams scalingFactors . V.fromList
-        (minResult, trace) = minimize NMSimplex2 1.0e-8 (maMaxCycles opts) [0.01 | _ <- [0..k-1]] minFunc' initialParams'
-        minResult' = unscaleParams scalingFactors (V.fromList minResult)
-        trace' = scaleTraceMatrix scalingFactors trace
-    scriptIO $ reportMaxResult modelTemplate minResult'
+    let minFunc' = either (const penalty) id . minFunc modelTemplate hist . V.fromList
+        stepWidths = [max 1.0e-8 $ abs (0.01 * p) | p <- maInitialParams opts]
+        (minResult, trace) = minimize NMSimplex2 1.0e-8 (maMaxCycles opts) stepWidths minFunc' (maInitialParams opts)
+        minScore = minFunc' minResult
+        trace' = map toList $ toRows trace
+    scriptIO $ reportMaxResult modelTemplate (V.fromList minResult) minScore
     scriptIO $ reportTrace modelTemplate trace' (maTracePath opts)
-  where
-    scaleTraceMatrix factors t = 
-        let rows = toRows t
-            factors' = V.fromList $ [1.0, 1.0, 1.0] ++ V.toList factors
-        in  [V.zipWith (*) (V.fromList . toList $ row) factors' | row <- rows]
-    unscaleParams = V.zipWith (*)
 
-reportMaxResult :: ModelTemplate -> V.Vector Double -> IO ()
-reportMaxResult modelTemplate result =
+reportMaxResult :: ModelTemplate -> V.Vector Double -> Double -> IO ()
+reportMaxResult modelTemplate result minScore = do
+    putStrLn $ "Score\t" ++ show minScore
     putStr $ unlines $ zipWith (\p v -> p ++ "\t" ++ show v) (mtParams modelTemplate) (V.toList result)
 
-reportTrace :: ModelTemplate -> [V.Vector Double] -> FilePath -> IO ()
+reportTrace :: ModelTemplate -> [[Double]] -> FilePath -> IO ()
 reportTrace modelTemplate trace path = do
     let header = intercalate "\t" $ ["Nr", "-Log-Likelihood", "Simplex size"] ++ mtParams modelTemplate
-        body = unlines [intercalate "\t" [show val | val <- V.toList row] | row <- trace]
+        body = unlines [intercalate "\t" [show val | val <- row] | row <- trace]
     writeFile path $ header ++ "\n" ++ body
 
 minFunc :: ModelTemplate -> RareAlleleHistogram -> V.Vector Double -> Either String Double
 minFunc modelTemplate hist params = do
     modelSpec <- instantiateModel modelTemplate params
-    case validateModel modelSpec of
-        Right _ -> return $ let val = computeLikelihood modelSpec hist
-                            in  if isInfinite val then penalty else -val
-        Left _ -> return penalty
+    validateModel modelSpec
+    let val = computeLikelihood modelSpec hist
+    if isInfinite val then return penalty else return (-val)
 
 validateModel :: ModelSpec -> Either String ()
 validateModel (ModelSpec _ _ events) = do
@@ -78,7 +70,7 @@ validateModel (ModelSpec _ _ events) = do
             then Left "Illegal joins"
             else checkEvents rest
     checkEvents (ModelEvent _ (SetPopSize _ p):rest) =
-        if p < 0.001 || p > 100.0 then Left "illegal populaton sizes" else checkEvents rest
+        if p < 0.001 then Left "illegal populaton sizes" else checkEvents rest
     checkEvents (ModelEvent _ (SetGrowthRate _ r):rest) =
         if abs r  > 1000.0 then Left "Illegal growth rates" else checkEvents rest
 

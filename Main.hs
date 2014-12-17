@@ -23,7 +23,7 @@ main = run =<< OP.execParser (parseOptions `withInfo` "Rarecoal: Implementation 
 run :: Options -> IO ()
 run (Options cmdOpts) = runScript $ do
     scriptIO $ updateGlobalLogger "rarecoal" (setLevel INFO)
-    currentT <- scriptIO $ getCurrentTime
+    currentT <- scriptIO getCurrentTime
     scriptIO $ infoM "rarecoal" $ "Starting at " ++ show currentT
     case cmdOpts of
         CmdView opts -> runView opts
@@ -177,13 +177,11 @@ parseMcmc = CmdMcmc <$> parseMcmcOpt
 
 parseMcmcOpt :: OP.Parser McmcOpt
 parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams
-                       <*> parseNrBurninCycles <*> parseNrMainCycles <*> parseTraceFilePath
+                       <*> parseNrCycles <*> parseTraceFilePath
                        <*> parseMaxAf <*> parseNrCalledSites
                        <*> parseHistPath <*> parseRandomSeed
   where
     parseRandomSeed = OP.option OP.auto $ OP.short 'S' <> OP.long "seed" <> OP.metavar "<INT>" <> OP.help "Random Seed"
-    parseNrBurninCycles = OP.option OP.auto $ OP.long "burnin" <> OP.short 'b' <> OP.value 200 <> OP.metavar "<INT>"
-                                                               <> OP.help "nr of burnin cycles"
-    parseNrMainCycles = OP.option OP.auto $ OP.long "cycles" <> OP.short 'c' <> OP.value 1000 <> OP.metavar "<INT>"
-                                                               <> OP.help "nr of main MCMC cycles"
+    parseNrCycles = OP.option OP.auto $ OP.long "cycles" <> OP.short 'c' <> OP.value 2000 <> OP.metavar "<INT>"
+                                                               <> OP.help "nr of MCMC cycles"
 
