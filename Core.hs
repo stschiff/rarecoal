@@ -195,7 +195,7 @@ validateModel (ModelSpec _ _ events) = do
             then Left "Illegal joins"
             else checkEvents rest
     checkEvents (ModelEvent _ (SetPopSize _ p):rest) =
-        if p < 0.001 then Left $ "Illegal populaton size: " ++ show p else checkEvents rest
+        if p < 0.001 || p > 1000 then Left $ "Illegal populaton size: " ++ show p else checkEvents rest
     checkEvents (ModelEvent _ (SetGrowthRate _ r):rest) =
         if abs r  > 1000.0 then Left "Illegal growth rates" else checkEvents rest
 
