@@ -106,7 +106,7 @@ performEvent = do
             put (ModelState t' (tail events) popSize growthRates, cs')
         SetPopSize k p -> do
             let popSize' = update k p popSize
-                growthRates' = replicate (length growthRates) 0.0
+                growthRates' = update k 0.0 growthRates
             put (ModelState t' (tail events) popSize' growthRates', cs)
         SetGrowthRate k r -> do
             let growthRates' = update k r growthRates
