@@ -1,12 +1,11 @@
 module Mcmc (runMcmc, McmcOpt(..)) where
 
-import ModelTemplate (ModelTemplate(..), instantiateModel, readModelTemplate)
-import Core (defaultTimes, validateModel)
+import ModelTemplate (ModelTemplate(..), readModelTemplate)
+import Core (defaultTimes) 
 import qualified Data.Vector.Unboxed as V
 import qualified System.Random as R
-import Maxl (minFunc)
+import Maxl (minFunc, penalty)
 import Control.Monad.Trans.State.Lazy (StateT, get, gets, put, evalStateT, modify)
-import Control.Monad.Trans.Class (lift)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad (when, replicateM, forM_)
 import Data.List (intercalate, sort, minimumBy)
@@ -49,11 +48,10 @@ runMcmc :: McmcOpt -> Script ()
 runMcmc opts = do
     modelTemplate <- readModelTemplate (mcTemplatePath opts) (mcTheta opts) defaultTimes
     hist <- loadHistogram (mcIndices opts) (mcMaxAf opts) (mcNrCalledSites opts) (mcHistPath opts)
-    modelSpec <- hoistEither $ instantiateModel modelTemplate (V.fromList $ mcInitialParams opts)
-    hoistEither $ validateModel modelSpec
-    let minFunc' = minFunc modelTemplate hist
+    _ <- hoistEither $ minFunc modelTemplate hist (V.fromList $ mcInitialParams opts)
+    let minFunc' = either (const penalty) id . minFunc modelTemplate hist
         params = V.fromList $ mcInitialParams opts
-    initV <- hoistEither $ minFunc' params
+    let initV = minFunc' params
     let stepWidths = V.map (\p -> max 1.0e-8 $ abs p / 100.0) params
         successRates = V.replicate (V.length params) 0.44
         ranGen = R.mkStdGen $ mcRandomSeed opts 
@@ -62,7 +60,7 @@ runMcmc opts = do
     scriptIO $ reportPosteriorStats (mtParams modelTemplate) states
     scriptIO $ reportTrace (mtParams modelTemplate) states (mcTracePath opts)
 
-mcmcCycle :: (V.Vector Double -> Either String Double) -> StateT MCMCstate Script MCMCstate
+mcmcCycle :: (V.Vector Double -> Double) -> StateT MCMCstate Script MCMCstate
 mcmcCycle posterior = do
     state <- get
     let k = V.length $ mcmcCurrentPoint state
@@ -85,10 +83,10 @@ shuffle rng r =
         (rest, rng'') = shuffle rng' [v | (v, i) <- zip r [0..], i /= ran]
     in  (val:rest, rng'')
 
-updateMCMC :: (V.Vector Double -> Either String Double) -> Int -> StateT MCMCstate Script MCMCstate
+updateMCMC :: (V.Vector Double -> Double) -> Int -> StateT MCMCstate Script MCMCstate
 updateMCMC posterior i = do
     newPoint <- propose i
-    newVal <- lift . hoistEither . posterior $ newPoint
+    let newVal = posterior newPoint
     success <- isSuccessFul newVal
     if success
         then accept newPoint newVal i

@@ -1,4 +1,4 @@
-module Maxl (minFunc, runMaxl, MaxlOpt(..)) where
+module Maxl (minFunc, penalty, runMaxl, MaxlOpt(..)) where
 
 import RareAlleleHistogram (RareAlleleHistogram, loadHistogram)
 import Logl (computeLikelihood)
@@ -6,12 +6,12 @@ import Numeric.LinearAlgebra.Data (toRows, toList)
 import Numeric.GSL.Minimization (minimize, MinimizeMethod(..))
 import ModelTemplate (ModelTemplate(..), instantiateModel, readModelTemplate)
 import Data.List (intercalate)
-import Control.Monad (when)
 import Data.Int (Int64)
-import Core (defaultTimes,  validateModel)
+import Core (defaultTimes)
 import qualified Data.Vector.Unboxed as V
 import Control.Error (Script, scriptIO)
-import Control.Monad.Trans.Either (hoistEither, left)
+import Control.Error.Safe (assertErr)
+import Control.Monad.Trans.Either (hoistEither)
 
 data MaxlOpt = MaxlOpt {
    maTheta :: Double,
@@ -29,10 +29,7 @@ runMaxl :: MaxlOpt -> Script ()
 runMaxl opts = do
     modelTemplate <- readModelTemplate (maTemplatePath opts) (maTheta opts) defaultTimes
     hist <- loadHistogram (maIndices opts) (maMaxAf opts) (maNrCalledSites opts) (maHistPath opts)
-    modelSpec <- hoistEither $ instantiateModel modelTemplate (V.fromList $ maInitialParams opts)
-    val <- hoistEither $ computeLikelihood modelSpec hist
-    when (isInfinite val) $ left "initial likelihood is Infinite"
-    hoistEither $ validateModel modelSpec
+    _ <- hoistEither $ minFunc modelTemplate hist (V.fromList $ maInitialParams opts)
     let minFunc' = either (const penalty) id . minFunc modelTemplate hist . V.fromList
         stepWidths = [max 1.0e-8 $ abs (0.01 * p) | p <- maInitialParams opts]
         (minResult, trace) = minimize NMSimplex2 1.0e-8 (maMaxCycles opts) stepWidths minFunc' (maInitialParams opts)
@@ -56,7 +53,8 @@ minFunc :: ModelTemplate -> RareAlleleHistogram -> V.Vector Double -> Either Str
 minFunc modelTemplate hist params = do
     modelSpec <- instantiateModel modelTemplate params
     val <- computeLikelihood modelSpec hist
-    if isInfinite val then return penalty else return (-val)
+    assertErr "likelihood infinite" $ not (isInfinite val || isNaN val)
+    return (-val)
 
 penalty :: Double
 penalty = 1.0e20
