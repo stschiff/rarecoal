@@ -157,7 +157,7 @@ reportPosteriorStats paramNames states = do
         orderStatsScore = getOrderStats minIndex scores
         paramLines = zipWith (\n s -> intercalate "\t" (n:map show s)) paramNames orderStats
         scoreLine = intercalate "\t" ("Score":map show orderStatsScore)
-        headerLine = "Param\tMaxL\tMedian\tLowerCI\tUpperCI"
+        headerLine = "Param\tMaxL\tLowerCI\tMedian\tUpperCI"
     putStrLn $ "# Nr Burnin Cycles: " ++ show nrBurninCycles
     putStr $ unlines (headerLine:scoreLine:paramLines)
   where
