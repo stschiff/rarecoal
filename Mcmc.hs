@@ -7,7 +7,7 @@ import qualified System.Random as R
 import Maxl (minFunc, penalty)
 import Control.Monad.Trans.State.Lazy (StateT, get, gets, put, evalStateT, modify)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad (when, replicateM, forM_)
+import Control.Monad (when, forM_)
 import Data.List (intercalate, sort, minimumBy)
 import Control.Error (Script, scriptIO)
 import RareAlleleHistogram (loadHistogram)
@@ -15,6 +15,7 @@ import Control.Monad.Trans.Either (hoistEither)
 import Data.Int (Int64)
 import Data.Ord (comparing)
 import System.Log.Logger (infoM)
+import Control.Monad.Loops (whileM)
 
 (!) :: V.Vector Double -> Int -> Double 
 (!) = (V.!)
@@ -41,7 +42,8 @@ data MCMCstate = MCMCstate {
     mcmcCurrentPoint :: V.Vector Double,
     mcmcStepWidths :: V.Vector Double,
     mcmcSuccesRate :: V.Vector Double,
-    mcmcRanGen :: R.StdGen
+    mcmcRanGen :: R.StdGen,
+    mcmcScoreList :: [Double]
 } deriving (Show)
 
 runMcmc :: McmcOpt -> Script ()
@@ -55,23 +57,41 @@ runMcmc opts = do
     let stepWidths = V.map (\p -> max 1.0e-8 $ abs p / 100.0) params
         successRates = V.replicate (V.length params) 0.44
         ranGen = R.mkStdGen $ mcRandomSeed opts 
-        initState = MCMCstate 0 0 initV params stepWidths successRates ranGen
-    states <- evalStateT (replicateM (mcNrCycles opts) (mcmcCycle minFunc')) initState
+        initState = MCMCstate 0 0 initV params stepWidths successRates ranGen []
+        pred_ = mcmcNotDone (mcNrCycles opts)
+        act = mcmcCycle minFunc'
+    states <- evalStateT (whileM pred_ act) initState
     scriptIO $ reportPosteriorStats (mtParams modelTemplate) states
     scriptIO $ reportTrace (mtParams modelTemplate) states (mcTracePath opts)
+
+mcmcNotDone :: Int -> StateT MCMCstate Script Bool
+mcmcNotDone requiredCycles = do
+    state <- get
+    let nrCycles = mcmcNrCycles state
+    if nrCycles < requiredCycles then return True else
+        let scoreValues = reverse $ mcmcScoreList state
+            nrBurnins = computeBurninCycles scoreValues
+        in  if nrCycles - nrBurnins > requiredCycles then return False else return True 
+
+computeBurninCycles :: [Double] -> Int
+computeBurninCycles s =
+    let scoreBound = minimum s + 10.0
+    in  fst . head . filter ((<scoreBound) . snd) $ zip [0..] s
 
 mcmcCycle :: (V.Vector Double -> Double) -> StateT MCMCstate Script MCMCstate
 mcmcCycle posterior = do
     state <- get
-    let k = V.length $ mcmcCurrentPoint state
+    let c = mcmcNrCycles state
+        scoreValues = mcmcScoreList state
+        k = V.length $ mcmcCurrentPoint state
         rng = mcmcRanGen state
         (order, rng') = shuffle rng [0..k-1]
     modify (\s -> s {mcmcRanGen = rng'})
     mapM_ (updateMCMC posterior) order
-    let c = mcmcNrCycles state
-    modify (\s -> s {mcmcNrCycles = c + 1})
+    newVal <- gets mcmcCurrentValue
+    modify (\s -> s {mcmcNrCycles = c + 1, mcmcScoreList = newVal:scoreValues})
     when ((c + 1) `mod` 10 == 0) $ do
-        liftIO (infoM "rarecoal" $ show state)
+        liftIO (infoM "rarecoal" $ showStateLog state)
         forM_ [0..k-1] adaptStepWidths
     get 
 
@@ -145,6 +165,12 @@ adaptStepWidths i = do
             newStepWidths = mcmcStepWidths state // [(i, d')]
         put state {mcmcStepWidths = newStepWidths}
 
+showStateLog :: MCMCstate -> String
+showStateLog state = 
+    "Cycle: " ++ show (mcmcNrCycles state) ++
+    "; Value: " ++ show (mcmcCurrentValue state) ++
+    "; Point: " ++ show (mcmcCurrentPoint state)
+
 reportPosteriorStats :: [String] -> [MCMCstate] -> IO ()
 reportPosteriorStats paramNames states = do
     let dim = V.length $ mcmcCurrentPoint (head states)
@@ -159,13 +185,10 @@ reportPosteriorStats paramNames states = do
         scoreLine = intercalate "\t" ("Score":map show orderStatsScore)
         headerLine = "Param\tMaxL\tLowerCI\tMedian\tUpperCI"
     putStrLn $ "# Nr Burnin Cycles: " ++ show nrBurninCycles
+    putStrLn $ "# Nr Main Cycles: " ++ (show $ (length states) - nrBurninCycles)
     putStr $ unlines (headerLine:scoreLine:paramLines)
   where
-    computeBurninCycles :: [Double] -> Int
-    computeBurninCycles s =
-        let scoreBound = minimum s + 10.0
-        in  fst . head . filter ((<scoreBound) . snd) $ zip [0..] s
-    getOrderStats minI vals =
+   getOrderStats minI vals =
         let nPoints = fromIntegral $ length vals :: Double
             [lowCIindex, midIndex, highCIindex] = map (floor . (*nPoints)) [0.025, 0.5, 0.975]
             sortedVals = sort vals

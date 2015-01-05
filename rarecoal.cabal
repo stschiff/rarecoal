@@ -36,7 +36,8 @@ executable rarecoal
                        transformers,
                        errors,
                        tagged < 0.7.3,
-                       parsec
+                       parsec,
+                       monad-loops
   -- hs-source-dirs:      
   default-language:    Haskell2010
   ghc-options:         -fno-ignore-asserts -O2 -rtsopts -threaded -with-rtsopts=-A10m -L/usr/lib
