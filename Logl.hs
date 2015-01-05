@@ -1,6 +1,7 @@
 module Logl (computeLikelihood, runLogl, LoglOpt(..)) where
 
 import RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..), loadHistogram)
+import Utils (computeAllConfigs)
 import Core (getProb, ModelSpec(..), ModelEvent(..))
 import Data.Int (Int64)
 import ModelTemplate (getModelSpec)
@@ -44,25 +45,16 @@ computeLikelihood modelSpec histogram = do
 
 writeSpectrumFile :: FilePath -> ModelSpec -> RareAlleleHistogram -> Script ()
 writeSpectrumFile spectrumFile modelSpec histogram = do
-    let standardOrder = computeStandardOrder histogram
-        nVec = raNVec histogram
+    standardOrder <- hoistEither $ computeStandardOrder histogram
+    let nVec = raNVec histogram
     vec <- hoistEither $ sequence $ parMap rdeepseq (getProb modelSpec nVec) standardOrder
     scriptIO $ writeFile spectrumFile $ unlines $ zipWith (\p val -> show (Pattern p) ++ "\t" ++ show val) standardOrder vec
 
-computeStandardOrder :: RareAlleleHistogram -> [[Int]]
+computeStandardOrder :: RareAlleleHistogram -> Either String [[Int]]
 computeStandardOrder histogram =
-    let nrPop = length $ raNVec histogram
-        maxPowerNum = (raMaxAf histogram + 1) ^ nrPop
-        order = map (digitize (raMaxAf histogram + 1) nrPop) [1..maxPowerNum]
-    in  if raGlobalMax histogram
-            then filter (\v -> sum v <= raMaxAf histogram) order
-            else order
-    
-digitize :: Int -> Int -> Int -> [Int]
-digitize base nrDigit num 
-    | nrDigit == 1 = [num]
-    | otherwise    = let digitBase = base ^ (nrDigit - 1)
-                         digit = div num digitBase
-                         rest = num - digit * digitBase
-                     in  (digit:digitize base (nrDigit - 1) rest)  
+    if not raGlobalMax then
+        Left "need global maximum for computeStandardOrder"
+    else
+        let nrPop = length $ raNVec histogram
+        in  Right $ computeAllConfigs nrPop (raMaxAf histogram)
 
