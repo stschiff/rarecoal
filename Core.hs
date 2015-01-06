@@ -99,7 +99,7 @@ makeStandardStateList maxMvec =
 singleStep :: Double -> State (ModelState, CoalState) ()
 singleStep nextTime = do
     (ms, cs) <- get
-    trace (show nextTime ++ " " ++ show (msT ms) ++ " " ++ show (csA cs) ++ " " ++ show (csB cs)) (return ())
+    --trace (show nextTime ++ " " ++ show (msT ms) ++ " " ++ show (csA cs) ++ " " ++ show (csB cs)) (return ())
     let events = msEventQueue ms
         ModelEvent t _ = if null events then ModelEvent (1.0/0.0) undefined else head events
     if  t < nextTime then do
