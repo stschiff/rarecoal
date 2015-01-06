@@ -1,16 +1,18 @@
 module Core (defaultTimes, getProb, update, validateModel, ModelEvent(..), EventType(..), ModelSpec(..)) where
 
 import Control.Monad.Trans.State.Lazy (State, get, put, execState)
-import Data.List (sortBy, elemIndex, nub)
-import Debug.Trace (trace)
+import Data.List (sortBy)
+--import Debug.Trace (trace)
 import Utils (computeAllConfigs)
 import Control.Monad (when)
 import qualified Data.Vector.Unboxed as V
+import Data.Vector.Unboxed.Base (Unbox)
 import qualified Data.Map as M
-import Data.Int (Int64)
 import Control.Error.Safe (assertErr)
 
+(!) :: Unbox a => V.Vector a -> Int -> a
 (!) = (V.!)
+(//) :: Unbox a => V.Vector a -> [(Int, a)] -> V.Vector a
 (//) = (V.//)
 
 type JointState = V.Vector Int
@@ -79,7 +81,6 @@ makeInitModelState (ModelSpec _ _ events) k =
 makeInitCoalState :: [Int] -> [Int] -> CoalState
 makeInitCoalState nVec config =
     let a = V.fromList $ zipWith (\n m -> fromIntegral (n - m)) nVec config
-        nrPop = length nVec
         stateList = makeStandardStateList config
         bEmpty = M.fromList [(s, 0.0) | s <- stateList]
         initialState = V.fromList config
@@ -90,14 +91,14 @@ makeStandardStateList :: [Int] -> [JointState]
 makeStandardStateList maxMvec = 
     let nrPop = length maxMvec
         allStates = map V.fromList $ computeAllConfigs nrPop (maximum maxMvec)
-    in  filter (isBelowMax maxMvec) . filter (noZeros maxMvec) $ allStates
+    in  filter isBelowMax . filter noZeros $ allStates
   where
-    isBelowMax maxMvec state = and [s <= m | (s, m) <- zip (V.toList state) maxMvec]
-    noZeros maxMvec state = and [s > 0 || m == 0 | (s, m) <- zip (V.toList state) maxMvec]
+    isBelowMax state = and [s <= m | (s, m) <- zip (V.toList state) maxMvec]
+    noZeros state = and [s > 0 || m == 0 | (s, m) <- zip (V.toList state) maxMvec]
 
 singleStep :: Double -> State (ModelState, CoalState) ()
 singleStep nextTime = do
-    (ms, cs) <- get
+    (ms, _) <- get
     --when (nextTime < 0.0002) $ trace (show nextTime ++ " " ++ show (msT ms) ++ " " ++ show (csA cs) ++ " " ++ show (csB cs)) (return ())
     --trace (show (msT ms) ++ " " ++ show (V.toList $ csA cs) ++ " " ++ show (map V.toList $ csB cs) ++ show (csD cs)) (return ())
     let events = msEventQueue ms
@@ -120,19 +121,19 @@ performEvent = do
             let cs' = popJoin k l cs
             put (ModelState t' (tail events) popSize growthRates, cs')
         SetPopSize k p -> do
-            let popSize' = update k p popSize
-                growthRates' = update k 0.0 growthRates
+            let popSize' = popSize // [(k, p)]
+                growthRates' = growthRates // [(k, 0.0)]
             put (ModelState t' (tail events) popSize' growthRates', cs)
         SetGrowthRate k r -> do
-            let growthRates' = update k r growthRates
+            let growthRates' = growthRates // [(k, r)]
             put (ModelState t' (tail events) popSize growthRates', cs)
 
 popJoin :: Int -> Int -> CoalState -> CoalState
 popJoin k l cs =
     let a = csA cs
         b = csB cs
-        newAk = aVec!k + aVec!l
-        newA  = aVec // [(k, newAk), (l, 0.0)]
+        newAk = a!k + a!l
+        newA  = a// [(k, newAk), (l, 0.0)]
         newB = M.mapKeysWith (+) (joinCounts k l) b
     in  CoalState newA newB (csD cs)
 
@@ -166,18 +167,20 @@ updateB :: Double -> V.Vector Double -> V.Vector Double -> M.Map JointState Doub
 updateB deltaT popSize a b =
     M.mapWithKey go b    
   where
+    go :: JointState -> Double -> Double
     go x val =
         let nrPop = V.length x
-            x1ups = [x // [(k, x!k + 1)] | k <- [0..nrPop]]
+            x1ups = [x // [(k, x!k + 1)] | k <- [0..nrPop-1]]
             b1ups = V.fromList [M.findWithDefault 0.0 x1up b | x1up <- x1ups]
-            t1 = sum [x!k * (x!k - 1) / 2.0 * (1.0 / popSize!k) + x!k * a!k * (1.0 / popSize!k) | k <- [0..nrPop]]
-            t2 = sum [b1up!l * (1.0 - exp (x!l * (x!l + 1) / 2.0 * (1.0 / popSize!l) * deltaT)) | l <- [0..nrPop]]
+            x' = V.map fromIntegral x
+            t1 = sum [x'!k * (x'!k - 1) / 2.0 * (1.0 / popSize!k) + x'!k * a!k * (1.0 / popSize!k) | k <- [0..nrPop-1]]
+            t2 = sum [b1ups!l * (1.0 - exp (x'!l * (x'!l + 1) / 2.0 * (1.0 / popSize!l) * deltaT)) | l <- [0..nrPop-1]]
         in  val * exp (-t1 * deltaT) + t2
 
 updateD :: Double -> M.Map JointState Double -> Double -> Double
 updateD deltaT b d =
     let nrPop = V.length $ head (M.keys b)
-        x1s = [V.replicate nrPop 0 // [(k, 1)] | k <- [0..nrPop]]
+        x1s = [V.replicate nrPop 0 // [(k, 1)] | k <- [0..nrPop-1]]
         b1s = [M.findWithDefault 0.0 x1 b | x1 <- x1s]
     in d + deltaT * sum b1s
 
@@ -187,8 +190,8 @@ updateModelState deltaT = do
     let popSize = msPopSize ms
         t = msT ms
         growthRates = msGrowthRates ms
-        popSize' = V.fromList [popSize!k * exp (-growthRates!k * deltaT) | k <- [0..(V.length popSize)]]
-    put (ms {msT = t + deltaT, msPopSize = popSize'}, cs)
+        popSize' = [(popSize!k) * exp (-(growthRates!k) * deltaT) | k <- [0..(V.length popSize)-1]]
+    put (ms {msT = t + deltaT, msPopSize = V.fromList popSize'}, cs)
 
 validateModel :: ModelSpec -> Either String ()
 validateModel (ModelSpec _ _ events) = do

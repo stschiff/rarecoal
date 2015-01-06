@@ -32,8 +32,8 @@ runLogl opts = do
 
 computeLikelihood :: ModelSpec -> RareAlleleHistogram -> Either String Double
 computeLikelihood modelSpec histogram = do
-    let standardOrder = computeStandardOrder histogram
-        nVec = raNVec histogram
+    standardOrder <- computeStandardOrder histogram
+    let nVec = raNVec histogram
     patternProbs <- sequence $ parMap rdeepseq (getProb modelSpec nVec) standardOrder
     let patternCounts = map (defaultLookup . Pattern) standardOrder
         ll = sum $ zipWith (\p c -> log p * fromIntegral c) patternProbs patternCounts
@@ -52,7 +52,7 @@ writeSpectrumFile spectrumFile modelSpec histogram = do
 
 computeStandardOrder :: RareAlleleHistogram -> Either String [[Int]]
 computeStandardOrder histogram =
-    if not raGlobalMax then
+    if not $ raGlobalMax histogram then
         Left "need global maximum for computeStandardOrder"
     else
         let nrPop = length $ raNVec histogram
