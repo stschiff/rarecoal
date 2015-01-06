@@ -2,7 +2,7 @@ module Core (defaultTimes, getProb, update, validateModel, ModelEvent(..), Event
 
 import Control.Monad.Trans.State.Lazy (State, get, put, execState)
 import Data.List (sortBy)
---import Debug.Trace (trace)
+import Debug.Trace (trace)
 import Utils (computeAllConfigs)
 import Control.Monad (when)
 import qualified Data.Vector.Unboxed as V
@@ -90,7 +90,7 @@ makeInitCoalState nVec config =
 makeStandardStateList :: [Int] -> [JointState]
 makeStandardStateList maxMvec = 
     let nrPop = length maxMvec
-        allStates = map V.fromList $ computeAllConfigs nrPop (maximum maxMvec)
+        allStates = map V.fromList $ computeAllConfigs nrPop (sum maxMvec)
     in  filter isBelowMax . filter noZeros $ allStates
   where
     isBelowMax state = and [s <= m | (s, m) <- zip (V.toList state) maxMvec]
@@ -98,9 +98,8 @@ makeStandardStateList maxMvec =
 
 singleStep :: Double -> State (ModelState, CoalState) ()
 singleStep nextTime = do
-    (ms, _) <- get
-    --when (nextTime < 0.0002) $ trace (show nextTime ++ " " ++ show (msT ms) ++ " " ++ show (csA cs) ++ " " ++ show (csB cs)) (return ())
-    --trace (show (msT ms) ++ " " ++ show (V.toList $ csA cs) ++ " " ++ show (map V.toList $ csB cs) ++ show (csD cs)) (return ())
+    (ms, cs) <- get
+    trace (show nextTime ++ " " ++ show (msT ms) ++ " " ++ show (csA cs) ++ " " ++ show (csB cs)) (return ())
     let events = msEventQueue ms
         ModelEvent t _ = if null events then ModelEvent (1.0/0.0) undefined else head events
     if  t < nextTime then do
@@ -133,9 +132,12 @@ popJoin k l cs =
     let a = csA cs
         b = csB cs
         newAk = a!k + a!l
-        newA  = a// [(k, newAk), (l, 0.0)]
+        newA  = a // [(k, newAk), (l, 0.0)]
         newB = M.mapKeysWith (+) (joinCounts k l) b
-    in  CoalState newA newB (csD cs)
+        nrPop = V.length $ head (M.keys newB)
+        x1 = V.replicate nrPop 0 // [(k, 1)]
+        newB' = M.insertWith (\_ val -> val) x1 0.0 newB
+    in  CoalState newA newB' (csD cs)
 
 joinCounts :: Int -> Int -> JointState -> JointState
 joinCounts k l s = 
@@ -174,7 +176,7 @@ updateB deltaT popSize a b =
             b1ups = V.fromList [M.findWithDefault 0.0 x1up b | x1up <- x1ups]
             x' = V.map fromIntegral x
             t1 = sum [x'!k * (x'!k - 1) / 2.0 * (1.0 / popSize!k) + x'!k * a!k * (1.0 / popSize!k) | k <- [0..nrPop-1]]
-            t2 = sum [b1ups!l * (1.0 - exp (x'!l * (x'!l + 1) / 2.0 * (1.0 / popSize!l) * deltaT)) | l <- [0..nrPop-1]]
+            t2 = sum [b1ups!l * (1.0 - exp (-x'!l * (x'!l + 1) / 2.0 * (1.0 / popSize!l) * deltaT)) | l <- [0..nrPop-1]]
         in  val * exp (-t1 * deltaT) + t2
 
 updateD :: Double -> M.Map JointState Double -> Double -> Double
@@ -182,7 +184,7 @@ updateD deltaT b d =
     let nrPop = V.length $ head (M.keys b)
         x1s = [V.replicate nrPop 0 // [(k, 1)] | k <- [0..nrPop-1]]
         b1s = [M.findWithDefault 0.0 x1 b | x1 <- x1s]
-    in d + deltaT * sum b1s
+    in  d + deltaT * sum b1s
 
 updateModelState :: Double -> State (ModelState, CoalState) ()
 updateModelState deltaT = do
