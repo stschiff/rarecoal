@@ -10,6 +10,7 @@ import qualified Data.Map.Strict as Map
 import Control.Parallel.Strategies (rdeepseq, parMap)
 import Control.Monad.Trans.Either (hoistEither)
 import Debug.Trace (trace)
+import Control.Monad (when)
 
 data LoglOpt = LoglOpt {
    loSpectrumPath :: FilePath,
@@ -46,11 +47,12 @@ computeLikelihood modelSpec histogram = do
     defaultLookup sitePattern = Map.findWithDefault 0 sitePattern (raCounts histogram)
 
 writeSpectrumFile :: FilePath -> ModelSpec -> RareAlleleHistogram -> Script ()
-writeSpectrumFile spectrumFile modelSpec histogram = do
-    standardOrder <- hoistEither $ computeStandardOrder histogram
-    let nVec = raNVec histogram
-    vec <- hoistEither $ sequence $ parMap rdeepseq (getProb modelSpec nVec) standardOrder
-    scriptIO $ writeFile spectrumFile $ unlines $ zipWith (\p val -> show (Pattern p) ++ "\t" ++ show val) standardOrder vec
+writeSpectrumFile spectrumFile modelSpec histogram = 
+    when (spectrumFile /= "/dev/null") $ do
+        standardOrder <- hoistEither $ computeStandardOrder histogram
+        let nVec = raNVec histogram
+        vec <- hoistEither $ sequence $ parMap rdeepseq (getProb modelSpec nVec) standardOrder
+        scriptIO $ writeFile spectrumFile $ unlines $ zipWith (\p val -> show (Pattern p) ++ "\t" ++ show val) standardOrder vec
 
 computeStandardOrder :: RareAlleleHistogram -> Either String [[Int]]
 computeStandardOrder histogram =
