@@ -7,6 +7,7 @@ import Maxl (MaxlOpt(..), runMaxl)
 import Mcmc (McmcOpt(..), runMcmc)
 import View (ViewOpt(..), runView)
 import Prob (ProbOpt(..), runProb)
+import Find (FindOpt(..), runFind)
 import System.Log.Logger (updateGlobalLogger, setLevel, Priority(..), infoM)
 import Data.Time.Clock (getCurrentTime)
 import Core (ModelEvent(..), EventType(..))
@@ -16,7 +17,7 @@ import Debug.Trace (trace)
 
 data Options = Options Command
 
-data Command = CmdView ViewOpt | CmdProb ProbOpt | CmdLogl LoglOpt | CmdMaxl MaxlOpt | CmdMcmc McmcOpt 
+data Command = CmdView ViewOpt | CmdProb ProbOpt | CmdLogl LoglOpt | CmdMaxl MaxlOpt | CmdMcmc McmcOpt | CmdFind FindOpt
 
 main :: IO ()
 main = run =<< OP.execParser (parseOptions `withInfo` "Rarecoal: Implementation of the Rarecoal algorithm")
@@ -32,6 +33,7 @@ run (Options cmdOpts) = runScript $ do
         CmdLogl opts -> runLogl opts
         CmdMaxl opts -> runMaxl opts
         CmdMcmc opts -> runMcmc opts
+        CmdFind opts -> runFind opts
     currentTafter <- scriptIO getCurrentTime
     scriptIO $ infoM "rarecoal" $ "Finished at " ++ show currentTafter
 
@@ -44,7 +46,8 @@ parseCommand = OP.subparser $
     OP.command "prob" (parseProb `withInfo` "Compute probability for a given configuration") <>
     OP.command "logl" (parseLogl `withInfo` "Compute the likelihood of the given model for the given data set") <>
     OP.command "maxl" (parseMaxl `withInfo` "Maximize the likelihood of the model given the data set") <>
-    OP.command "mcmc" (parseMcmc `withInfo` "Run MCMC on the model and the data")
+    OP.command "mcmc" (parseMcmc `withInfo` "Run MCMC on the model and the data") <>
+    OP.command "find" (parseFind `withInfo` "Explore where a branch joins the tree")
 
 parseView :: OP.Parser Command
 parseView = CmdView <$> parseViewOpt
@@ -186,4 +189,18 @@ parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams
     parseRandomSeed = OP.option OP.auto $ OP.short 'S' <> OP.long "seed" <> OP.metavar "<INT>" <> OP.help "Random Seed"
     parseNrCycles = OP.option OP.auto $ OP.long "cycles" <> OP.short 'c' <> OP.value 1000 <> OP.metavar "<INT>"
                                                                <> OP.help "nr of MCMC cycles"
+
+
+parseFind :: OP.Parser Command
+parseFind = CmdFind <$> parseFindOpt
+
+parseFindOpt = FindOpt <$> parseQueryIndex <*> parseDeltaTime <*> parseMaxTime <*> parseTheta <*> parseTemplateFilePath <*> parseParams
+                       <*> parseModelEvents <*> parseMaxAf <*> parseNrCalledSites <*> parseIndices <*> parseHistPath
+  where
+    parseQueryIndex = OP.option OP.auto $ OP.short 'q' <> OP.long "queryIndex" <> OP.metavar "<INT>"
+                                                       <> OP.help "index of query branch"
+    parseDeltaTime = OP.option OP.auto $ OP.long "deltaTime" <> OP.metavar "<Double>"
+                                                      <> OP.help "length of time intervals [0.0005]" <> OP.value 0.0005
+    parseMaxTime = OP.option OP.auto $ OP.long "maxTime" <> OP.metavar "<Double>"
+                                                           <> OP.help "maximum time [0.025]" <> OP.value 0.025
 
