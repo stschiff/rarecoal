@@ -36,7 +36,8 @@ computeLikelihood modelSpec histogram = do
     standardOrder <- computeStandardOrder histogram
     let nVec = raNVec histogram
     patternProbs <- sequence $ parMap rdeepseq (getProb modelSpec nVec) standardOrder
-    let patternCounts = trace (show $ zip standardOrder patternProbs) $ map (defaultLookup . Pattern) standardOrder
+    -- trace (show $ zip standardOrder patternProbs) $ return ()
+    let patternCounts = map (defaultLookup . Pattern) standardOrder
         ll = sum $ zipWith (\p c -> log p * fromIntegral c) patternProbs patternCounts
         zeroPattern = Pattern $ replicate (length nVec) 0
         otherCounts = defaultLookup zeroPattern + defaultLookup Higher

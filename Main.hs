@@ -12,6 +12,7 @@ import Data.Time.Clock (getCurrentTime)
 import Core (ModelEvent(..), EventType(..))
 import Control.Error.Script (runScript, scriptIO)
 import Data.Int (Int64)
+import Debug.Trace (trace)
 
 data Options = Options Command
 

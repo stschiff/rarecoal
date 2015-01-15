@@ -4,7 +4,7 @@ import Control.Monad.Trans.State.Lazy (State, get, put, execState)
 import Data.List (sortBy)
 import Debug.Trace (trace)
 import Utils (computeAllConfigs)
-import Control.Monad (when)
+import Control.Monad (when, foldM)
 import qualified Data.Vector.Unboxed as V
 import Data.Vector.Unboxed.Base (Unbox)
 import qualified Data.Map as M
@@ -20,7 +20,8 @@ type JointState = V.Vector Int
 data CoalState = CoalState {
     csA :: V.Vector Double,
     csB :: M.Map JointState Double,
-    csD :: Double
+    csD :: Double,
+    csMaxMVec :: JointState
 } deriving (Show)
 
 data ModelEvent = ModelEvent {
@@ -81,25 +82,39 @@ makeInitModelState (ModelSpec _ _ events) k =
 makeInitCoalState :: [Int] -> [Int] -> CoalState
 makeInitCoalState nVec config =
     let a = V.fromList $ zipWith (\n m -> fromIntegral (n - m)) nVec config
-        stateList = makeStandardStateList config
-        bEmpty = M.fromList [(s, 0.0) | s <- stateList]
         initialState = V.fromList config
-        b = M.insert initialState 1.0 bEmpty
-    in  CoalState a b 0.0
+        b = M.singleton initialState 1.0
+        b' = fillStateSpace b initialState
+    in  CoalState a b' 0.0 initialState
 
-makeStandardStateList :: [Int] -> [JointState]
-makeStandardStateList maxMvec = 
-    let nrPop = length maxMvec
-        allStates = map V.fromList $ computeAllConfigs nrPop (sum maxMvec)
-    in  filter isBelowMax . filter noZeros $ allStates
-  where
-    isBelowMax state = and [s <= m | (s, m) <- zip (V.toList state) maxMvec]
-    noZeros state = and [s > 0 || m == 0 | (s, m) <- zip (V.toList state) maxMvec]
+fillStateSpace :: M.Map JointState Double -> JointState -> M.Map JointState Double
+fillStateSpace b maxMVec =
+    let allStates = expandPattern maxMVec
+        safeInsert m k = M.insertWith (\_ oldVal -> oldVal) k 0.0 m
+    in  foldl safeInsert b allStates
+
+expandPattern :: JointState -> [JointState]
+expandPattern vec =
+    let k = V.length vec
+    in  foldM go vec [0..k-1]
+  where    
+    go vec_ i =
+        let maxVal = vec_ ! i
+        in if maxVal <= 1 then [vec_] else [vec_ // [(i, val)] | val <- [1..maxVal]]
+
+-- makeStandardStateList :: [Int] -> [JointState]
+-- makeStandardStateList maxMvec =
+--     let nrPop = length maxMvec
+--         allStates = map V.fromList $ computeAllConfigs nrPop (sum maxMvec)
+--     in  filter isBelowMax . filter noZeros $ allStates
+--   where
+--     isBelowMax state = and [s <= m | (s, m) <- zip (V.toList state) maxMvec]
+--     noZeros state = and [s > 0 || m == 0 | (s, m) <- zip (V.toList state) maxMvec]
 
 singleStep :: Double -> State (ModelState, CoalState) ()
 singleStep nextTime = do
     (ms, cs) <- get
-    --trace (show nextTime ++ " " ++ show (msT ms) ++ " " ++ show (csA cs) ++ " " ++ show (csB cs)) (return ())
+    -- trace (show nextTime ++ " " ++ show (msT ms) ++ " " ++ show (csA cs) ++ " " ++ show (csB cs)) (return ())
     let events = msEventQueue ms
         ModelEvent t _ = if null events then ModelEvent (1.0/0.0) undefined else head events
     if  t < nextTime then do
@@ -131,13 +146,13 @@ popJoin :: Int -> Int -> CoalState -> CoalState
 popJoin k l cs =
     let a = csA cs
         b = csB cs
+        maxMvec = csMaxMVec cs
         newAk = a!k + a!l
         newA  = a // [(k, newAk), (l, 0.0)]
         newB = M.mapKeysWith (+) (joinCounts k l) b
-        nrPop = V.length $ head (M.keys newB)
-        x1 = V.replicate nrPop 0 // [(k, 1)]
-        newB' = M.insertWith (\_ val -> val) x1 0.0 newB
-    in  CoalState newA newB' (csD cs)
+        newMaxMvec = joinCounts k l maxMvec
+        newB' = fillStateSpace newB newMaxMvec
+    in  CoalState newA newB' (csD cs) newMaxMvec
 
 joinCounts :: Int -> Int -> JointState -> JointState
 joinCounts k l s = 
@@ -155,7 +170,7 @@ updateCoalState deltaT = do
         aNew = updateA deltaT popSize (csA cs)
         bNew = updateB deltaT popSize (csA cs) (csB cs) 
         dNew = updateD deltaT (csB cs) (csD cs)
-    put (ms, CoalState aNew bNew dNew)
+    put (ms, cs {csA = aNew, csB = bNew, csD = dNew})
 
 updateA :: Double -> V.Vector Double -> V.Vector Double -> V.Vector Double
 updateA deltaT popSize = V.zipWith go popSize

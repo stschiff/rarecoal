@@ -41,7 +41,7 @@ executable rarecoal
   -- hs-source-dirs:      
   default-language:    Haskell2010
   ghc-options:         -fno-ignore-asserts -O2 -rtsopts -threaded -with-rtsopts=-A10m -L/usr/lib
---prof -fprof-auto
+                       --prof -fprof-auto -auto-all -caf-all
  
 executable vcf2FreqSum
   main-is:             vcf2FreqSum.hs
