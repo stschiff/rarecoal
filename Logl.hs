@@ -9,6 +9,7 @@ import Control.Error (Script, scriptIO)
 import qualified Data.Map.Strict as Map
 import Control.Parallel.Strategies (rdeepseq, parMap)
 import Control.Monad.Trans.Either (hoistEither)
+import Debug.Trace (trace)
 
 data LoglOpt = LoglOpt {
    loSpectrumPath :: FilePath,
@@ -35,7 +36,7 @@ computeLikelihood modelSpec histogram = do
     standardOrder <- computeStandardOrder histogram
     let nVec = raNVec histogram
     patternProbs <- sequence $ parMap rdeepseq (getProb modelSpec nVec) standardOrder
-    let patternCounts = map (defaultLookup . Pattern) standardOrder
+    let patternCounts = trace (show $ zip standardOrder patternProbs) $ map (defaultLookup . Pattern) standardOrder
         ll = sum $ zipWith (\p c -> log p * fromIntegral c) patternProbs patternCounts
         zeroPattern = Pattern $ replicate (length nVec) 0
         otherCounts = defaultLookup zeroPattern + defaultLookup Higher

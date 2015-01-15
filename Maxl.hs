@@ -53,7 +53,8 @@ minFunc :: ModelTemplate -> RareAlleleHistogram -> V.Vector Double -> Either Str
 minFunc modelTemplate hist params = do
     modelSpec <- instantiateModel modelTemplate params
     val <- computeLikelihood modelSpec hist
-    assertErr "likelihood infinite" $ not (isInfinite val || isNaN val)
+    assertErr ("likelihood infinite for params " ++ show params) $ not (isInfinite val)
+    assertErr ("likelihood NaN for params " ++ show params) $ not (isNaN val)
     return (-val)
 
 penalty :: Double
