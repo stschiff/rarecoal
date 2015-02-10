@@ -22,7 +22,8 @@ data CoalState = CoalState {
     csB :: M.Map JointState Double,
     csD :: Double,
     csMaxMVec :: JointState,
-    csX1up :: M.Map JointState [JointState]
+    csX1up :: M.Map JointState [JointState],
+    csX1 :: [JointState]
 } deriving (Show)
 
 data ModelEvent = ModelEvent {
@@ -87,7 +88,9 @@ makeInitCoalState nVec config =
         b = M.singleton initialState 1.0
         b' = fillStateSpace b initialState
         x1upMap = M.mapWithKey (\x _ -> x1ups x) b'
-    in  CoalState a b' 0.0 initialState x1upMap
+        nrPop = V.length initialState
+        x1 = [V.replicate nrPop 0 // [(k, 1)] | k <- [0..nrPop-1]]
+    in  CoalState a b' 0.0 initialState x1upMap x1
 
 x1ups :: JointState -> [JointState]
 x1ups x = [x // [(k, x!k + 1)] | k <- [0..nrPop-1]]
@@ -151,7 +154,7 @@ popJoin k l cs =
         newMaxMvec = joinCounts k l maxMvec
         newB' = fillStateSpace newB newMaxMvec
         newX1upMap = M.mapWithKey (\x _ -> x1ups x) newB'
-    in  CoalState newA newB' (csD cs) newMaxMvec newX1upMap
+    in  CoalState newA newB' (csD cs) newMaxMvec newX1upMap (csX1 cs)
 
 joinCounts :: Int -> Int -> JointState -> JointState
 joinCounts k l s = 
@@ -168,7 +171,7 @@ updateCoalState deltaT = do
     let popSize = msPopSize ms
         aNew = updateA deltaT popSize (csA cs)
         bNew = updateB deltaT popSize (csA cs) (csB cs) (csX1up cs)
-        dNew = updateD deltaT (csB cs) (csD cs)
+        dNew = updateD deltaT (csB cs) (csD cs) (csX1 cs)
     put (ms, cs {csA = aNew, csB = bNew, csD = dNew})
 
 updateA :: Double -> V.Vector Double -> V.Vector Double -> V.Vector Double
@@ -194,10 +197,9 @@ updateB deltaT popSize a b x1upMap =
             t2 = sum [b1ups!l * (1.0 - exp (-x'!l * (x'!l + 1) / 2.0 * (1.0 / popSize!l) * deltaT)) | l <- [0..nrPop-1]]
         in  val * exp (-t1 * deltaT) + t2
 
-updateD :: Double -> M.Map JointState Double -> Double -> Double
-updateD deltaT b d =
+updateD :: Double -> M.Map JointState Double -> Double -> [JointState] -> Double
+updateD deltaT b d x1s =
     let nrPop = V.length $ head (M.keys b)
-        x1s = [V.replicate nrPop 0 // [(k, 1)] | k <- [0..nrPop-1]]
         b1s = [M.findWithDefault 0.0 x1 b | x1 <- x1s]
     in  d + deltaT * sum b1s
 

@@ -63,9 +63,9 @@ instance Read SitePattern where
 
 loadHistogram :: [Int] -> Int -> Int64 -> FilePath -> Script RareAlleleHistogram
 loadHistogram indices maxAf nrCalledSites path = do
-    scriptIO $ infoM "rarecoal" "Loading histogram ... "
+    -- scriptIO $ infoM "rarecoal" "Loading histogram ... "
     hist <- scriptIO $ liftM read $ readFile path
-    scriptIO $ infoM "rarecoal" "... Done loading"
+    -- scriptIO $ infoM "rarecoal" "... Done loading"
     let f = if nrCalledSites > 0 then setNrCalledSites nrCalledSites else return
     hoistEither $ (f <=< filterMaxAf maxAf <=< reduceIndices indices <=< return) hist
 
