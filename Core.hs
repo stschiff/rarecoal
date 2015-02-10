@@ -21,7 +21,8 @@ data CoalState = CoalState {
     csA :: V.Vector Double,
     csB :: M.Map JointState Double,
     csD :: Double,
-    csMaxMVec :: JointState
+    csMaxMVec :: JointState,
+    csX1up :: M.Map JointState [JointState]
 } deriving (Show)
 
 data ModelEvent = ModelEvent {
@@ -85,7 +86,13 @@ makeInitCoalState nVec config =
         initialState = V.fromList config
         b = M.singleton initialState 1.0
         b' = fillStateSpace b initialState
-    in  CoalState a b' 0.0 initialState
+        x1upMap = M.mapWithKey (\x _ -> x1ups x) b'
+    in  CoalState a b' 0.0 initialState x1upMap
+
+x1ups :: JointState -> [JointState]
+x1ups x = [x // [(k, x!k + 1)] | k <- [0..nrPop-1]]
+  where
+    nrPop = V.length x
 
 fillStateSpace :: M.Map JointState Double -> JointState -> M.Map JointState Double
 fillStateSpace b maxMVec =
@@ -101,15 +108,6 @@ expandPattern vec =
     go vec_ i =
         let maxVal = vec_ ! i
         in if maxVal <= 1 then [vec_] else [vec_ // [(i, val)] | val <- [1..maxVal]]
-
--- makeStandardStateList :: [Int] -> [JointState]
--- makeStandardStateList maxMvec =
---     let nrPop = length maxMvec
---         allStates = map V.fromList $ computeAllConfigs nrPop (sum maxMvec)
---     in  filter isBelowMax . filter noZeros $ allStates
---   where
---     isBelowMax state = and [s <= m | (s, m) <- zip (V.toList state) maxMvec]
---     noZeros state = and [s > 0 || m == 0 | (s, m) <- zip (V.toList state) maxMvec]
 
 singleStep :: Double -> State (ModelState, CoalState) ()
 singleStep nextTime = do
@@ -152,7 +150,8 @@ popJoin k l cs =
         newB = M.mapKeysWith (+) (joinCounts k l) b
         newMaxMvec = joinCounts k l maxMvec
         newB' = fillStateSpace newB newMaxMvec
-    in  CoalState newA newB' (csD cs) newMaxMvec
+        newX1upMap = M.mapWithKey (\x _ -> x1ups x) newB'
+    in  CoalState newA newB' (csD cs) newMaxMvec newX1upMap
 
 joinCounts :: Int -> Int -> JointState -> JointState
 joinCounts k l s = 
@@ -168,7 +167,7 @@ updateCoalState deltaT = do
     (ms, cs) <- get
     let popSize = msPopSize ms
         aNew = updateA deltaT popSize (csA cs)
-        bNew = updateB deltaT popSize (csA cs) (csB cs) 
+        bNew = updateB deltaT popSize (csA cs) (csB cs) (csX1up cs)
         dNew = updateD deltaT (csB cs) (csD cs)
     put (ms, cs {csA = aNew, csB = bNew, csD = dNew})
 
@@ -180,14 +179,15 @@ updateA deltaT popSize = V.zipWith go popSize
 approxExp :: Double -> Double
 approxExp = exp --if abs arg < 0.05 then 1.0 + arg else exp arg
 
-updateB :: Double -> V.Vector Double -> V.Vector Double -> M.Map JointState Double -> M.Map JointState Double
-updateB deltaT popSize a b =
+updateB :: Double -> V.Vector Double -> V.Vector Double -> M.Map JointState Double -> M.Map JointState [JointState]
+                  -> M.Map JointState Double
+updateB deltaT popSize a b x1upMap =
     M.mapWithKey go b    
   where
     go :: JointState -> Double -> Double
     go x val =
         let nrPop = V.length x
-            x1ups = [x // [(k, x!k + 1)] | k <- [0..nrPop-1]]
+            x1ups = x1upMap M.! x
             b1ups = V.fromList [M.findWithDefault 0.0 x1up b | x1up <- x1ups]
             x' = V.map fromIntegral x
             t1 = sum [x'!k * (x'!k - 1) / 2.0 * (1.0 / popSize!k) + x'!k * a!k * (1.0 / popSize!k) | k <- [0..nrPop-1]]
