@@ -31,7 +31,7 @@ runMaxl opts = do
     hist <- loadHistogram (maIndices opts) (maMaxAf opts) (maNrCalledSites opts) (maHistPath opts)
     _ <- hoistEither $ minFunc modelTemplate hist (V.fromList $ maInitialParams opts)
     let minFunc' = either (const penalty) id . minFunc modelTemplate hist . V.fromList
-        stepWidths = [max 1.0e-8 $ abs (0.01 * p) | p <- maInitialParams opts]
+        stepWidths = [max 1.0e-4 $ abs (0.01 * p) | p <- maInitialParams opts]
         (minResult, trace) = minimize NMSimplex2 1.0e-8 (maMaxCycles opts) stepWidths minFunc' (maInitialParams opts)
         minScore = minFunc' minResult
         trace' = map toList $ toRows trace
