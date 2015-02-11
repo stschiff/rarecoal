@@ -13,6 +13,7 @@ import System.IO (stderr, hPutStrLn)
 
 data FindOpt = FindOpt {
     fiQueryIndex :: Int,
+    fiBranchAge :: Double,
     fiDeltaTime :: Double,
     fiMaxTime :: Double,
     fiTheta :: Double,
@@ -27,13 +28,19 @@ data FindOpt = FindOpt {
 
 runFind :: FindOpt -> Script ()
 runFind opts = do
-    modelSpec <- getModelSpec (fiTemplatePath opts) (fiTheta opts) (fiParams opts) (fiModelEvents opts)
+    modelSpec' <- getModelSpec (fiTemplatePath opts) (fiTheta opts) (fiParams opts) (fiModelEvents opts)
     let l = fiQueryIndex opts
+        modelSpec = if fiBranchAge opts > 0.0 then
+            let events' = mEvents modelSpec'
+                events = ModelEvent 0.0 (SetFreeze l True) : ModelEvent (fiBranchAge opts) (SetFreeze l False) : events'
+            in  modelSpec' {mEvents = events'}
+        else
+            modelSpec'
     tryAssert ("model must have free branch " ++ show (fiQueryIndex opts)) $ hasFreeBranch l modelSpec
     hist <- loadHistogram (fiIndices opts) (fiMaxAf opts) (fiNrCalledSites opts) (fiHistPath opts)
     let nrPops = length $ raNVec hist
         targetBranches = [branch | branch <- [0..nrPops-1], branch /= l]
-        allJoinTimes = [getJoinTimes modelSpec (fiDeltaTime opts) (fiMaxTime opts) k | k <- targetBranches]
+        allJoinTimes = [getJoinTimes modelSpec (fiDeltaTime opts) (fiMaxTime opts) (fiBranchAge opts) k | k <- targetBranches]
         allParamPairs = concat $ zipWith (\k times -> [(k, t) | t <- times]) targetBranches allJoinTimes
     allLikelihoods <- mapM (\(k, t) -> computeLikelihoodIO hist modelSpec k l t) allParamPairs
     scriptIO $ writeResult allParamPairs allLikelihoods
@@ -43,9 +50,9 @@ runFind opts = do
             jIndices = concat [[k, l] | ModelEvent _ (Join k l) <- e]
         in  all (/=queryBranch) jIndices
 
-getJoinTimes :: ModelSpec -> Double -> Double -> Int -> [Double]
-getJoinTimes modelSpec deltaT maxT k =
-    let allTimes = takeWhile (<=maxT) $ map ((*deltaT) . fromIntegral) [1..]
+getJoinTimes :: ModelSpec -> Double -> Double -> Double -> Int -> [Double]
+getJoinTimes modelSpec deltaT maxT branchAge k =
+    let allTimes = takeWhile (<=maxT) $ map ((+branchAge) . (*deltaT) . fromIntegral) [1..]
         leaveTimes = [t | ModelEvent t (Join _ l) <- mEvents modelSpec, k == l]
     in  if leaveTimes == [] then allTimes else filter (<head leaveTimes) allTimes
 

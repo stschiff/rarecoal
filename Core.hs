@@ -31,7 +31,11 @@ data ModelEvent = ModelEvent {
     meEventType ::EventType
 } deriving (Show, Read)
 
-data EventType = Join Int Int | SetPopSize Int Double | SetGrowthRate Int Double deriving (Show, Read)
+data EventType = Join Int Int
+               | SetPopSize Int Double
+               | SetGrowthRate Int Double 
+               | SetFreeze Int Bool
+               deriving (Show, Read)
 
 data ModelSpec = ModelSpec {
     mTimeSteps :: [Double],
@@ -43,7 +47,8 @@ data ModelState = ModelState {
     msT :: Double,
     msEventQueue :: [ModelEvent],
     msPopSize :: V.Vector Double,
-    msGrowthRates :: V.Vector Double
+    msGrowthRates :: V.Vector Double,
+    msFreezeState :: V.Vector Bool
 } deriving (Show)
 
 defaultTimes :: [Double]
@@ -79,7 +84,8 @@ makeInitModelState (ModelSpec _ _ events) k =
         t = 0.0
         popSize = V.replicate k 1.0
         growthRates = V.replicate k 0.0
-    in  ModelState t sortedEvents popSize growthRates
+        freezeState = V.replicate k False
+    in  ModelState t sortedEvents popSize growthRates freezeState
 
 makeInitCoalState :: [Int] -> [Int] -> CoalState
 makeInitCoalState nVec config =
@@ -129,19 +135,22 @@ singleStep nextTime = do
 
 performEvent :: State (ModelState, CoalState) ()
 performEvent = do
-    (ModelState _ events popSize growthRates, cs) <- get
-    let ModelEvent t' e = head events
+    (ModelState _ events popSize growthRates freezeState, cs) <- get
+    let ModelEvent t e = head events
     case e of
         Join k l -> do
             let cs' = popJoin k l cs
-            put (ModelState t' (tail events) popSize growthRates, cs')
+            put (ModelState t (tail events) popSize growthRates freezeState, cs')
         SetPopSize k p -> do
             let popSize' = popSize // [(k, p)]
                 growthRates' = growthRates // [(k, 0.0)]
-            put (ModelState t' (tail events) popSize' growthRates', cs)
+            put (ModelState t (tail events) popSize' growthRates' freezeState, cs)
         SetGrowthRate k r -> do
             let growthRates' = growthRates // [(k, r)]
-            put (ModelState t' (tail events) popSize growthRates', cs)
+            put (ModelState t (tail events) popSize growthRates' freezeState, cs)
+        SetFreeze k b -> do
+            let freezeState' = freezeState // [(k, b)]
+            put (ModelState t (tail events) popSize growthRates freezeState', cs)
 
 popJoin :: Int -> Int -> CoalState -> CoalState
 popJoin k l cs =
@@ -169,22 +178,24 @@ updateCoalState :: Double -> State (ModelState, CoalState) ()
 updateCoalState deltaT = do
     (ms, cs) <- get
     let popSize = msPopSize ms
-        aNew = updateA deltaT popSize (csA cs)
-        bNew = updateB deltaT popSize (csA cs) (csB cs) (csX1up cs)
+        freezeState = msFreezeState ms
+        aNew = updateA deltaT popSize freezeState (csA cs)
+        bNew = updateB deltaT popSize freezeState (csA cs) (csB cs) (csX1up cs)
         dNew = updateD deltaT (csB cs) (csD cs) (csX1 cs)
     put (ms, cs {csA = aNew, csB = bNew, csD = dNew})
 
-updateA :: Double -> V.Vector Double -> V.Vector Double -> V.Vector Double
-updateA deltaT popSize = V.zipWith go popSize
+updateA :: Double -> V.Vector Double -> V.Vector Bool -> V.Vector Double -> V.Vector Double
+updateA deltaT popSize freezeState = V.zipWith3 go popSize freezeState
   where
-    go popSizeK aK = aK * approxExp (-0.5 * (aK - 1.0) * (1.0 / popSizeK) * deltaT)
+    go popSizeK freezeStateK aK = aK * if freezeStateK then 1.0 else
+        approxExp (-0.5 * (aK - 1.0) * (1.0 / popSizeK) * deltaT)
 
 approxExp :: Double -> Double
 approxExp = exp --if abs arg < 0.05 then 1.0 + arg else exp arg
 
-updateB :: Double -> V.Vector Double -> V.Vector Double -> M.Map JointState Double -> M.Map JointState [JointState]
-                  -> M.Map JointState Double
-updateB deltaT popSize a b x1upMap =
+updateB :: Double -> V.Vector Double -> V.Vector Bool -> V.Vector Double -> M.Map JointState Double
+                  -> M.Map JointState [JointState] -> M.Map JointState Double
+updateB deltaT popSize freezeState a b x1upMap =
     M.mapWithKey go b    
   where
     go :: JointState -> Double -> Double
@@ -193,9 +204,11 @@ updateB deltaT popSize a b x1upMap =
             x1ups = x1upMap M.! x
             b1ups = V.fromList [M.findWithDefault 0.0 x1up b | x1up <- x1ups]
             x' = V.map fromIntegral x
-            t1 = sum [x'!k * (x'!k - 1) / 2.0 * (1.0 / popSize!k) + x'!k * a!k * (1.0 / popSize!k) | k <- [0..nrPop-1]]
-            t2 = sum [b1ups!l * (1.0 - exp (-x'!l * (x'!l + 1) / 2.0 * (1.0 / popSize!l) * deltaT)) | l <- [0..nrPop-1]]
-        in  val * exp (-t1 * deltaT) + t2
+            t1s = [x'!k * (x'!k - 1) / 2.0 * (1.0 / popSize!k) + x'!k * a!k * (1.0 / popSize!k) |
+                   k <- [0..nrPop-1], not $ freezeState!k]
+            t2s = [b1ups!l * (1.0 - exp (-x'!l * (x'!l + 1) / 2.0 * (1.0 / popSize!l) * deltaT)) |
+                   l <- [0..nrPop-1], not $ freezeState!l]
+        in  val * exp (-(sum t1s) * deltaT) + sum t2s
 
 updateD :: Double -> M.Map JointState Double -> Double -> [JointState] -> Double
 updateD deltaT b d x1s =

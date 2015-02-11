@@ -194,11 +194,14 @@ parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams
 parseFind :: OP.Parser Command
 parseFind = CmdFind <$> parseFindOpt
 
-parseFindOpt = FindOpt <$> parseQueryIndex <*> parseDeltaTime <*> parseMaxTime <*> parseTheta <*> parseTemplateFilePath <*> parseParams
-                       <*> parseModelEvents <*> parseMaxAf <*> parseNrCalledSites <*> parseIndices <*> parseHistPath
+parseFindOpt = FindOpt <$> parseQueryIndex <*> parseBranchAge <*> parseDeltaTime <*> parseMaxTime <*> parseTheta
+                       <*> parseTemplateFilePath <*> parseParams <*> parseModelEvents <*> parseMaxAf
+                       <*> parseNrCalledSites <*> parseIndices <*> parseHistPath
   where
     parseQueryIndex = OP.option OP.auto $ OP.short 'q' <> OP.long "queryIndex" <> OP.metavar "<INT>"
                                                        <> OP.help "index of query branch"
+    parseBranchAge = OP.option OP.auto $ OP.short 'b' <> OP.long "branchAge" <> OP.metavar "<Double>"
+                                                       <> OP.help "sampling age of query branch"
     parseDeltaTime = OP.option OP.auto $ OP.long "deltaTime" <> OP.metavar "<Double>"
                                                       <> OP.help "length of time intervals [0.0005]" <> OP.value 0.0005
     parseMaxTime = OP.option OP.auto $ OP.long "maxTime" <> OP.metavar "<Double>"
