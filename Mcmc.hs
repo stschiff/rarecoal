@@ -49,7 +49,7 @@ data MCMCstate = MCMCstate {
 runMcmc :: McmcOpt -> Script ()
 runMcmc opts = do
     modelTemplate <- readModelTemplate (mcTemplatePath opts) (mcTheta opts) defaultTimes
-    hist <- loadHistogram (mcIndices opts) (mcMaxAf opts) (mcNrCalledSites opts) [] (mcHistPath opts)
+    hist <- loadHistogram (mcIndices opts) 1 (mcMaxAf opts) (mcNrCalledSites opts) (mcHistPath opts)
     _ <- hoistEither $ minFunc modelTemplate hist (V.fromList $ mcInitialParams opts)
     let minFunc' = either (const penalty) id . minFunc modelTemplate hist
         params = V.fromList $ mcInitialParams opts

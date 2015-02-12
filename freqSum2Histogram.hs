@@ -1,7 +1,7 @@
 import qualified Data.Map.Strict as Map
 import Control.Applicative ((<$>), (<*>))
 import Data.Monoid (mempty, (<>))
-import RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..), setNrCalledSites)
+import RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..), setNrCalledSites, showHistogram)
 import qualified Options.Applicative as OP
 import Pipes ((>->))
 import qualified Pipes.Prelude as P
@@ -38,9 +38,10 @@ runWithOptions :: MyOpts -> IO ()
 runWithOptions (MyOpts nVec maxM popIndices nrCalledSites) = runScript $ do
     let prod = P.stdinLn >-> P.map (mkPat maxM popIndices)
     res <- scriptIO $ P.fold insertPattern Map.empty id prod
-    let hist = RareAlleleHistogram (selectFromList nVec popIndices) maxM False res
+    let hist = RareAlleleHistogram (selectFromList nVec popIndices) 0 maxM False res
     hist' <- hoistEither $ setNrCalledSites nrCalledSites hist 
-    scriptIO $ putStr (show hist')
+    outs <- hoistEither $ showHistogram hist'
+    scriptIO $ putStr outs
 
 mkPat :: Int -> [Int] -> String -> SitePattern
 mkPat maxM popIndices line =

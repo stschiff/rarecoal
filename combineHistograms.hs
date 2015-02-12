@@ -1,4 +1,4 @@
-import RareAlleleHistogram (RareAlleleHistogram(..), addHistograms)
+import RareAlleleHistogram (RareAlleleHistogram(..), addHistograms, showHistogram, parseHistogram)
 import System.Environment (getArgs)
 import Control.Monad (liftM, foldM)
 import Control.Error.Script (scriptIO, runScript, Script)
@@ -8,9 +8,11 @@ main :: IO ()
 main = runScript $ do
     args <- scriptIO getArgs
     newHist <- combine args
-    scriptIO $ putStr (show newHist)
+    outs <- hoistEither $ showHistogram newHist
+    scriptIO $ putStr outs
 
 combine :: [FilePath] -> Script RareAlleleHistogram
 combine filenames = do
-    histograms <- scriptIO $ mapM (liftM read . readFile) filenames
+    s <- scriptIO $ mapM readFile filenames
+    histograms <- mapM (hoistEither . parseHistogram) s 
     hoistEither $ foldM addHistograms (head histograms) (tail histograms)

@@ -54,7 +54,7 @@ parseView :: OP.Parser Command
 parseView = CmdView <$> parseViewOpt
 
 parseViewOpt :: OP.Parser ViewOpt
-parseViewOpt = ViewOpt <$> parseIndices <*> parseCombineIndices <*> parseMaxAf <*> parseNrCalledSites <*> parseHistPath
+parseViewOpt = ViewOpt <$> parseIndices <*> parseCombineIndices <*> parseMinAf <*> parseMaxAf <*> parseNrCalledSites <*> parseHistPath
 
 parseIndices :: OP.Parser [Int]
 parseIndices = OP.option OP.auto $ OP.short 'I' <> OP.long "indices"
@@ -67,6 +67,11 @@ parseCombineIndices = OP.option OP.auto $ OP.long "combine"
                                                 <> OP.metavar "[i1,i2,...]"
                                                 <> OP.value [] <> OP.showDefault
                                                 <> OP.help "combine these indices into one"
+
+parseMinAf :: OP.Parser Int
+parseMinAf = OP.option OP.auto $ OP.long "minAf" <> OP.metavar "<INT>"
+                                                        <> OP.help "minimal allele frequency" <> OP.value 1
+                                                        <> OP.showDefault
 
 parseMaxAf :: OP.Parser Int
 parseMaxAf = OP.option OP.auto $ OP.short 'm' <> OP.long "max_af"
@@ -196,7 +201,7 @@ parseFind :: OP.Parser Command
 parseFind = CmdFind <$> parseFindOpt
 
 parseFindOpt = FindOpt <$> parseQueryIndex <*> parseBranchAge <*> parseDeltaTime <*> parseMaxTime <*> parseTheta
-                       <*> parseTemplateFilePath <*> parseParams <*> parseModelEvents <*> parseMaxAf
+                       <*> parseTemplateFilePath <*> parseParams <*> parseModelEvents <*> parseMinAf <*> parseMaxAf
                        <*> parseNrCalledSites <*> parseIndices <*> parseIgnoreList <*> parseHistPath
   where
     parseQueryIndex = OP.option OP.auto $ OP.short 'q' <> OP.long "queryIndex" <> OP.metavar "<INT>"
@@ -209,6 +214,7 @@ parseFindOpt = FindOpt <$> parseQueryIndex <*> parseBranchAge <*> parseDeltaTime
                                                            <> OP.help "maximum time" <> OP.value 0.025
     parseIgnoreList = OP.option readIgnoreList $ OP.long "exclude" <> OP.metavar "<list of lists>"
                                                             <> OP.help "ignore patterns" <> OP.value []
+                                                            <> OP.showDefault
     readIgnoreList s = do
         let ll = read s :: [[Int]]
         return $ map Pattern ll

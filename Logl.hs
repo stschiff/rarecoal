@@ -5,7 +5,7 @@ import Utils (computeAllConfigs)
 import Core (getProb, ModelSpec(..), ModelEvent(..))
 import Data.Int (Int64)
 import ModelTemplate (getModelSpec)
-import Control.Error (Script, scriptIO)
+import Control.Error (Script, scriptIO, assertErr)
 import qualified Data.Map.Strict as Map
 import Control.Parallel.Strategies (rdeepseq, parMap)
 import Control.Monad.Trans.Either (hoistEither)
@@ -27,21 +27,22 @@ data LoglOpt = LoglOpt {
 runLogl :: LoglOpt -> Script ()
 runLogl opts = do
     modelSpec <- getModelSpec (loTemplatePath opts) (loTheta opts) (loParams opts) (loModelEvents opts)
-    hist <- loadHistogram (loIndices opts) (loMaxAf opts) (loNrCalledSites opts) [] (loHistPath opts)
+    hist <- loadHistogram (loIndices opts) 1 (loMaxAf opts) (loNrCalledSites opts) (loHistPath opts)
     val <- hoistEither $ computeLikelihood modelSpec hist
     scriptIO $ print val
     writeSpectrumFile (loSpectrumPath opts) modelSpec hist
 
 computeLikelihood :: ModelSpec -> RareAlleleHistogram -> Either String Double
 computeLikelihood modelSpec histogram = do
+    assertErr "minFreq must be greater than 0" $ raMinAf histogram > 0
+    assertErr "maxType of histogram must be global" $ raGlobalMax histogram
     standardOrder <- computeStandardOrder histogram
     let nVec = raNVec histogram
     patternProbs <- sequence $ parMap rdeepseq (getProb modelSpec nVec) standardOrder
     -- trace (show $ zip standardOrder patternProbs) $ return ()
     let patternCounts = map (defaultLookup . Pattern) standardOrder
         ll = sum $ zipWith (\p c -> log p * fromIntegral c) patternProbs patternCounts
-        zeroPattern = Pattern $ replicate (length nVec) 0
-        otherCounts = defaultLookup zeroPattern + defaultLookup Higher
+        otherCounts = defaultLookup Higher
     return $ ll + fromIntegral otherCounts * log (1.0 - sum patternProbs)
   where
     defaultLookup sitePattern = Map.findWithDefault 0 sitePattern (raCounts histogram)
@@ -61,5 +62,5 @@ computeStandardOrder histogram =
     else
         let nrPop = length $ raNVec histogram
             nVec = raNVec histogram
-        in  Right $ computeAllConfigs nrPop (raMaxAf histogram) nVec
+        in  Right $ filter (\p -> sum p >= raMinAf histogram) $ computeAllConfigs nrPop (raMaxAf histogram) nVec
 
