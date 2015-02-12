@@ -59,25 +59,25 @@ parseViewOpt = ViewOpt <$> parseIndices <*> parseCombineIndices <*> parseMaxAf <
 parseIndices :: OP.Parser [Int]
 parseIndices = OP.option OP.auto $ OP.short 'I' <> OP.long "indices"
                                                 <> OP.metavar "[i1,i2,...]"
-                                                <> OP.value []
+                                                <> OP.value [] <> OP.showDefault
                                                 <> OP.help "Read only these indices from the input file"
 
 parseCombineIndices :: OP.Parser [Int]
 parseCombineIndices = OP.option OP.auto $ OP.long "combine"
                                                 <> OP.metavar "[i1,i2,...]"
-                                                <> OP.value []
+                                                <> OP.value [] <> OP.showDefault
                                                 <> OP.help "combine these indices into one"
 
 parseMaxAf :: OP.Parser Int
 parseMaxAf = OP.option OP.auto $ OP.short 'm' <> OP.long "max_af"
                                               <> OP.metavar "INT"
-                                              <> OP.value 10
-                                              <> OP.help "set the maximum allele frequency (default:10)"
+                                              <> OP.value 10 <> OP.showDefault
+                                              <> OP.help "set the maximum allele frequency"
 
 parseNrCalledSites :: OP.Parser Int64
 parseNrCalledSites = OP.option OP.auto $ OP.short 'N' <> OP.long "nr_called_sites"
                                                       <> OP.metavar "INT"
-                                                      <> OP.value 0
+                                                      <> OP.value 0 <> OP.showDefault
                                                       <> OP.help "set the nr of called sites"
 
 parseHistPath :: OP.Parser FilePath
@@ -98,8 +98,8 @@ parseProbOpt = ProbOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams 
 parseTheta :: OP.Parser Double
 parseTheta = OP.option OP.auto $ OP.short 't' <> OP.long "theta"
                                               <> OP.metavar "DOUBLE"
-                                              <> OP.value 0.0005
-                                              <> OP.help "set the scaled mutation rate [default:0.005]"
+                                              <> OP.value 0.0005 <> OP.showDefault
+                                              <> OP.help "set the scaled mutation rate"
 
 parseTemplateFilePath :: OP.Parser FilePath
 parseTemplateFilePath = OP.option OP.str $ OP.short 'T' <> OP.long "template" <> OP.metavar "<Input Template File>" <> OP.value "/dev/null"
@@ -108,7 +108,7 @@ parseTemplateFilePath = OP.option OP.str $ OP.short 'T' <> OP.long "template" <>
 parseParams :: OP.Parser [Double]
 parseParams = OP.option OP.auto $ OP.short 'x' <> OP.long "params"
                                                <> OP.metavar "[p1,p2,...]"
-                                               <> OP.value []
+                                               <> OP.value [] <> OP.showDefault
                                                <> OP.help "initial parameters for the template"
 
 parseModelEvents :: OP.Parser [ModelEvent]
@@ -155,7 +155,7 @@ parseLoglOpt = LoglOpt <$> parseSpectrumPath <*> parseTheta <*> parseTemplateFil
 parseSpectrumPath :: OP.Parser FilePath
 parseSpectrumPath = OP.option OP.str $ OP.short 's' <> OP.long "spectrumFile"
                                                 <> OP.metavar "<Output Spectrum File>"
-                                                <> OP.value "/dev/null"
+                                                <> OP.value "/dev/null" <> OP.showDefault
                                                 <> OP.help "Output the allele frequencies to file"
 
 
@@ -169,12 +169,12 @@ parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams 
   where
     parseMaxCycles = OP.option OP.auto $ OP.short 'c' <> OP.long "maxCycles"
                                                       <> OP.metavar "<NR_MAX_CYCLES>"
-                                                      <> OP.value 10000
+                                                      <> OP.value 10000 <> OP.showDefault
                                                       <> OP.help "Specifies the maximum number of cycles in the minimization routine"
 
 parseTraceFilePath :: OP.Parser FilePath
 parseTraceFilePath = OP.option OP.str $ OP.short 'f' <> OP.long "traceFile" <> OP.metavar "<FILE>"
-                                                            <> OP.value "/dev/null"
+                                                            <> OP.value "/dev/null" <> OP.showDefault
                                                             <> OP.help "The file to write the trace"
 
 parseMcmc :: OP.Parser Command
@@ -189,7 +189,7 @@ parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams
   where
     parseRandomSeed = OP.option OP.auto $ OP.short 'S' <> OP.long "seed" <> OP.metavar "<INT>" <> OP.help "Random Seed"
     parseNrCycles = OP.option OP.auto $ OP.long "cycles" <> OP.short 'c' <> OP.value 1000 <> OP.metavar "<INT>"
-                                                               <> OP.help "nr of MCMC cycles"
+                                                               <> OP.help "nr of MCMC cycles" <> OP.showDefault
 
 
 parseFind :: OP.Parser Command
@@ -203,10 +203,10 @@ parseFindOpt = FindOpt <$> parseQueryIndex <*> parseBranchAge <*> parseDeltaTime
                                                        <> OP.help "index of query branch"
     parseBranchAge = OP.option OP.auto $ OP.short 'b' <> OP.long "branchAge" <> OP.metavar "<Double>"
                                                        <> OP.help "sampling age of query branch"
-    parseDeltaTime = OP.option OP.auto $ OP.long "deltaTime" <> OP.metavar "<Double>"
-                                                      <> OP.help "length of time intervals [0.0005]" <> OP.value 0.0005
-    parseMaxTime = OP.option OP.auto $ OP.long "maxTime" <> OP.metavar "<Double>"
-                                                           <> OP.help "maximum time [0.025]" <> OP.value 0.025
+    parseDeltaTime = OP.option OP.auto $ OP.long "deltaTime" <> OP.metavar "<Double>" <> OP.showDefault
+                                                      <> OP.help "length of time intervals" <> OP.value 0.0005
+    parseMaxTime = OP.option OP.auto $ OP.long "maxTime" <> OP.metavar "<Double>" <> OP.showDefault
+                                                           <> OP.help "maximum time" <> OP.value 0.025
     parseIgnoreList = OP.option readIgnoreList $ OP.long "exclude" <> OP.metavar "<list of lists>"
                                                             <> OP.help "ignore patterns" <> OP.value []
     readIgnoreList s = do
