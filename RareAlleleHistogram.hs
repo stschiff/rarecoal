@@ -61,13 +61,12 @@ instance Read SitePattern where
         let val = if s == "HIGHER" then Higher else Pattern $ map read . splitOn "," $ s
         in  [(val, "")]
 
-loadHistogram :: [Int] -> Int -> Int64 -> FilePath -> Script RareAlleleHistogram
-loadHistogram indices maxAf nrCalledSites path = do
-    -- scriptIO $ infoM "rarecoal" "Loading histogram ... "
+loadHistogram :: [Int] -> Int -> Int64 -> [SitePattern] -> FilePath -> Script RareAlleleHistogram
+loadHistogram indices maxAf nrCalledSites ignoreList path = do
     hist <- scriptIO $ liftM read $ readFile path
-    -- scriptIO $ infoM "rarecoal" "... Done loading"
     let f = if nrCalledSites > 0 then setNrCalledSites nrCalledSites else return
-    hoistEither $ (f <=< filterMaxAf maxAf <=< reduceIndices indices <=< return) hist
+    hist' <- hoistEither $ (f <=< filterMaxAf maxAf <=< reduceIndices indices <=< return) hist
+    return $ removePatterns ignoreList hist'
 
 setNrCalledSites :: Int64 -> RareAlleleHistogram -> Either String RareAlleleHistogram
 setNrCalledSites nrCalledSites hist = do
@@ -77,6 +76,13 @@ setNrCalledSites nrCalledSites hist = do
     when (add_ < 0) $ Left "Illegal nrCalledSites" 
     let newHistBody = Map.adjust (+add_) zeroKey (raCounts hist)
     return $ hist {raCounts = newHistBody}
+
+removePatterns :: [SitePattern] -> RareAlleleHistogram -> RareAlleleHistogram
+removePatterns ignoreList hist =
+    let newBody = Map.mapKeysWith (+) (moveToHigher ignoreList) (raCounts hist)
+    in  hist {raCounts = newBody}
+  where
+    moveToHigher targets pattern = if pattern `elem` targets then Higher else pattern
 
 filterMaxAf :: Int -> RareAlleleHistogram -> Either String RareAlleleHistogram
 filterMaxAf maxAf hist = do

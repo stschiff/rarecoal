@@ -14,6 +14,7 @@ import Core (ModelEvent(..), EventType(..))
 import Control.Error.Script (runScript, scriptIO)
 import Data.Int (Int64)
 import Debug.Trace (trace)
+import RareAlleleHistogram (SitePattern(..))
 
 data Options = Options Command
 
@@ -196,7 +197,7 @@ parseFind = CmdFind <$> parseFindOpt
 
 parseFindOpt = FindOpt <$> parseQueryIndex <*> parseBranchAge <*> parseDeltaTime <*> parseMaxTime <*> parseTheta
                        <*> parseTemplateFilePath <*> parseParams <*> parseModelEvents <*> parseMaxAf
-                       <*> parseNrCalledSites <*> parseIndices <*> parseHistPath
+                       <*> parseNrCalledSites <*> parseIndices <*> parseIgnoreList <*> parseHistPath
   where
     parseQueryIndex = OP.option OP.auto $ OP.short 'q' <> OP.long "queryIndex" <> OP.metavar "<INT>"
                                                        <> OP.help "index of query branch"
@@ -206,4 +207,9 @@ parseFindOpt = FindOpt <$> parseQueryIndex <*> parseBranchAge <*> parseDeltaTime
                                                       <> OP.help "length of time intervals [0.0005]" <> OP.value 0.0005
     parseMaxTime = OP.option OP.auto $ OP.long "maxTime" <> OP.metavar "<Double>"
                                                            <> OP.help "maximum time [0.025]" <> OP.value 0.025
+    parseIgnoreList = OP.option readIgnoreList $ OP.long "exclude" <> OP.metavar "<list of lists>"
+                                                            <> OP.help "ignore patterns" <> OP.value []
+    readIgnoreList s = do
+        let ll = read s :: [[Int]]
+        return $ map Pattern ll
 

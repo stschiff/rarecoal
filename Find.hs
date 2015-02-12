@@ -1,7 +1,7 @@
 module Find (runFind, FindOpt(..)) where
 
 import ModelTemplate (getModelSpec)
-import RareAlleleHistogram (loadHistogram, RareAlleleHistogram(..))
+import RareAlleleHistogram (loadHistogram, RareAlleleHistogram(..), SitePattern(..))
 import Control.Monad.Trans.Either (hoistEither)
 import Control.Error.Script (Script, scriptIO)
 import Control.Error.Safe (tryAssert)
@@ -23,6 +23,7 @@ data FindOpt = FindOpt {
     fiMaxAf :: Int,
     fiNrCalledSites :: Int64,
     fiIndices :: [Int],
+    fiIgnoreList :: [SitePattern],
     fiHistPath :: FilePath
 }
 
@@ -37,7 +38,7 @@ runFind opts = do
         else
             modelSpec'
     tryAssert ("model must have free branch " ++ show (fiQueryIndex opts)) $ hasFreeBranch l modelSpec
-    hist <- loadHistogram (fiIndices opts) (fiMaxAf opts) (fiNrCalledSites opts) (fiHistPath opts)
+    hist <- loadHistogram (fiIndices opts) (fiMaxAf opts) (fiNrCalledSites opts) (fiIgnoreList opts) (fiHistPath opts)
     let nrPops = length $ raNVec hist
         targetBranches = [branch | branch <- [0..nrPops-1], branch /= l]
         allJoinTimes = [getJoinTimes modelSpec (fiDeltaTime opts) (fiMaxTime opts) (fiBranchAge opts) k | k <- targetBranches]

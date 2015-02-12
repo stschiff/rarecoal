@@ -1,9 +1,10 @@
 module Utils (computeAllConfigs) where
 
-computeAllConfigs nrPop maxFreq = 
+computeAllConfigs :: Int -> Int -> [Int] -> [[Int]]
+computeAllConfigs nrPop maxFreq nVec = 
    let maxPowerNum = (maxFreq + 1) ^ nrPop
        order = map (digitize (maxFreq + 1) nrPop) [1..maxPowerNum]
-   in  filter (\v -> sum v <= maxFreq) order
+   in  filter (\v -> (sum v <= maxFreq) && and (zipWith (<=) v nVec)) order
 
 digitize :: Int -> Int -> Int -> [Int]
 digitize base nrDigit num 
