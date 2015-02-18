@@ -4,7 +4,7 @@ module RareAlleleHistogram (RareAlleleHistogram(..),
                             SitePattern(..),
                             addHistograms, filterMaxAf, setNrCalledSites,
                             loadHistogram, reduceIndices, combineIndices,
-                            filterMinAf, parseHistogram, showHistogram) where
+                            filterMinAf, parseHistogram, showHistogram, simpleReadHistogram) where
 
 import qualified Data.Map.Strict as Map
 import Data.List (intercalate, sortBy)
@@ -34,6 +34,20 @@ showHistogram hist = do
         body = [show k ++ " " ++ show v | (k, v) <- sorted]
     return $ unlines (head1:head2:head3:body)
 
+simpleReadHistogram :: String -> RareAlleleHistogram
+simpleReadHistogram s =
+    let lines_ = lines s
+        nVec = map read . splitOn "," $ drop 2 (head lines_)
+        maxM = read $ drop 6 (lines_ !! 1)
+        maxType = read $ drop 11 (lines_ !! 2)
+        body = map readBodyLine (filter (/="") $ drop 3 lines_)
+    in  RareAlleleHistogram nVec 0 maxM maxType (Map.fromList body)
+    where
+        readBodyLine :: String -> (SitePattern, Int64)
+        readBodyLine line =
+            let [patS, valS] = words line
+            in  (read patS, read valS)
+
 parseHistogram :: String -> Either String RareAlleleHistogram
 parseHistogram s = do
     let lines_ = lines s
@@ -44,16 +58,19 @@ parseHistogram s = do
     maxTypeLine <- atErr "file too short" lines_ 2
     maxType <- readErr "parse error in line 3" $ drop 11 maxTypeLine
     body <- mapM readBodyLine (filter (/="") $ drop 3 lines_)
+    -- let body = map readBodyLine (filter (/="") $ drop 3 lines_)
     return $ RareAlleleHistogram nVec 0 maxM maxType (Map.fromList body)
     where
         readBodyLine :: String -> Either String (SitePattern, Int64)
         readBodyLine line = do
             let fields = words line
-            -- pat <- readErr "parse error" <=< headErr "parse error" $ fields
-            -- val <- readErr "parse error" <=< lastErr "parse error" $ fields
-                pat = read $ head fields
-                val = read $ last fields
+            pat <- readErr "parse error" <=< headErr "parse error" $ fields
+            val <- readErr "parse error" <=< lastErr "parse error" $ fields
             return $ (pat, val)
+        -- readBodyLine :: String -> (SitePattern, Int64)
+        -- readBodyLine line =
+        --     let [patS, valS] = words line
+        --     in  (read patS, read valS)
 
 commaSep :: Show a => [a] -> String
 commaSep = intercalate "," . map show
