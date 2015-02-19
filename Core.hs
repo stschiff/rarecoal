@@ -1,3 +1,5 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module Core (defaultTimes, getProb, update, validateModel, ModelEvent(..), EventType(..), ModelSpec(..)) where
 
 import Control.Monad.Trans.State.Lazy (State, get, put, execState)
@@ -6,9 +8,11 @@ import Debug.Trace (trace)
 import Utils (computeAllConfigs)
 import Control.Monad (when, foldM)
 import qualified Data.Vector.Unboxed as V
+import qualified Data.Vector as VB
 import Data.Vector.Unboxed.Base (Unbox)
 import qualified Data.Map as M
 import Control.Error.Safe (assertErr)
+import Control.Lens ((%~), ix, (&), makeLenses)
 
 (!) :: Unbox a => V.Vector a -> Int -> a
 (!) = (V.!)
@@ -18,13 +22,15 @@ import Control.Error.Safe (assertErr)
 type JointState = V.Vector Int
 
 data CoalState = CoalState {
-    csA :: V.Vector Double,
-    csB :: M.Map JointState Double,
-    csD :: Double,
-    csMaxMVec :: JointState,
-    csX1up :: M.Map JointState [JointState],
-    csX1 :: [JointState]
+    _csA :: V.Vector Double,
+    _csB :: M.Map JointState Double,
+    _csD :: Double,
+    _csMaxMVec :: JointState,
+    _csX1up :: M.Map JointState [JointState],
+    _csX1 :: [JointState]
 } deriving (Show)
+
+makeLenses ''CoalState
 
 data ModelEvent = ModelEvent {
     meTime :: Double,
@@ -35,6 +41,7 @@ data EventType = Join Int Int
                | SetPopSize Int Double
                | SetGrowthRate Int Double 
                | SetFreeze Int Bool
+               | SetMigration Int Int Double
                deriving (Show, Read)
 
 data ModelSpec = ModelSpec {
@@ -44,12 +51,15 @@ data ModelSpec = ModelSpec {
 } deriving (Show)
 
 data ModelState = ModelState {
-    msT :: Double,
-    msEventQueue :: [ModelEvent],
-    msPopSize :: V.Vector Double,
-    msGrowthRates :: V.Vector Double,
-    msFreezeState :: V.Vector Bool
+    _msT :: Double,
+    _msEventQueue :: [ModelEvent],
+    _msPopSize :: V.Vector Double,
+    _msGrowthRates :: V.Vector Double,
+    _msFreezeState :: V.Vector Bool,
+    _msMigrationRates :: [(Int, Int, Double)]
 } deriving (Show)
+
+makeLenses ''ModelState
 
 defaultTimes :: [Double]
 defaultTimes = getTimeSteps 20000 400 20.0
@@ -85,14 +95,15 @@ makeInitModelState (ModelSpec _ _ events) k =
         popSize = V.replicate k 1.0
         growthRates = V.replicate k 0.0
         freezeState = V.replicate k False
-    in  ModelState t sortedEvents popSize growthRates freezeState
+        migrationMatrix = []
+    in  ModelState t sortedEvents popSize growthRates freezeState migrationMatrix
 
 makeInitCoalState :: [Int] -> [Int] -> CoalState
 makeInitCoalState nVec config =
     let a = V.fromList $ zipWith (\n m -> fromIntegral (n - m)) nVec config
         initialState = V.fromList config
         b = M.singleton initialState 1.0
-        b' = fillStateSpace b initialState
+        b' = liftStateSpace initialState b
         x1upMap = M.mapWithKey (\x _ -> x1ups x) b'
         nrPop = V.length initialState
         x1 = [V.replicate nrPop 0 // [(k, 1)] | k <- [0..nrPop-1]]
@@ -103,11 +114,11 @@ x1ups x = [x // [(k, x!k + 1)] | k <- [0..nrPop-1]]
   where
     nrPop = V.length x
 
-fillStateSpace :: M.Map JointState Double -> JointState -> M.Map JointState Double
-fillStateSpace b maxMVec =
-    let allStates = expandPattern maxMVec
-        safeInsert m k = M.insertWith (\_ oldVal -> oldVal) k 0.0 m
-    in  foldl safeInsert b allStates
+liftStateSpace :: JointState -> M.Map JointState Double -> M.Map JointState Double
+liftStateSpace maxMVec b =
+    let newB = Map.fromList [(k, 0.0) | k <- expandPattern maxMVec]
+        safeInsert m (k, v) = if k `Map.member` m then M.insert k v m else m
+    in  foldl safeInsert newB $ Map.fromList b
 
 expandPattern :: JointState -> [JointState]
 expandPattern vec =
@@ -131,45 +142,55 @@ singleStep nextTime = do
     else do
         let deltaT = nextTime - msT ms
         updateCoalState deltaT
+        migrations <- use $ _1 . msMigrationRates
+        mapM_ (updateCoalStateMig deltaT) migrations
         updateModelState deltaT
 
 performEvent :: State (ModelState, CoalState) ()
 performEvent = do
-    (ModelState _ events popSize growthRates freezeState, cs) <- get
-    let ModelEvent t e = head events
-    case e of
-        Join k l -> do
-            let cs' = popJoin k l cs
-            put (ModelState t (tail events) popSize growthRates freezeState, cs')
+    events <- use $ _1 . msEventQueue
+    case head events of
+        Join k l -> _2 %= popJoin k l
         SetPopSize k p -> do
-            let popSize' = popSize // [(k, p)]
-                growthRates' = growthRates // [(k, 0.0)]
-            put (ModelState t (tail events) popSize' growthRates' freezeState, cs)
-        SetGrowthRate k r -> do
-            let growthRates' = growthRates // [(k, r)]
-            put (ModelState t (tail events) popSize growthRates' freezeState, cs)
-        SetFreeze k b -> do
-            let freezeState' = freezeState // [(k, b)]
-            put (ModelState t (tail events) popSize growthRates freezeState', cs)
+            _1 . msPopSize . ix k ^= p
+            _1 . msGrowthRates . ix k ^= 0
+        SetGrowthRate k r -> _1 . msGrowthRates . ix k ^= r
+        SetFreeze k b -> _1 . msFreezeState . ix k ^= b
+        SetMigration k l m -> do
+            migrations <- use $ _1 . msMigrationRates    
+            if m > 0 then
+                if or [k' == k && l' == l | (k', l', _) <- migrations]
+                do
+                updateMigStateSpace k l m
+                _1 . msMigrationRates %= (++[(k, l, m)])
+    _1 . msEventQueue ^= tail events
 
-popJoin :: Int -> Int -> CoalState -> CoalState
-popJoin k l cs =
-    let a = csA cs
-        b = csB cs
-        maxMvec = csMaxMVec cs
-        newAk = a!k + a!l
-        newA  = a // [(k, newAk), (l, 0.0)]
-        newB = M.mapKeysWith (+) (joinCounts k l) b
-        newMaxMvec = joinCounts k l maxMvec
-        newB' = fillStateSpace newB newMaxMvec
-        newX1upMap = M.mapWithKey (\x _ -> x1ups x) newB'
-    in  CoalState newA newB' (csD cs) newMaxMvec newX1upMap (csX1 cs)
+popJoin :: Int -> Int -> State (ModelState, CoalState) ()
+popJoin k l cs = do
+    aL <- use $ _2 . csA . ix l
+    _2 . csA . ix l ^= 0
+    _2 . csA . ix k += aL
+    _2 . csB %= M.mapKeysWith (+) (joinCounts k l)
+    _2 . csMaxMVec %= joinCounts k l
+    maxMVec <- use $ _2 . csMaxMVec
+    _2 . csB %= liftStateSpace maxMvec
+    b <- use $ _2 . csB
+    _2 . csX1up ^= M.mapWithKey (\x _ -> x1ups x) b
 
 joinCounts :: Int -> Int -> JointState -> JointState
 joinCounts k l s = 
    let newK = s!k + s!l
        newL = 0
    in  s // [(k, newK), (l, newL)]
+
+updateMigStateSpace :: Int -> Int -> Double -> State (ModelState, CoalState) ()
+updateMigStateSpace k l m = do
+    newMaxL <- use $ _2 . csMaxMVec . ix l
+    _2 . csMaxMVec . ix k += newMaxL
+    maxMVec <- use $ _2 . csMaxMVec
+    _2 . csB %= liftStateSpace maxMVec
+    b <- use $ _2 . csB
+    _2 . csX1up ^= M.mapWithKey (\x _ -> x1ups x) b
 
 update :: Int -> a -> [a] -> [a]
 update i val vec = let (x, _:ys) = splitAt i vec in x ++ (val:ys)
@@ -183,6 +204,10 @@ updateCoalState deltaT = do
         bNew = updateB deltaT popSize freezeState (csA cs) (csB cs) (csX1up cs)
         dNew = updateD deltaT (csB cs) (csD cs) (csX1 cs)
     put (ms, cs {csA = aNew, csB = bNew, csD = dNew})
+
+updateCoalStateMig :: Double -> State (ModelState, CoalState) ()
+updateCoalStateMig deltaT = do
+    
 
 updateA :: Double -> V.Vector Double -> V.Vector Bool -> V.Vector Double -> V.Vector Double
 updateA deltaT popSize freezeState = V.zipWith3 go popSize freezeState
