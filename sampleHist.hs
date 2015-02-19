@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell, BangPatterns #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 import System.Environment (getArgs)
 import qualified Options.Applicative as OP
@@ -54,16 +54,16 @@ addSamplePop :: Int -> Int -> RareAlleleHistogram -> State StdGen RareAlleleHist
 addSamplePop query howMany hist = do
     let histRows = Map.toList (raCounts hist)
         nVec = raNVec hist
-    !patternMaps <- sequence [sampleFromPatterns query howMany nVec pat count | (pat, count) <- histRows]
+    patternMaps <- sequence [sampleFromPatterns query howMany nVec pat count | (pat, count) <- histRows]
     let newBody = Map.unionsWith (+) patternMaps
         newNVec = (nVec & ix query %~ (\v -> v - howMany)) ++ [howMany]
     return hist {raNVec = newNVec, raCounts = newBody}
 
 sampleFromPatterns :: Int -> Int -> [Int] -> SitePattern -> Int64 -> State StdGen (Map.Map SitePattern Int64)
 sampleFromPatterns _ _ _ Higher count = return $ Map.singleton Higher count
-sampleFromPatterns query howMany nVec !pattern@(Pattern !p) !count =
+sampleFromPatterns query howMany nVec pattern@(Pattern p) count =
     if p !! query == 0 then
-        return $ Map.singleton pattern count
+        return $ Map.singleton (Pattern $ p ++ [0]) count
     else do
         patterns <- replicateM (fromIntegral count) $ sampleFromPattern query howMany nVec pattern
         return $ foldl' insertPattern Map.empty patterns
