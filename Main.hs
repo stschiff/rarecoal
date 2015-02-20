@@ -120,7 +120,7 @@ parseModelEvents :: OP.Parser [ModelEvent]
 parseModelEvents = many parseEvent
 
 parseEvent :: OP.Parser ModelEvent
-parseEvent = parseJoin <|> parseSetP <|> parseSetR
+parseEvent = parseJoin <|> parseSetP <|> parseSetR <|> parseSetM
 
 parseJoin :: OP.Parser ModelEvent
 parseJoin = OP.option readJoin $ OP.short 'j' <> OP.long "join"
@@ -148,6 +148,14 @@ parseSetR = OP.option readSetR $ OP.short 'r' <> OP.long "growthRate"
     readSetR s = do
         let [t, k, r] = splitOn "," s
         return $ ModelEvent (read t) (SetGrowthRate (read k) (read r))
+
+parseSetM :: OP.Parser ModelEvent
+parseSetM = OP.option readSetM $ OP.long "mig" <> OP.metavar "t,k,l,m"
+                                              <> OP.help "At time t, set migration rate m from l to k"
+  where
+    readSetM s = do
+        let [t, k, l, m] = splitOn "," s
+        return $ ModelEvent (read t) (SetMigration (read k) (read l) (read m))
 
 parseLogl :: OP.Parser Command
 parseLogl = CmdLogl <$> parseLoglOpt
