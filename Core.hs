@@ -109,10 +109,9 @@ makeInitCoalState nVec config =
 
 fillStateSpace :: JointState -> M.Map JointState Double -> M.Map JointState Double
 fillStateSpace maxMVec b =
-    let newB = M.fromList [(k, 0.0) | k <- expandPattern maxMVec]
-        safeInsert m (k, v) = if k `M.member` m then M.insert k v m else m
-        b' = foldl safeInsert newB $ M.toList b
-    in  b'
+    let allStates = expandPattern maxMVec
+        safeInsert m k = M.insertWith (\_ oldVal -> oldVal) k 0.0 m
+    in  foldl safeInsert b allStates
   where
     expandPattern :: JointState -> [JointState]
     expandPattern vec =
@@ -126,7 +125,7 @@ fillStateSpace maxMVec b =
 singleStep :: Double -> State (ModelState, CoalState) ()
 singleStep nextTime = do
     (ms, cs) <- get
-    trace (show nextTime ++ " " ++ show (_msT ms) ++ " " ++ show (_csA cs) ++ " " ++ show (_csB cs)) (return ())
+    -- trace (show nextTime ++ " " ++ show (_msT ms) ++ " " ++ show (_csA cs) ++ " " ++ show (_csB cs)) (return ())
     let events = _msEventQueue ms
         ModelEvent t _ = if null events then ModelEvent (1.0/0.0) undefined else head events
     if  t < nextTime then do
@@ -169,6 +168,7 @@ popJoin k l = do
     _2 . csMaxMVec %= joinCounts k l
     maxMVec <- use $ _2 . csMaxMVec
     _2 . csB %= fillStateSpace maxMVec
+    _2 . csB %= M.filterWithKey (\k _ -> k!l == 0)
     _1 . msMigrationRates %= deleteMigrations l
   where
     deleteMigrations pop list = [mig | mig@(k', l', _) <- list, k' /= pop, l' /= pop]
@@ -200,7 +200,10 @@ updateCoalStateMig deltaT (k, l, m) = do
             reduceFactor = exp $ -deltaT * m * fromIntegral (sourceState!l)
             b' = M.adjust (*reduceFactor) sourceState b
             targetState = sourceState & ix k +~ 1 & ix l -~ 1
-        in  M.insertWith (+) targetState (bProb * (1.0 - reduceFactor)) b'
+        in  if targetState `M.member` b' then
+                M.insertWith (+) targetState (bProb * (1.0 - reduceFactor)) b'
+            else
+                M.insert targetState (bProb * (1.0 - reduceFactor)) . fillStateSpace targetState $ b'
 
 updateA :: Double -> State (ModelState, CoalState) ()
 updateA deltaT = do
