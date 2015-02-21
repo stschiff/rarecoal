@@ -114,3 +114,16 @@ executable sampleHist
                        random
   default-language:    Haskell2010
   ghc-options:         -fno-ignore-asserts -rtsopts -O "-with-rtsopts=-A10m -K100m"
+
+executable ms2hist
+  main-is:              ms2hist.hs
+  build-depends:        base,
+                        split,
+                        errors,
+                        transformers,
+                        either,
+                        containers,
+                        hslogger,
+                        lens,
+                        optparse-applicative
+  default-language:     Haskell2010
