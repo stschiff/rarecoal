@@ -60,7 +60,7 @@ parseParamName = do
 
 parseEvents :: Parser [EventTemplate]
 parseEvents = many $ do
-    eChar <- oneOf "PJR"
+    eChar <- oneOf "PJRM"
     space
     eBody <- parseLine
     newline
@@ -103,6 +103,11 @@ instantiateEvent pnames params (EventTemplate et body) = do
             k <- readErr err $ fields!!1
             l <- readErr err $ fields!!2
             return $ ModelEvent t (Join k l)
+        'M' -> do
+            k <- readErr err $ fields!!1
+            l <- readErr err $ fields!!2
+            r <- readErr err $ fields!!3
+            return $ ModelEvent t (SetMigration k l r)
 
 validateConstraint :: [String] -> [Double] -> ConstraintTemplate -> Either String ()
 validateConstraint pNames params (ConstraintTemplate name1 comp name2) = do
