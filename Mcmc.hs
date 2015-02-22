@@ -71,7 +71,7 @@ mcmcNotDone requiredCycles = do
     if nrCycles < requiredCycles then return True else
         let scoreValues = reverse $ mcmcScoreList state
             nrBurnins = computeBurninCycles scoreValues
-        in  if nrCycles - nrBurnins > requiredCycles then return False else return True 
+        in  return $ nrCycles - nrBurnins <= requiredCycles
 
 computeBurninCycles :: [Double] -> Int
 computeBurninCycles s =
@@ -137,9 +137,7 @@ isSuccessFul newVal = do
             let rng = mcmcRanGen state
                 (ran, rng') = R.randomR (0.0, 1.0) rng
             put state {mcmcRanGen = rng'}
-            if ran < exp(mcmcCurrentValue state - newVal)
-                then return True
-                else return False
+            return $ ran < exp (mcmcCurrentValue state - newVal)
 
 accept :: V.Vector Double -> Double -> Int -> StateT MCMCstate Script ()
 accept newPoint newVal i = do
@@ -185,7 +183,7 @@ reportPosteriorStats paramNames states = do
         scoreLine = intercalate "\t" ("Score":map show orderStatsScore)
         headerLine = "Param\tMaxL\tLowerCI\tMedian\tUpperCI"
     putStrLn $ "# Nr Burnin Cycles: " ++ show nrBurninCycles
-    putStrLn $ "# Nr Main Cycles: " ++ (show $ (length states) - nrBurninCycles)
+    putStrLn $ "# Nr Main Cycles: " ++ show (length states - nrBurninCycles)
     putStr $ unlines (headerLine:scoreLine:paramLines)
   where
    getOrderStats minI vals =

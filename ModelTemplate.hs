@@ -2,7 +2,7 @@ module ModelTemplate (ModelTemplate(..), readModelTemplate, instantiateModel, ge
 
 import Data.String.Utils (replace)
 import Data.List.Split (splitOn)
-import Control.Monad (liftM)
+import Control.Monad (liftM, unless)
 import Control.Error (Script, scriptIO)
 import Control.Error.Safe (assertErr, readErr, justErr)
 import Control.Monad.Trans.Either (hoistEither, left, right)
@@ -115,9 +115,9 @@ validateConstraint pNames params (ConstraintTemplate name1 comp name2) = do
     p1 <- justErr ("Undefined parameter in constraint: \"" ++ name1 ++ "\"") $ lookup name1 l
     p2 <- justErr ("Undefined parameter in constraint: \"" ++ name2 ++ "\"") $ lookup name2 l
     if comp == '<' then
-        if p1 < p2 then return () else Left $ "Constrained failed: " ++ show p1 ++ " < " ++ show p2
+        unless (p1 < p2) $ Left $ "Constrained failed: " ++ show p1 ++ " < " ++ show p2
     else
-        if p1 > p2 then return () else Left $ "Constrained failed: " ++ show p1 ++ " > " ++ show p2
+        unless (p1 > p2) $ Left $ "Constrained failed: " ++ show p1 ++ " > " ++ show p2
 
 substituteParams :: [String] -> [Double] -> String -> Either String String
 substituteParams [] [] s = Right s

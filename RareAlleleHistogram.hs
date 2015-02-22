@@ -1,5 +1,3 @@
-{-# LANGUAGE BangPatterns #-}
-
 module RareAlleleHistogram (RareAlleleHistogram(..),
                             SitePattern(..),
                             addHistograms, filterMaxAf, setNrCalledSites,
@@ -66,7 +64,7 @@ parseHistogram s = do
             let fields = words line
             pat <- readErr "parse error" <=< headErr "parse error" $ fields
             val <- readErr "parse error" <=< lastErr "parse error" $ fields
-            return $ (pat, val)
+            return (pat, val)
         -- readBodyLine :: String -> (SitePattern, Int64)
         -- readBodyLine line =
         --     let [patS, valS] = words line

@@ -50,19 +50,19 @@ runFind opts = do
     hasFreeBranch queryBranch modelSpec =
         let e = mEvents modelSpec
             jIndices = concat [[k, l] | ModelEvent _ (Join k l) <- e]
-        in  all (/=queryBranch) jIndices
+        in  queryBranch `notElem` jIndices
 
 getJoinTimes :: ModelSpec -> Double -> Double -> Double -> Int -> [Double]
 getJoinTimes modelSpec deltaT maxT branchAge k =
     let allTimes = takeWhile (<=maxT) $ map ((+branchAge) . (*deltaT) . fromIntegral) [1..]
         leaveTimes = [t | ModelEvent t (Join _ l) <- mEvents modelSpec, k == l]
-    in  if leaveTimes == [] then allTimes else filter (<head leaveTimes) allTimes
+    in  if null leaveTimes then allTimes else filter (<head leaveTimes) allTimes
 
 computeLikelihoodIO :: RareAlleleHistogram -> ModelSpec -> Int -> Int -> Double -> Script Double
 computeLikelihoodIO hist modelSpec k l t = do
     let e = mEvents modelSpec
         newE = ModelEvent t (Join k l)
-        modelSpec' = modelSpec {mEvents = (newE:e)}
+        modelSpec' = modelSpec {mEvents = newE : e}
     ll <- hoistEither $ computeLikelihood modelSpec' hist
     scriptIO $ hPutStrLn stderr ("branch=" ++ show k ++ ", time=" ++ show t ++ ", ll=" ++ show ll)
     return ll

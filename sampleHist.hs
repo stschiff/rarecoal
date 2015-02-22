@@ -11,10 +11,9 @@ import Data.Monoid ((<>), mempty)
 import Control.Monad.Trans.Either (hoistEither)
 import qualified Data.Map.Strict as Map
 import Data.Int (Int64)
-import Data.Foldable (foldlM)
+import Data.Foldable (foldlM, foldl')
 import System.Random (mkStdGen, newStdGen, StdGen, random)
 import Control.Monad (replicateM)
-import Data.Foldable (foldl')
 
 data MyOpts = MyOpts {
     _optQueryPop :: Int,
@@ -92,5 +91,5 @@ bernoulli p = do
     rng <- get
     let (ran, rng') = random rng
     put rng'
-    return $ if ran < p then True else False
+    return $ ran < p
     

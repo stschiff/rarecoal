@@ -153,8 +153,8 @@ performEvent = do
         SetMigration k l m -> do
             migrations <- use $ _1 . msMigrationRates
             let migList = [i | ((k', l', _), i) <- zip migrations [0..], k' == k, l' == l]
-            when (length migList == 0 && m > 0) $ _1 . msMigrationRates %= (++[(k, l, m)])
-            when (length migList > 0 && m == 0) $ _1 . msMigrationRates %= deleteFromList (head migList)
+            when (null migList && m > 0) $ _1 . msMigrationRates %= (++[(k, l, m)])
+            when (not (null migList) && m == 0) $ _1 . msMigrationRates %= deleteFromList (head migList)
     _1 . msEventQueue .= tail events
   where
     deleteFromList index l = [v | (v, i) <- zip l [0..], i /= index]
@@ -239,7 +239,7 @@ updateB deltaT = do
         case x1upRet of
             Just x1up -> return x1up
             Nothing -> do
-                let x1up = [x // [(k, x!k + 1)] | k <- [0..(V.length x)-1]]
+                let x1up = [x // [(k, x!k + 1)] | k <- [0..V.length x - 1]]
                 _2 . csX1up %= M.insert x x1up
                 return x1up
         
@@ -257,7 +257,7 @@ updateModelState deltaT = do
     let popSize = _msPopSize ms
         t = _msT ms
         growthRates = _msGrowthRates ms
-        popSize' = [(popSize!k) * exp (-(growthRates!k) * deltaT) | k <- [0..(V.length popSize)-1]]
+        popSize' = [(popSize!k) * exp (-(growthRates!k) * deltaT) | k <- [0..V.length popSize - 1]]
     put (ms {_msT = t + deltaT, _msPopSize = V.fromList popSize'}, cs)
 
 validateModel :: ModelSpec -> Either String ()
@@ -280,7 +280,7 @@ validateModel (ModelSpec _ _ events) = do
 
 choose :: Int -> Int -> Double
 choose _ 0 = 1
-choose n k = product [(fromIntegral $ n + 1 - j) / fromIntegral j | j <- [1..k]]
+choose n k = product [fromIntegral (n + 1 - j) / fromIntegral j | j <- [1..k]]
 
 --chooseLog :: Int -> Int -> Double
 --chooseLog _ 0 = 0
