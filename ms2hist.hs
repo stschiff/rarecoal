@@ -37,7 +37,7 @@ mainWithOptions (MyOpts nVec maxAf globalMax) = runScript $
                          >>= scriptIO . putStrLn
 
 makeHist :: [Int] -> Int -> Bool -> String -> Either String RareAlleleHistogram
-makeHist nVec maxAf global s =
+makeHist nVec maxAf global s = do
     let loci = transpose . lines $ s
     assertErr "nVec doesn't sum up to correct number of samples" $ length (head loci) == sum nVec
     let getFreqSum = map (length . filter (=='1')) . splitPlaces nVec
