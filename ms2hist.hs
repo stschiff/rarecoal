@@ -31,15 +31,14 @@ main = OP.execParser opts >>= mainWithOptions
     opts = OP.info parser mempty
 
 mainWithOptions :: MyOpts -> IO ()
-mainWithOptions (MyOpts nVec maxAf globalMax) = runScript $ do
-    s <- scriptIO getContents
-    hist <- hoistEither $ makeHist nVec maxAf globalMax s
-    outs <- hoistEither $ showHistogram hist
-    scriptIO $ putStrLn outs
+mainWithOptions (MyOpts nVec maxAf globalMax) = runScript $
+    scriptIO getContents >>= hoistEither . makeHist nVec maxAf globalMax
+                         >>= hoistEither . showHistogram
+                         >>= scriptIO . putStrLn
 
 makeHist :: [Int] -> Int -> Bool -> String -> Either String RareAlleleHistogram
-makeHist nVec maxAf global s = do
-    let loci = transpose . drop 6 . lines $ s
+makeHist nVec maxAf global s =
+    let loci = transpose . lines $ s
     assertErr "nVec doesn't sum up to correct number of samples" $ length (head loci) == sum nVec
     let getFreqSum = map (length . filter (=='1')) . splitPlaces nVec
         freqSums = map getFreqSum loci
