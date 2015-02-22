@@ -133,31 +133,3 @@ getModelSpec path theta params events =
         hoistEither $ instantiateModel template (V.fromList params)
     else
         return $ ModelSpec defaultTimes theta events
-
-parseBody :: String -> Either String [ModelEvent]
-parseBody body = mapM parseEvent $ lines body
-
-parseEvent :: String -> Either String ModelEvent
-parseEvent line =
-    let [key, val] = words line
-    in  case key of
-        "P" -> Right $ makePopSizeChange val
-        "J" -> Right $ makeJoin val
-        "R" -> Right $ makeGrowthRate val
-        _   -> Left $ "unknown event type '" ++ key ++ "'"
-
-makePopSizeChange :: String -> ModelEvent
-makePopSizeChange s = 
-    let [t, k, p] = splitOn "," s
-    in  ModelEvent (read t) (SetPopSize (read k) (read p))
-
-makeJoin :: String -> ModelEvent
-makeJoin s =
-    let [t, k, l] = splitOn "," s
-    in  ModelEvent (read t) (Join (read k) (read l))
-
-makeGrowthRate :: String -> ModelEvent
-makeGrowthRate s = 
-    let [t, k, r] = splitOn "," s
-    in  ModelEvent (read t) (SetGrowthRate (read k) (read r))
-
