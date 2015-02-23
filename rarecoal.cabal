@@ -125,6 +125,7 @@ executable ms2hist
                         containers,
                         hslogger,
                         lens,
-                        optparse-applicative
+                        optparse-applicative,
+                        bytestring
   default-language:     Haskell2010
   ghc-options:          -Wall

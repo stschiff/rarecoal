@@ -1,6 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 import Data.List.Split (splitPlaces)
+import qualified Data.ByteString.Char8 as B
 import Control.Applicative ((<$>), (<*>), pure)
 import Data.Monoid (mempty, (<>))
 import qualified Data.Map as M
@@ -32,15 +33,15 @@ main = OP.execParser opts >>= mainWithOptions
 
 mainWithOptions :: MyOpts -> IO ()
 mainWithOptions (MyOpts nVec maxAf globalMax) = runScript $
-    scriptIO getContents >>= hoistEither . makeHist nVec maxAf globalMax
+    scriptIO B.getContents >>= hoistEither . makeHist nVec maxAf globalMax
                          >>= hoistEither . showHistogram
                          >>= scriptIO . putStrLn
 
-makeHist :: [Int] -> Int -> Bool -> String -> Either String RareAlleleHistogram
+makeHist :: [Int] -> Int -> Bool -> B.ByteString -> Either String RareAlleleHistogram
 makeHist nVec maxAf global s = do
-    let loci = transpose . lines $ s
-    assertErr "nVec doesn't sum up to correct number of samples" $ length (head loci) == sum nVec
-    let getFreqSum = map (length . filter (=='1')) . splitPlaces nVec
+    let loci = B.transpose . B.lines $ s
+    assertErr "nVec doesn't sum up to correct number of samples" $ B.length (head loci) == sum nVec
+    let getFreqSum = map (length . filter (=='1')) . splitPlaces nVec . B.unpack
         freqSums = map getFreqSum loci
         pred_ = if global then (<=maxAf) . sum else any (<=maxAf)
         toPattern p = if pred_ p then Pattern p else Higher
