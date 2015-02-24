@@ -224,12 +224,12 @@ updateB deltaT = do
     forM_ allStates $ \x -> do
         let nrPop = V.length x
         x1ups <- lookupX1up x
-        let b1ups = V.fromList [M.findWithDefault 0.0 x1up b | x1up <- x1ups]
+        let b1ups = [M.findWithDefault 0.0 x1up b | x1up <- x1ups]
             x' = V.map fromIntegral x
             t1s = [x'!k * (x'!k - 1) / 2.0 * (1.0 / popSize!k) + x'!k * a!k * (1.0 / popSize!k) |
                    k <- [0..nrPop-1], not $ freezeState!k]
-            t2s = [b1ups!l * (1.0 - exp (-x'!l * (x'!l + 1) / 2.0 * (1.0 / popSize!l) * deltaT)) |
-                   l <- [0..nrPop-1], not $ freezeState!l]
+            t2s = [b1up * (1.0 - exp (-x'!l * (x'!l + 1) / 2.0 * (1.0 / popSize!l) * deltaT)) |
+                   (b1up, l) <- zip b1ups [0..nrPop-1], not $ freezeState!l]
             val = b M.! x
         _2 . csB %= M.insert x (val * exp (-(sum t1s) * deltaT) + sum t2s)
   where

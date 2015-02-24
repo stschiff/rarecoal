@@ -10,6 +10,7 @@ import Data.List.Split (splitOn)
 import Control.Monad (liftM, when, (<=<))
 import System.Log.Logger (infoM)
 import Data.Int (Int64)
+import Debug.Trace (trace)
 import Control.Error.Script (Script, scriptIO)
 import Control.Error.Safe (assertErr, readErr, headErr, atErr, lastErr)
 import Control.Monad.Trans.Either (hoistEither)
@@ -102,7 +103,7 @@ setNrCalledSites nrCalledSites hist = do
         sum_ = Map.foldr (+) 0 $ raCounts hist
         add_ = nrCalledSites - sum_
     when (add_ < 0) $ Left "Illegal nrCalledSites" 
-    let newHistBody = Map.adjust (+add_) zeroKey (raCounts hist)
+    let newHistBody = Map.insertWith (+) zeroKey add_ (raCounts hist)
     return $ hist {raCounts = newHistBody}
 
 filterMaxAf :: Int -> RareAlleleHistogram -> Either String RareAlleleHistogram

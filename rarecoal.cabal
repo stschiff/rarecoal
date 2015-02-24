@@ -41,7 +41,8 @@ executable rarecoal
   default-language:    Haskell2010
   default-extensions:  TemplateHaskell
   extra-lib-dirs:      /usr/lib
-  ghc-options:         -fno-ignore-asserts -O2 -rtsopts -threaded "-with-rtsopts=-A10m -K100m" -fprof-auto
+  ghc-options:         -fno-ignore-asserts -O2 -rtsopts -threaded "-with-rtsopts=-A10m -K100m"
+  --fprof-auto -prof -osuf p_o
  
 executable vcf2FreqSum
   main-is:             vcf2FreqSum.hs

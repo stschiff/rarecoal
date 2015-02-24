@@ -15,6 +15,7 @@ import Control.Error.Script (runScript, scriptIO)
 import Data.Int (Int64)
 import Debug.Trace (trace)
 import RareAlleleHistogram (SitePattern(..))
+import Control.Monad.Trans.Reader (ask)
 
 data Options = Options Command
 
@@ -123,7 +124,7 @@ parseEvent :: OP.Parser ModelEvent
 parseEvent = parseJoin <|> parseSetP <|> parseSetR <|> parseSetM
 
 parseJoin :: OP.Parser ModelEvent
-parseJoin = OP.option readJoin $ OP.short 'j' <> OP.long "join"
+parseJoin = OP.option (OP.str >>= readJoin) $ OP.short 'j' <> OP.long "join"
                                               <> OP.metavar "t,k,l"
                                               <> OP.help "Join at time t from l into k. Can be given multiple times"
   where
@@ -132,7 +133,7 @@ parseJoin = OP.option readJoin $ OP.short 'j' <> OP.long "join"
         return $ ModelEvent (read t) (Join (read k) (read l))
 
 parseSetP :: OP.Parser ModelEvent
-parseSetP = OP.option readSetP $ OP.short 'p' <> OP.long "popSize"
+parseSetP = OP.option (OP.str >>= readSetP) $ OP.short 'p' <> OP.long "popSize"
                                               <> OP.metavar "t,k,p"
                                               <> OP.help "At time t, set population size in k to p, and set growth rate to 0"
   where
@@ -141,7 +142,7 @@ parseSetP = OP.option readSetP $ OP.short 'p' <> OP.long "popSize"
         return $ ModelEvent (read t) (SetPopSize (read k) (read p))
 
 parseSetR :: OP.Parser ModelEvent
-parseSetR = OP.option readSetR $ OP.short 'r' <> OP.long "growthRate"
+parseSetR = OP.option (OP.str >>= readSetR) $ OP.short 'r' <> OP.long "growthRate"
                                               <> OP.metavar "t,k,r"
                                               <> OP.help "At time t, set growth rate in k to r"
   where
@@ -150,7 +151,7 @@ parseSetR = OP.option readSetR $ OP.short 'r' <> OP.long "growthRate"
         return $ ModelEvent (read t) (SetGrowthRate (read k) (read r))
 
 parseSetM :: OP.Parser ModelEvent
-parseSetM = OP.option readSetM $ OP.long "mig" <> OP.metavar "t,k,l,m"
+parseSetM = OP.option (OP.str >>= readSetM) $ OP.long "mig" <> OP.metavar "t,k,l,m"
                                               <> OP.help "At time t, set migration rate m from l to k"
   where
     readSetM s = do
@@ -220,7 +221,7 @@ parseFindOpt = FindOpt <$> parseQueryIndex <*> parseBranchAge <*> parseDeltaTime
                                                       <> OP.help "length of time intervals" <> OP.value 0.0005
     parseMaxTime = OP.option OP.auto $ OP.long "maxTime" <> OP.metavar "<Double>" <> OP.showDefault
                                                            <> OP.help "maximum time" <> OP.value 0.025
-    parseIgnoreList = OP.option readIgnoreList $ OP.long "exclude" <> OP.metavar "<list of lists>"
+    parseIgnoreList = OP.option (OP.str >>= readIgnoreList) $ OP.long "exclude" <> OP.metavar "<list of lists>"
                                                             <> OP.help "ignore patterns" <> OP.value []
                                                             <> OP.showDefault
     readIgnoreList s = do
