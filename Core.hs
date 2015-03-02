@@ -14,7 +14,7 @@ import qualified Data.IntMap as M
 import Control.Error.Safe (assertErr)
 import Control.Lens ((%~), ix, (&), makeLenses, use, (%=), uses, (+~),
                      (-~), (*=), (+=), _1, _2, (.=), (^.))
-import Data.MemoCombinators (wrap, integral)
+import Data.MemoCombinators (arrayRange)
 
 
 (!) :: Unbox a => V.Vector a -> Int -> a
@@ -124,17 +124,24 @@ makeJointStateSpace config =
         stateToId = genericStateToId (maxAf + 1)
         nrPop = V.length config
         idToState = genericIdToState (maxAf + 1) nrPop
-        x1up = integral $ map stateToId . genericX1Up . idToState
-        x1 = integral $ stateToId . genericX1 nrPop
-    in  JointStateSpace stateToId (integral idToState) x1up x1 nrPop
+        x1up = map stateToId . genericX1Up . idToState
+        x1 = stateToId . genericX1 nrPop
+        maxId = genericMaxId (maxAf + 1) nrPop
+        idToStateMemo = arrayRange (0, maxId - 1) idToState
+        x1upMemo = arrayRange (0, maxId - 1) x1up
+        x1Memo = arrayRange (0, maxId - 1) x1
+    in  JointStateSpace stateToId idToStateMemo x1upMemo x1Memo nrPop
     
 genericStateToId :: Int -> JointState -> Int
-genericStateToId maxAf state = V.ifoldl (\v i x -> v + x * maxAf ^ i) 0 state
+genericStateToId base state = V.ifoldl (\v i x -> v + x * base ^ i) 0 state
+
+genericMaxId :: Int -> Int -> Int
+genericMaxId base nrPop = base ^ nrPop
 
 genericIdToState :: Int -> Int -> Int -> JointState
-genericIdToState maxAf nrPop id_ = V.fromList $ take nrPop (go id_)
+genericIdToState base nrPop id_ = V.fromList $ take nrPop (go id_)
   where
-    go x = x `mod` maxAf : go (x `div` maxAf)
+    go x = x `mod` base : go (x `div` base)
 
 genericX1Up :: JointState -> [JointState]
 genericX1Up x = [x // [(k, x!k + 1)] | k <- [0..V.length x - 1]]
@@ -268,17 +275,22 @@ updateB deltaT = do
     forM_ allIds $ \xId -> do
         b <- use $ _2 . csB
         let x1ups = stateSpace ^. jsX1up $ xId
-            b1ups = [M.findWithDefault 0.0 x1up b | x1up <- x1ups]
+            b1ups = V.fromList [M.findWithDefault 0.0 x1up b | x1up <- x1ups]
             x = stateSpace ^. jsIdToState $ xId
             nrPop = V.length x
             x' = V.map fromIntegral x
-            t1s = [x'!k * (x'!k - 1) / 2.0 * (1.0 / popSize!k) + x'!k * a!k * (1.0 / popSize!k) |
-                   k <- [0..nrPop-1], not $ freezeState!k]
-            t2s = [b1up * (1.0 - exp (-x'!l * (x'!l + 1) / 2.0 * (1.0 / popSize!l) * deltaT)) |
-                   (b1up, l) <- zip b1ups [0..nrPop-1], not $ freezeState!l]
+            -- t1s = [x'!k * (x'!k - 1) / 2.0 * (1.0 / popSize!k) + x'!k * a!k * (1.0 / popSize!k) |
+            --        k <- [0..nrPop-1], not $ freezeState!k]
+            t1s = V.zipWith4 t1func x' popSize a freezeState
+            -- t2s = [b1up * (1.0 - exp (-x'!l * (x'!l + 1) / 2.0 * (1.0 / popSize!l) * deltaT)) |
+            --        (b1up, l) <- zip b1ups [0..nrPop-1], not $ freezeState!l]
+            t2s = V.zipWith4 t2func b1ups x' popSize freezeState 
             val = b M.! xId
-            newVal = val * exp (-(sum t1s) * deltaT) + sum t2s
+            newVal = val * exp (-(V.sum t1s) * deltaT) + V.sum t2s
         _2 . csB %= M.insert xId newVal
+  where
+    t1func xx pp aa ff = if ff then 0.0 else xx * (xx - 1.0) / 2.0 * (1.0 / pp) + xx * aa * (1.0 / pp)
+    t2func bb xx pp ff = if ff then 0.0 else bb * (1.0 - exp (-xx * (xx + 1.0) / 2.0 * (1.0 / pp) * deltaT))
 
 updateD :: Double -> State (ModelState, CoalState) ()
 updateD deltaT = do
@@ -290,12 +302,13 @@ updateD deltaT = do
 
 updateModelState :: Double -> State (ModelState, CoalState) ()
 updateModelState deltaT = do
-    popSizes <- use $ _1 . msPopSize
-    t <- use $ _1 . msT
-    growthRates <- use $ _1 . msGrowthRates
-    nrPop <- use $ _2 . csStateSpace . jsNrPop
-    _1 . msPopSize .= V.fromList [(popSizes!k) * exp (-(growthRates!k) * deltaT) | k <- [0 .. nrPop - 1]]
-    _1 . msT %= (+deltaT)
+    (ms, cs) <- get
+    let popSizes = _msPopSize ms
+        t = _msT ms
+        growthRates = _msGrowthRates ms
+        nrPop = V.length popSizes
+        popSizes' = V.fromList [(popSizes!k) * exp (-(growthRates!k) * deltaT) | k <- [0..nrPop - 1]]
+    put (ms {_msT = t + deltaT, _msPopSize = popSizes'}, cs)
 
 validateModel :: ModelSpec -> Either String ()
 validateModel (ModelSpec _ _ events) = do
