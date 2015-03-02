@@ -17,7 +17,7 @@ executable rarecoal
                        exact-combinatorics,
                        containers,
                        split,
-                       optparse-applicative,
+                       optparse-applicative < 0.11.0.2,
                        hslogger,
                        vector,
                        parallel,
@@ -28,21 +28,19 @@ executable rarecoal
                        time,
                        random,
                        transformers,
-                       ansi-terminal,
-                       storable-complex,
+                       ansi-terminal < 0.6.2.1,
+                       storable-complex < 0.2.2,
                        errors,
-                       tagged,
-                       parsec,
-                       transformers-compat,
-                       regex-compat,
+                       tagged < 0.7.3,
+                       parsec < 3.1.8,
+                       transformers-compat < 0.4.0.4,
+                       regex-compat < 0.95.1,
+                       data-memocombinators,
                        monad-loops,
                        lens
-  -- hs-source-dirs:      
   default-language:    Haskell2010
-  default-extensions:  TemplateHaskell
   extra-lib-dirs:      /usr/lib
-  ghc-options:         -fno-ignore-asserts -O2 -rtsopts -threaded "-with-rtsopts=-A10m -K100m"
-  --fprof-auto -prof -osuf p_o
+  ghc-options:         -fno-ignore-asserts -rtsopts -threaded "-with-rtsopts=-A10m -K100m"
  
 executable vcf2FreqSum
   main-is:             vcf2FreqSum.hs
@@ -113,7 +111,7 @@ executable sampleHist
                        optparse-applicative,
                        random
   default-language:    Haskell2010
-  ghc-options:         -fno-ignore-asserts -rtsopts -O "-with-rtsopts=-A10m -K100m"
+  ghc-options:         -fno-ignore-asserts -rtsopts "-with-rtsopts=-A10m -K100m"
 
 executable ms2hist
   main-is:              ms2hist.hs

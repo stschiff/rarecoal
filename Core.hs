@@ -10,9 +10,12 @@ import Control.Monad (when, foldM, forM_)
 import qualified Data.Vector.Unboxed as V
 import qualified Data.Vector as VB
 import Data.Vector.Unboxed.Base (Unbox)
-import qualified Data.Map as M
+import qualified Data.IntMap as M
 import Control.Error.Safe (assertErr)
-import Control.Lens ((%~), ix, (&), makeLenses, use, (%=), uses, (+~), (-~), (*=), (+=), _1, _2, (.=))
+import Control.Lens ((%~), ix, (&), makeLenses, use, (%=), uses, (+~),
+                     (-~), (*=), (+=), _1, _2, (.=), (^.))
+import Data.MemoCombinators (wrap, integral)
+
 
 (!) :: Unbox a => V.Vector a -> Int -> a
 (!) = (V.!)
@@ -21,14 +24,22 @@ import Control.Lens ((%~), ix, (&), makeLenses, use, (%=), uses, (+~), (-~), (*=
 
 type JointState = V.Vector Int
 
+data JointStateSpace = JointStateSpace  {
+    _jsStateToId :: JointState -> Int,
+    _jsIdToState :: Int -> JointState,
+    _jsX1up :: Int -> [Int],
+    _jsX1 :: Int -> Int,
+    _jsNrPop :: Int
+}
+
+makeLenses ''JointStateSpace
+
 data CoalState = CoalState {
     _csA :: V.Vector Double,
-    _csB :: M.Map JointState Double,
+    _csB :: M.IntMap Double,
     _csD :: Double,
-    _csMaxMVec :: JointState,
-    _csX1up :: M.Map JointState [JointState],
-    _csX1 :: [JointState]
-} deriving (Show)
+    _csStateSpace :: JointStateSpace
+}
 
 makeLenses ''CoalState
 
@@ -89,51 +100,76 @@ getProb modelSpec nVec config = do
     return $ _csD fcs * mTheta modelSpec * combFac
 
 makeInitModelState :: ModelSpec -> Int -> ModelState
-makeInitModelState (ModelSpec _ _ events) k =
+makeInitModelState (ModelSpec _ _ events) nrPop =
     let sortedEvents = sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) -> time1 `compare` time2) events
         t = 0.0
-        popSize = V.replicate k 1.0
-        growthRates = V.replicate k 0.0
-        freezeState = V.replicate k False
+        popSize = V.replicate nrPop 1.0
+        growthRates = V.replicate nrPop 0.0
+        freezeState = V.replicate nrPop False
         migrationMatrix = []
     in  ModelState t sortedEvents popSize growthRates freezeState migrationMatrix
 
 makeInitCoalState :: [Int] -> [Int] -> CoalState
 makeInitCoalState nVec config =
-    let a = V.fromList $ zipWith (\n m -> fromIntegral (n - m)) nVec config
+    let a = V.fromList $ zipWith (\n c -> fromIntegral $ n - c) nVec config
         initialState = V.fromList config
-        b = fillStateSpace initialState $ M.singleton initialState 1.0
-        nrPop = V.length initialState
-        x1 = [V.replicate nrPop 0 // [(k, 1)] | k <- [0..nrPop-1]]
-    in  CoalState a b 0.0 initialState M.empty x1
+        jointStateSpace = makeJointStateSpace initialState
+        initialId = (jointStateSpace ^. jsStateToId) initialState
+        b = fillStateSpace jointStateSpace $ M.singleton initialId 1.0
+    in  CoalState a b 0.0 jointStateSpace
 
-fillStateSpace :: JointState -> M.Map JointState Double -> M.Map JointState Double
-fillStateSpace maxMVec b =
-    let allStates = expandPattern maxMVec
+makeJointStateSpace :: JointState -> JointStateSpace
+makeJointStateSpace config =
+    let maxAf = V.sum config
+        stateToId = genericStateToId (maxAf + 1)
+        nrPop = V.length config
+        idToState = genericIdToState (maxAf + 1) nrPop
+        x1up = integral $ map stateToId . genericX1Up . idToState
+        x1 = integral $ stateToId . genericX1 nrPop
+    in  JointStateSpace stateToId (integral idToState) x1up x1 nrPop
+    
+genericStateToId :: Int -> JointState -> Int
+genericStateToId maxAf state = V.ifoldl (\v i x -> v + x * maxAf ^ i) 0 state
+
+genericIdToState :: Int -> Int -> Int -> JointState
+genericIdToState maxAf nrPop id_ = V.fromList $ take nrPop (go id_)
+  where
+    go x = x `mod` maxAf : go (x `div` maxAf)
+
+genericX1Up :: JointState -> [JointState]
+genericX1Up x = [x // [(k, x!k + 1)] | k <- [0..V.length x - 1]]
+
+genericX1 :: Int -> Int -> JointState
+genericX1 n k = V.replicate n 0 // [(k, 1)]
+
+fillStateSpace :: JointStateSpace -> M.IntMap Double -> M.IntMap Double
+fillStateSpace jointStateSpace b =
+    let states = map (jointStateSpace ^. jsIdToState) $ M.keys b
+        nrPop = jointStateSpace ^. jsNrPop
+        maxMVec = V.fromList . map maximum $ [map (V.!i) states | i <- [0 .. nrPop - 1]]
+        allStates = expandPattern maxMVec
+        allStateIds = map (jointStateSpace ^. jsStateToId) allStates
         safeInsert m k = M.insertWith (\_ oldVal -> oldVal) k 0.0 m
-    in  foldl safeInsert b allStates
+    in  foldl safeInsert b allStateIds
   where
     expandPattern :: JointState -> [JointState]
-    expandPattern vec =
-        let k = V.length vec
-        in  foldM go vec [0..k-1]
-      where    
-        go vec_ i =
-            let maxVal = vec_ ! i
-            in if maxVal <= 1 then [vec_] else [vec_ // [(i, val)] | val <- [1..maxVal]]
+    expandPattern vec = let k = V.length vec in foldM go vec [0..k-1]
+    go vec_ i = 
+        let maxVal = vec_ ! i
+        in if maxVal <= 1 then [vec_] else [vec_ // [(i, val)] | val <- [1..maxVal]]
 
 singleStep :: Double -> State (ModelState, CoalState) ()
 singleStep nextTime = do
-    (ms, cs) <- get
+    -- (ms, cs) <- get
     -- trace (show nextTime ++ " " ++ show (_msT ms) ++ " " ++ show (_csA cs) ++ " " ++ show (_csB cs)) (return ())
-    let events = _msEventQueue ms
-        ModelEvent t _ = if null events then ModelEvent (1.0/0.0) undefined else head events
+    events <- use $ _1 . msEventQueue
+    let ModelEvent t _ = if null events then ModelEvent (1.0/0.0) undefined else head events
     if  t < nextTime then do
         singleStep t
         performEvent
         singleStep nextTime
     else do
-        let deltaT = nextTime - _msT ms
+        deltaT <- uses (_1 . msT) (nextTime-)
         updateCoalState deltaT
         migrations <- use $ _1 . msMigrationRates
         mapM_ (updateCoalStateMig deltaT) migrations
@@ -164,20 +200,21 @@ popJoin k l = do
     a <- use $ _2 . csA
     _2 . csA . ix l .= 0
     _2 . csA . ix k += a!l
-    _2 . csB %= M.mapKeysWith (+) (joinCounts k l)
-    _2 . csMaxMVec %= joinCounts k l
-    maxMVec <- use $ _2 . csMaxMVec
-    _2 . csB %= fillStateSpace maxMVec
-    _2 . csB %= M.filterWithKey (\k _ -> k!l == 0)
+    stateSpace <- use $ _2 . csStateSpace
+    _2 . csB %= M.mapKeysWith (+) (joinCounts stateSpace k l)
+    _2 . csB %= fillStateSpace stateSpace
+    let idToState = stateSpace ^. jsIdToState
+    _2 . csB %= M.filterWithKey (\k _ -> (idToState k)!l == 0)
     _1 . msMigrationRates %= deleteMigrations l
   where
     deleteMigrations pop list = [mig | mig@(k', l', _) <- list, k' /= pop, l' /= pop]
 
-joinCounts :: Int -> Int -> JointState -> JointState
-joinCounts k l s = 
-   let newK = s!k + s!l
-       newL = 0
-   in  s // [(k, newK), (l, newL)]
+joinCounts :: JointStateSpace -> Int -> Int -> Int -> Int
+joinCounts stateSpace k l id_ = 
+    let s = (stateSpace ^. jsIdToState) id_
+        newK = s!k + s!l
+        newS = s // [(k, newK), (l, 0)]
+    in  (stateSpace ^. jsStateToId) newS
 
 updateCoalState :: Double -> State (ModelState, CoalState) ()
 updateCoalState deltaT = do
@@ -188,22 +225,29 @@ updateCoalState deltaT = do
 updateCoalStateMig :: Double -> (Int, Int, Double) -> State (ModelState, CoalState) ()
 updateCoalStateMig deltaT (k, l, m) = do
     b <- use $ _2 . csB
-    let sourceStates = filter (\vec -> vec!l > 0) $ M.keys b
-    _2 . csB .= foldl updateState b sourceStates
+    stateSpace <- use $ _2 . csStateSpace
+    -- let sourceIds =
+    --     map (stateSpace ^. jsStateToId) . filter (\vec -> vec!l > 0) . map (stateSpace ^. jsIdToState) $ M.keys b
+    _2 . csB .= foldl (updateState stateSpace) b (M.keys b)
     a <- use $ _2 . csA
     _2 . csA . ix l *= exp (-deltaT * m)
     _2 . csA . ix k += a!l * (1.0 - exp (-deltaT * m))
   where
-    updateState :: M.Map JointState Double -> JointState -> M.Map JointState Double
-    updateState b sourceState =
-        let bProb = b M.! sourceState
-            reduceFactor = exp $ -deltaT * m * fromIntegral (sourceState!l)
-            b' = M.adjust (*reduceFactor) sourceState b
-            targetState = sourceState & ix k +~ 1 & ix l -~ 1
-        in  if targetState `M.member` b' then
-                M.insertWith (+) targetState (bProb * (1.0 - reduceFactor)) b'
-            else
-                M.insert targetState (bProb * (1.0 - reduceFactor)) . fillStateSpace targetState $ b'
+    updateState :: JointStateSpace -> M.IntMap Double -> Int -> M.IntMap Double
+    updateState stateSpace b sourceId =
+        let bProb = b M.! sourceId
+            sourceState = (stateSpace ^. jsIdToState) sourceId
+        in  if sourceState ! l > 0 then
+                let reduceFactor = exp $ -deltaT * m * fromIntegral (sourceState!l)
+                    b' = M.adjust (*reduceFactor) sourceId b
+                    targetState = sourceState & ix k +~ 1 & ix l -~ 1
+                    targetId = (stateSpace ^. jsStateToId) targetState
+                in  if targetId `M.member` b' then
+                        M.insertWith (+) targetId (bProb * (1.0 - reduceFactor)) b'
+                    else
+                        M.insert targetId (bProb * (1.0 - reduceFactor)) . fillStateSpace stateSpace $ b'
+            else b
+            
 
 updateA :: Double -> State (ModelState, CoalState) ()
 updateA deltaT = do
@@ -218,47 +262,40 @@ updateB :: Double -> State (ModelState, CoalState) ()
 updateB deltaT = do
     popSize <- use $ _1 . msPopSize
     freezeState <- use $ _1 . msFreezeState
-    allStates <- uses (_2 . csB) M.keys 
-    b <- use $ _2 . csB
+    allIds <- uses (_2 . csB) M.keys 
     a <- use $ _2 . csA
-    forM_ allStates $ \x -> do
-        let nrPop = V.length x
-        x1ups <- lookupX1up x
-        let b1ups = [M.findWithDefault 0.0 x1up b | x1up <- x1ups]
+    stateSpace <- use $ _2 . csStateSpace
+    forM_ allIds $ \xId -> do
+        b <- use $ _2 . csB
+        let x1ups = stateSpace ^. jsX1up $ xId
+            b1ups = [M.findWithDefault 0.0 x1up b | x1up <- x1ups]
+            x = stateSpace ^. jsIdToState $ xId
+            nrPop = V.length x
             x' = V.map fromIntegral x
             t1s = [x'!k * (x'!k - 1) / 2.0 * (1.0 / popSize!k) + x'!k * a!k * (1.0 / popSize!k) |
                    k <- [0..nrPop-1], not $ freezeState!k]
             t2s = [b1up * (1.0 - exp (-x'!l * (x'!l + 1) / 2.0 * (1.0 / popSize!l) * deltaT)) |
                    (b1up, l) <- zip b1ups [0..nrPop-1], not $ freezeState!l]
-            val = b M.! x
-        _2 . csB %= M.insert x (val * exp (-(sum t1s) * deltaT) + sum t2s)
-  where
-    lookupX1up :: JointState -> State (ModelState, CoalState) [JointState]
-    lookupX1up x = do
-        x1upRet <- uses (_2 . csX1up) $ M.lookup x
-        case x1upRet of
-            Just x1up -> return x1up
-            Nothing -> do
-                let x1up = [x // [(k, x!k + 1)] | k <- [0..V.length x - 1]]
-                _2 . csX1up %= M.insert x x1up
-                return x1up
-        
+            val = b M.! xId
+            newVal = val * exp (-(sum t1s) * deltaT) + sum t2s
+        _2 . csB %= M.insert xId newVal
 
 updateD :: Double -> State (ModelState, CoalState) ()
 updateD deltaT = do
-    x1s <- use $ _2 . csX1
     b <- use $ _2 . csB
-    let b1s = [M.findWithDefault 0.0 x1 b | x1 <- x1s]
+    x1 <- use $ _2 . csStateSpace . jsX1
+    nrPop <- use $ _2 . csStateSpace . jsNrPop
+    let b1s = [M.findWithDefault 0.0 (x1 k) b | k <- [0 .. nrPop - 1]]
     _2 . csD += deltaT * sum b1s
 
 updateModelState :: Double -> State (ModelState, CoalState) ()
 updateModelState deltaT = do
-    (ms, cs) <- get
-    let popSize = _msPopSize ms
-        t = _msT ms
-        growthRates = _msGrowthRates ms
-        popSize' = [(popSize!k) * exp (-(growthRates!k) * deltaT) | k <- [0..V.length popSize - 1]]
-    put (ms {_msT = t + deltaT, _msPopSize = V.fromList popSize'}, cs)
+    popSizes <- use $ _1 . msPopSize
+    t <- use $ _1 . msT
+    growthRates <- use $ _1 . msGrowthRates
+    nrPop <- use $ _2 . csStateSpace . jsNrPop
+    _1 . msPopSize .= V.fromList [(popSizes!k) * exp (-(growthRates!k) * deltaT) | k <- [0 .. nrPop - 1]]
+    _1 . msT %= (+deltaT)
 
 validateModel :: ModelSpec -> Either String ()
 validateModel (ModelSpec _ _ events) = do
@@ -281,7 +318,3 @@ validateModel (ModelSpec _ _ events) = do
 choose :: Int -> Int -> Double
 choose _ 0 = 1
 choose n k = product [fromIntegral (n + 1 - j) / fromIntegral j | j <- [1..k]]
-
---chooseLog :: Int -> Int -> Double
---chooseLog _ 0 = 0
---chooseLog n k = sum [(log . fromIntegral $ n + 1 - j) - log $ fromIntegral j | j <- [1..k]]
