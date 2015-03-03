@@ -123,7 +123,7 @@ filterMinAf minAf hist = do
 reduceIndices :: [Int] -> RareAlleleHistogram -> Either String RareAlleleHistogram
 reduceIndices indices hist =
     if null indices || indices == [0..(length $ raNVec hist)] then return hist else do
-        when (raGlobalMax hist) $ Left "Histogram cannot have global maxAF for this operation"
+        when (raGlobalMax hist && (length (raNVec hist) < length indices)) $ Left "Histogram cannot have global maxAF for this operation"
         let newNvec = selectFromList (raNVec hist) indices
             newBody = Map.mapKeysWith (+) (prunePatternIndices indices) (raCounts hist)
         return $ hist {raNVec = newNvec, raCounts = newBody}

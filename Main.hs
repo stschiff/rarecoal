@@ -55,7 +55,7 @@ parseView :: OP.Parser Command
 parseView = CmdView <$> parseViewOpt
 
 parseViewOpt :: OP.Parser ViewOpt
-parseViewOpt = ViewOpt <$> parseIndices <*> parseCombineIndices <*> parseMinAf <*> parseMaxAf <*> parseNrCalledSites <*> parseHistPath
+parseViewOpt = ViewOpt <$> parseIndices <*> parseCombineIndices <*> parseMaxAf <*> parseNrCalledSites <*> parseHistPath
 
 parseIndices :: OP.Parser [Int]
 parseIndices = OP.option OP.auto $ OP.short 'I' <> OP.long "indices"
@@ -88,7 +88,7 @@ parseNrCalledSites = OP.option OP.auto $ OP.short 'N' <> OP.long "nr_called_site
 
 parseHistPath :: OP.Parser FilePath
 parseHistPath = OP.option OP.str $ OP.short 'i' <> OP.long "input"
-                                                <> OP.metavar "<Input File>" <> OP.help "Input File"
+                                                <> OP.metavar "<Input File>" <> OP.help "Input File, use - for stdin"
 
 withInfo :: OP.Parser a -> String -> OP.ParserInfo a
 withInfo opts desc = OP.info (OP.helper <*> opts) $ OP.progDesc desc
