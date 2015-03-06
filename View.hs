@@ -3,7 +3,7 @@ module View (runView, ViewOpt(..)) where
 import Data.Int (Int64)
 import Control.Error.Script (Script, scriptIO)
 import RareAlleleHistogram (reduceIndices, combineIndices, setNrCalledSites,
-                            filterMinAf, filterMaxAf, parseHistogram, showHistogram)
+                            filterMaxAf, parseHistogram, showHistogram)
 import Control.Monad.Trans.Either (hoistEither)
 import Control.Monad (liftM, (<=<))
 import System.IO (stdin, openFile, hGetContents, IOMode(..))
@@ -13,6 +13,7 @@ data ViewOpt = ViewOpt {
     viCombineIndices :: [Int],
     viMaxAf :: Int,
     viNrCalledSites :: Int64,
+    viGlobalMax :: Bool,
     viHistPath :: FilePath
 }
 
@@ -28,5 +29,5 @@ runView opts = do
   where
    transform = return . combineIndices (viCombineIndices opts)
                <=< if viNrCalledSites opts > 0 then setNrCalledSites (viNrCalledSites opts) else return
-               <=< filterMaxAf (viMaxAf opts)
+               <=< filterMaxAf (viGlobalMax opts) (viMaxAf opts)
                <=< reduceIndices (viIndices opts) 

@@ -1,7 +1,7 @@
 module Find (runFind, FindOpt(..)) where
 
 import ModelTemplate (getModelSpec)
-import RareAlleleHistogram (loadHistogram, RareAlleleHistogram(..), SitePattern(..), filterMinAf)
+import RareAlleleHistogram (loadHistogram, RareAlleleHistogram(..), SitePattern(..))
 import Control.Monad.Trans.Either (hoistEither)
 import Control.Error.Script (Script, scriptIO)
 import Control.Error.Safe (tryAssert)

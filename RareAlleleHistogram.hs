@@ -2,7 +2,7 @@ module RareAlleleHistogram (RareAlleleHistogram(..),
                             SitePattern(..),
                             addHistograms, filterMaxAf, setNrCalledSites,
                             loadHistogram, reduceIndices, combineIndices,
-                            filterMinAf, parseHistogram, showHistogram, simpleReadHistogram) where
+                            filterGlobalMinAf, parseHistogram, showHistogram, simpleReadHistogram) where
 
 import qualified Data.Map.Strict as Map
 import Data.List (intercalate, sortBy)
@@ -95,7 +95,7 @@ loadHistogram indices minAf maxAf nrCalledSites path = do
     s <- scriptIO $ readFile path
     hist <- hoistEither $ parseHistogram s
     let f = if nrCalledSites > 0 then setNrCalledSites nrCalledSites else return
-    hoistEither $ (f <=< filterMinAf minAf <=< filterMaxAf maxAf <=< reduceIndices indices <=< return) hist
+    hoistEither $ (f <=< filterGlobalMinAf minAf <=< filterMaxAf True maxAf <=< reduceIndices indices <=< return) hist
 
 setNrCalledSites :: Int64 -> RareAlleleHistogram -> Either String RareAlleleHistogram
 setNrCalledSites nrCalledSites hist = do
@@ -106,15 +106,16 @@ setNrCalledSites nrCalledSites hist = do
     let newHistBody = Map.insertWith (+) zeroKey add_ (raCounts hist)
     return $ hist {raCounts = newHistBody}
 
-filterMaxAf :: Int -> RareAlleleHistogram -> Either String RareAlleleHistogram
-filterMaxAf maxAf hist = do
+filterMaxAf :: Bool -> Int -> RareAlleleHistogram -> Either String RareAlleleHistogram
+filterMaxAf global maxAf hist = do
     when (maxAf > raMaxAf hist || maxAf < raMinAf hist) $ Left "illegal maxAF"
-    if maxAf == raMaxAf hist then return hist else do
-        let newBody = Map.mapKeysWith (+) (prunePatternTotalFreq maxAf) (raCounts hist)
-        return $ hist {raMaxAf = maxAf, raCounts = newBody, raGlobalMax = True}
+    when (global && not (raGlobalMax hist)) $ Left "cannot make maximum local"
+    if maxAf == raMaxAf hist && global == raGlobalMax hist then return hist else do
+        let newBody = Map.mapKeysWith (+) (prunePatternFreq global maxAf) (raCounts hist)
+        return $ hist {raMaxAf = maxAf, raCounts = newBody, raGlobalMax = global}
 
-filterMinAf :: Int -> RareAlleleHistogram -> Either String RareAlleleHistogram
-filterMinAf minAf hist = do
+filterGlobalMinAf :: Int -> RareAlleleHistogram -> Either String RareAlleleHistogram
+filterGlobalMinAf minAf hist = do
     when (minAf > raMaxAf hist || minAf < raMinAf hist) $ Left "illegal minAf"
     if minAf == raMinAf hist then return hist else do
         let newBody = Map.mapKeysWith (+) (prunePatternMinTotalFreq minAf) (raCounts hist)
@@ -157,9 +158,13 @@ prunePatternIndices :: [Int] -> SitePattern -> SitePattern
 prunePatternIndices indices (Pattern pattern) = Pattern $ selectFromList pattern indices
 prunePatternIndices _ Higher = Higher
 
-prunePatternTotalFreq :: Int -> SitePattern -> SitePattern
-prunePatternTotalFreq maxM (Pattern pattern) = if sum pattern > maxM then Higher else Pattern pattern
-prunePatternTotalFreq _ Higher = Higher
+prunePatternFreq :: Bool -> Int -> SitePattern -> SitePattern
+prunePatternFreq global maxM (Pattern pattern) =
+    if (global && sum pattern > maxM) || (not global && any (>maxM) pattern) then
+        Higher
+    else
+        Pattern pattern
+prunePatternFreq _ _ Higher = Higher
 
 prunePatternMinTotalFreq :: Int -> SitePattern -> SitePattern
 prunePatternMinTotalFreq minM (Pattern pattern) = if sum pattern < minM then Higher else Pattern pattern

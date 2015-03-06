@@ -55,7 +55,8 @@ parseView :: OP.Parser Command
 parseView = CmdView <$> parseViewOpt
 
 parseViewOpt :: OP.Parser ViewOpt
-parseViewOpt = ViewOpt <$> parseIndices <*> parseCombineIndices <*> parseMaxAf <*> parseNrCalledSites <*> parseHistPath
+parseViewOpt = ViewOpt <$> parseIndices <*> parseCombineIndices <*> parseMaxAf <*> parseNrCalledSites
+                       <*> parseGlobal <*> parseHistPath
 
 parseIndices :: OP.Parser [Int]
 parseIndices = OP.option OP.auto $ OP.short 'I' <> OP.long "indices"
@@ -85,6 +86,9 @@ parseNrCalledSites = OP.option OP.auto $ OP.short 'N' <> OP.long "nr_called_site
                                                       <> OP.metavar "INT"
                                                       <> OP.value 0 <> OP.showDefault
                                                       <> OP.help "set the nr of called sites"
+
+parseGlobal :: OP.Parser Bool
+parseGlobal = OP.switch (OP.long "globalMax" <> OP.short 'g' <> OP.help "constrain global allele frequency")
 
 parseHistPath :: OP.Parser FilePath
 parseHistPath = OP.option OP.str $ OP.short 'i' <> OP.long "input"

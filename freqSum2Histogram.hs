@@ -39,8 +39,7 @@ parser = MyOpts <$> OP.option OP.auto (OP.short 'n' <> OP.long "nVec" <> OP.meta
                                        <> OP.help "Specify the exact populations for the histogram")
                 <*> OP.option OP.auto (OP.long "nrCalledSites" <> OP.short 'N'
                                        <> OP.help "set the total nr of called sites")
-                <*> OP.option OP.auto (OP.long "globalMax" <> OP.short 'g' <> OP.value False <> OP.showDefault
-                                       <> OP.help "constrain global allele frequency")
+                <*> OP.switch (OP.long "globalMax" <> OP.short 'g' <> OP.help "constrain global allele frequency")
 
 runWithOptions :: MyOpts -> IO ()
 runWithOptions (MyOpts nVec maxM popIndices nrCalledSites globalMax) = runScript $ do
