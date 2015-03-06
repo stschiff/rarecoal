@@ -42,7 +42,7 @@ runWithOptions :: MyOpts -> IO ()
 runWithOptions opts = runScript $ do
     s <- scriptIO (readFile (opts ^. optHistPath))
     hist <- hoistEither $ parseHistogram s
-    when (not $ raGlobalMax hist) $ left "histogram cannot have global max for this operation"
+    when (raGlobalMax hist) $ left "histogram cannot have global max for this operation"
     rng <- scriptIO newStdGen
     let q = _optQueryPop opts
         nVec = raNVec hist
