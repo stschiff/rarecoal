@@ -8,12 +8,12 @@ import Control.Lens (makeLenses, makeLensesFor, (^.), (&), (%~), (.~), ix, (.=))
 import RareAlleleHistogram (parseHistogram, showHistogram, RareAlleleHistogram(..), SitePattern(..), reduceIndices)
 import Control.Applicative ((<*>), (<$>))
 import Data.Monoid ((<>), mempty)
-import Control.Monad.Trans.Either (hoistEither)
+import Control.Monad.Trans.Either (hoistEither, left)
 import qualified Data.Map.Strict as Map
 import Data.Int (Int64)
 import Data.Foldable (foldlM, foldl')
 import System.Random (mkStdGen, newStdGen, StdGen, random)
-import Control.Monad (replicateM)
+import Control.Monad (replicateM, when)
 
 data MyOpts = MyOpts {
     _optQueryPop :: Int,
@@ -42,6 +42,7 @@ runWithOptions :: MyOpts -> IO ()
 runWithOptions opts = runScript $ do
     s <- scriptIO (readFile (opts ^. optHistPath))
     hist <- hoistEither $ parseHistogram s
+    when (not $ raGlobalMax hist) $ left "histogram cannot have global max for this operation"
     rng <- scriptIO newStdGen
     let q = _optQueryPop opts
         nVec = raNVec hist
