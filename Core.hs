@@ -181,7 +181,6 @@ canUseShortcut = do
         r = _msGrowthRates ms
         e = _msEventQueue ms
     return $ (V.maximum a == V.sum a) && V.all (==0.0) r && null e
-    -- return False
 
 propagateStateShortcut :: State (ModelState, CoalState) ()
 propagateStateShortcut = do
