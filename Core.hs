@@ -15,6 +15,7 @@ import Control.Error.Safe (assertErr)
 import Control.Lens ((%~), ix, (&), makeLenses, use, (%=), uses, (+~),
                      (-~), (*=), (+=), _1, _2, (.=), (^.))
 import Data.MemoCombinators (arrayRange)
+import Control.Exception.Base (assert)
 
 
 (!) :: Unbox a => V.Vector a -> Int -> a
@@ -92,7 +93,7 @@ getProb modelSpec nVec config = do
     let timeSteps = mTimeSteps modelSpec
         ims = makeInitModelState modelSpec (length nVec)
         ics = makeInitCoalState nVec config
-        (_, fcs) = execState (mapM_ singleStep timeSteps) (ims, ics)
+        (_, fcs) = execState (propagateStates timeSteps) (ims, ics)
         combFac = product $ zipWith choose nVec config
         err = "Overflow Error in getProb for nVec=" ++ show nVec ++ ", kVec=" ++ show config
     assertErr err $ combFac > 0
@@ -164,6 +165,43 @@ fillStateSpace jointStateSpace b =
     go vec_ i = 
         let maxVal = vec_ ! i
         in if maxVal <= 1 then [vec_] else [vec_ // [(i, val)] | val <- [1..maxVal]]
+
+propagateStates :: [Double] -> State (ModelState, CoalState) ()
+propagateStates [] = return ()
+propagateStates (nextTime:restTimes) = do
+    useShortcut <- canUseShortcut
+    if useShortcut then propagateStateShortcut else do
+        singleStep nextTime
+        propagateStates restTimes
+
+canUseShortcut :: State (ModelState, CoalState) Bool
+canUseShortcut = do
+    (ms, cs) <- get
+    let a = _csA cs
+        r = _msGrowthRates ms
+        e = _msEventQueue ms
+    return $ (V.maximum a == V.sum a) && V.all (==0.0) r && null e
+    -- return False
+
+propagateStateShortcut :: State (ModelState, CoalState) ()
+propagateStateShortcut = do
+    nrA <- uses (_2 . csA) (floor . V.sum)
+    b <- use $ _2 . csB
+    idToState <- use $ _2 . csStateSpace . jsIdToState
+    let additionalBranchLength = sum [prob * goState nrA (idToState xId) | (xId, prob) <- M.toList b]
+    _2 . csB %= M.map (const 0)
+    _2 . csD += additionalBranchLength
+    _2 . csA %= V.map (const 1)
+  where
+    goState nrA x =
+        let nrDerived = assert (V.sum x == V.maximum x) $ V.sum x
+        in  singlePopMutBranchLength nrA nrDerived
+        
+singlePopMutBranchLength :: Int -> Int -> Double
+singlePopMutBranchLength nrA nrDerived =
+    let withCombinatorics = 2.0 / fromIntegral nrDerived
+        combFactor = choose (nrA + nrDerived) nrDerived
+    in  withCombinatorics / combFactor
 
 singleStep :: Double -> State (ModelState, CoalState) ()
 singleStep nextTime = do
