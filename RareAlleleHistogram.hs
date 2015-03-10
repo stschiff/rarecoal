@@ -109,7 +109,7 @@ setNrCalledSites nrCalledSites hist = do
 filterMaxAf :: Bool -> Int -> RareAlleleHistogram -> Either String RareAlleleHistogram
 filterMaxAf global maxAf hist = do
     when (maxAf > raMaxAf hist || maxAf < raMinAf hist) $ Left "illegal maxAF"
-    when (global && not (raGlobalMax hist)) $ Left "cannot make maximum local"
+    when (not global && raGlobalMax hist) $ Left "cannot make maximum local"
     if maxAf == raMaxAf hist && global == raGlobalMax hist then return hist else do
         let newBody = Map.mapKeysWith (+) (prunePatternFreq global maxAf) (raCounts hist)
         return $ hist {raMaxAf = maxAf, raCounts = newBody, raGlobalMax = global}

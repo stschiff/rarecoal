@@ -168,7 +168,7 @@ fillStateSpace jointStateSpace b =
 singleStep :: Double -> State (ModelState, CoalState) ()
 singleStep nextTime = do
     -- (ms, cs) <- get
-    -- trace (show nextTime ++ " " ++ show (_msT ms) ++ " " ++ show (_csA cs) ++ " " ++ show (_csB cs)) (return ())
+    -- trace (show nextTime ++ " " ++ show (_msT ms) ++ " " ++ show (_msPopSize ms) ++ " " ++ show (_csA cs) ++ " " ++ show (_csB cs)) (return ())
     events <- use $ _1 . msEventQueue
     let ModelEvent t _ = if null events then ModelEvent (1.0/0.0) undefined else head events
     if  t < nextTime then do
@@ -262,7 +262,7 @@ updateA deltaT = do
     freezeState <- use $ _1 . msFreezeState
     _2 . csA %= V.zipWith3 go popSize freezeState
   where
-    go popSizeK freezeStateK aK = aK * if freezeStateK then 1.0 else
+    go popSizeK freezeStateK aK = aK * if freezeStateK || aK < 1.0 then 1.0 else
         exp (-0.5 * (aK - 1.0) * (1.0 / popSizeK) * deltaT)
 
 updateB :: Double -> State (ModelState, CoalState) ()
@@ -308,6 +308,7 @@ updateModelState deltaT = do
         growthRates = _msGrowthRates ms
         nrPop = V.length popSizes
         popSizes' = V.fromList [(popSizes!k) * exp (-(growthRates!k) * deltaT) | k <- [0..nrPop - 1]]
+    -- trace (show (_msT ms) ++ " " ++ show popSizes ++ " " ++ show popSizes') $
     put (ms {_msT = t + deltaT, _msPopSize = popSizes'}, cs)
 
 validateModel :: ModelSpec -> Either String ()
