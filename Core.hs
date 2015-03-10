@@ -279,11 +279,7 @@ updateB deltaT = do
             x = stateSpace ^. jsIdToState $ xId
             nrPop = V.length x
             x' = V.map fromIntegral x
-            -- t1s = [x'!k * (x'!k - 1) / 2.0 * (1.0 / popSize!k) + x'!k * a!k * (1.0 / popSize!k) |
-            --        k <- [0..nrPop-1], not $ freezeState!k]
             t1s = V.zipWith4 t1func x' popSize a freezeState
-            -- t2s = [b1up * (1.0 - exp (-x'!l * (x'!l + 1) / 2.0 * (1.0 / popSize!l) * deltaT)) |
-            --        (b1up, l) <- zip b1ups [0..nrPop-1], not $ freezeState!l]
             t2s = V.zipWith4 t2func b1ups x' popSize freezeState 
             val = b M.! xId
             newVal = val * exp (-(V.sum t1s) * deltaT) + V.sum t2s
