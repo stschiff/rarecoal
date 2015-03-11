@@ -68,10 +68,11 @@ mcmcNotDone :: Int -> StateT MCMCstate Script Bool
 mcmcNotDone requiredCycles = do
     state <- get
     let nrCycles = mcmcNrCycles state
-    if nrCycles < requiredCycles then return True else
-        let scoreValues = reverse $ mcmcScoreList state
-            nrBurnins = computeBurninCycles scoreValues
-        in  return $ nrCycles - nrBurnins <= requiredCycles
+    return $ nrCycles < 5
+    -- if nrCycles < requiredCycles then return True else
+    --     let scoreValues = reverse $ mcmcScoreList state
+    --         nrBurnins = computeBurninCycles scoreValues
+    --     in  return $ nrCycles - nrBurnins <= requiredCycles
 
 computeBurninCycles :: [Double] -> Int
 computeBurninCycles s =
@@ -90,8 +91,8 @@ mcmcCycle posterior = do
     mapM_ (updateMCMC posterior) order
     newVal <- gets mcmcCurrentValue
     modify (\s -> s {mcmcNrCycles = c + 1, mcmcScoreList = newVal:scoreValues})
+    liftIO (infoM "rarecoal" $ showStateLog state)
     when ((c + 1) `mod` 10 == 0) $ do
-        liftIO (infoM "rarecoal" $ showStateLog state)
         forM_ [0..k-1] adaptStepWidths
     get 
 

@@ -7,7 +7,7 @@ import Data.Int (Int64)
 import ModelTemplate (getModelSpec)
 import Control.Error (Script, scriptIO, assertErr)
 import qualified Data.Map.Strict as Map
-import Control.Parallel.Strategies (rdeepseq, parMap)
+import Control.Parallel.Strategies (rdeepseq, parMap, parListChunk, using)
 import Control.Monad.Trans.Either (hoistEither)
 import Debug.Trace (trace)
 import Control.Monad (when)
@@ -38,7 +38,8 @@ computeLikelihood modelSpec histogram = do
     assertErr "maxType of histogram must be global" $ raGlobalMax histogram
     standardOrder <- computeStandardOrder histogram
     let nVec = raNVec histogram
-    patternProbs <- sequence $ parMap rdeepseq (getProb modelSpec nVec) standardOrder
+    -- patternProbs <- sequence $ parMap rdeepseq (getProb modelSpec nVec) standardOrder
+    patternProbs <- sequence $ parMapChunk rdeepseq (getProb modelSpec nVec) standardOrder
     -- trace (show $ zip standardOrder patternProbs) $ return ()
     let patternCounts = map (defaultLookup . Pattern) standardOrder
         ll = sum $ zipWith (\p c -> log p * fromIntegral c) patternProbs patternCounts
@@ -46,6 +47,8 @@ computeLikelihood modelSpec histogram = do
     return $ ll + fromIntegral otherCounts * log (1.0 - sum patternProbs)
   where
     defaultLookup sitePattern = Map.findWithDefault 0 sitePattern (raCounts histogram)
+    parMapChunk strat f = (`using` (parListChunk 10) strat) . map f
+
 
 writeSpectrumFile :: FilePath -> ModelSpec -> RareAlleleHistogram -> Script ()
 writeSpectrumFile spectrumFile modelSpec histogram = 
