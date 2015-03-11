@@ -30,7 +30,8 @@ data JointStateSpace = JointStateSpace  {
     _jsIdToState :: Int -> JointState,
     _jsX1up :: Int -> [Int],
     _jsX1 :: Int -> Int,
-    _jsNrPop :: Int
+    _jsNrPop :: Int,
+    _jsMaxAf :: Int
 }
 
 makeLenses ''JointStateSpace
@@ -131,10 +132,10 @@ makeJointStateSpace config =
         idToStateMemo = arrayRange (0, maxId - 1) idToState
         x1upMemo = arrayRange (0, maxId - 1) x1up
         x1Memo = arrayRange (0, maxId - 1) x1
-    in  JointStateSpace stateToId idToStateMemo x1upMemo x1Memo nrPop
+    in  JointStateSpace stateToId idToStateMemo x1upMemo x1Memo nrPop maxAf
     
 genericStateToId :: Int -> JointState -> Int
-genericStateToId base state = V.ifoldl (\v i x -> v + x * base ^ i) 0 state
+genericStateToId base state = if V.any (>=base) state then -1 else V.ifoldl (\v i x -> v + x * base ^ i) 0 state
 
 genericMaxId :: Int -> Int -> Int
 genericMaxId base nrPop = base ^ nrPop
@@ -152,19 +153,24 @@ genericX1 n k = V.replicate n 0 // [(k, 1)]
 
 fillStateSpace :: JointStateSpace -> M.IntMap Double -> M.IntMap Double
 fillStateSpace jointStateSpace b =
-    let states = map (jointStateSpace ^. jsIdToState) $ M.keys b
+    let states = [jointStateSpace ^. jsIdToState $ key | (key, prob) <- M.toList b, prob > 0.0]
         nrPop = jointStateSpace ^. jsNrPop
+        maxAf = jointStateSpace ^. jsMaxAf
         maxMVec = V.fromList . map maximum $ [map (V.!i) states | i <- [0 .. nrPop - 1]]
         allStates = expandPattern maxMVec
         allStateIds = map (jointStateSpace ^. jsStateToId) allStates
         safeInsert m k = M.insertWith (\_ oldVal -> oldVal) k 0.0 m
     in  foldl safeInsert b allStateIds
+
+expandPattern :: JointState -> [JointState]
+expandPattern maxMVec =
+    let k = V.length maxMVec
+        maxAf = V.sum maxMVec
+    in  filter (\v -> V.sum v > 0 && V.sum v <= maxAf) $ foldM go maxMVec [0..k-1]
   where
-    expandPattern :: JointState -> [JointState]
-    expandPattern vec = let k = V.length vec in foldM go vec [0..k-1]
     go vec_ i = 
         let maxVal = vec_ ! i
-        in if maxVal <= 1 then [vec_] else [vec_ // [(i, val)] | val <- [1..maxVal]]
+        in if maxVal == 0 then [vec_] else [vec_ // [(i, val)] | val <- [0..maxVal]]
 
 propagateStates :: [Double] -> State (ModelState, CoalState) ()
 propagateStates [] = return ()
@@ -180,20 +186,20 @@ canUseShortcut = do
     let a = _csA cs
         r = _msGrowthRates ms
         e = _msEventQueue ms
-    return $ (V.maximum a == V.sum a) && V.all (==0.0) r && null e
+    return $ ((V.length . V.filter (>0.0)) a == 1) && V.all (==0.0) r && null e
 
 propagateStateShortcut :: State (ModelState, CoalState) ()
 propagateStateShortcut = do
     nrA <- uses (_2 . csA) (floor . V.sum)
     b <- use $ _2 . csB
     idToState <- use $ _2 . csStateSpace . jsIdToState
-    let additionalBranchLength = sum [prob * goState nrA (idToState xId) | (xId, prob) <- M.toList b]
+    let additionalBranchLength = sum [prob * goState nrA (idToState xId) | (xId, prob) <- M.toList b, prob > 0.0]
     _2 . csB %= M.map (const 0)
     _2 . csD += additionalBranchLength
     _2 . csA %= V.map (const 1)
   where
     goState nrA x =
-        let nrDerived = assert (V.sum x == V.maximum x) $ V.sum x
+        let nrDerived = assert ((V.length . V.filter (>0)) x == 1) $ V.sum x
         in  singlePopMutBranchLength nrA nrDerived
         
 singlePopMutBranchLength :: Int -> Int -> Double
@@ -205,7 +211,7 @@ singlePopMutBranchLength nrA nrDerived =
 singleStep :: Double -> State (ModelState, CoalState) ()
 singleStep nextTime = do
     -- (ms, cs) <- get
-    -- trace (show nextTime ++ " " ++ show (_msT ms) ++ " " ++ show (_msPopSize ms) ++ " " ++ show (_csA cs) ++ " " ++ show (_csB cs)) (return ())
+    -- trace (show nextTime ++ " " ++ show (_msT ms) ++ " " ++ show (_csA cs) ++ " " ++ show (_csB cs)) (return ())
     events <- use $ _1 . msEventQueue
     let ModelEvent t _ = if null events then ModelEvent (1.0/0.0) undefined else head events
     if  t < nextTime then do
@@ -270,8 +276,6 @@ updateCoalStateMig :: Double -> (Int, Int, Double) -> State (ModelState, CoalSta
 updateCoalStateMig deltaT (k, l, m) = do
     b <- use $ _2 . csB
     stateSpace <- use $ _2 . csStateSpace
-    -- let sourceIds =
-    --     map (stateSpace ^. jsStateToId) . filter (\vec -> vec!l > 0) . map (stateSpace ^. jsIdToState) $ M.keys b
     _2 . csB .= foldl (updateState stateSpace) b (M.keys b)
     a <- use $ _2 . csA
     _2 . csA . ix l *= exp (-deltaT * m)
@@ -289,7 +293,7 @@ updateCoalStateMig deltaT (k, l, m) = do
                 in  if targetId `M.member` b' then
                         M.insertWith (+) targetId (bProb * (1.0 - reduceFactor)) b'
                     else
-                        M.insert targetId (bProb * (1.0 - reduceFactor)) . fillStateSpace stateSpace $ b'
+                        fillStateSpace stateSpace . M.insert targetId (bProb * (1.0 - reduceFactor)) $ b'
             else b
             
 
@@ -297,7 +301,10 @@ updateA :: Double -> State (ModelState, CoalState) ()
 updateA deltaT = do
     popSize <- use $ _1 . msPopSize
     freezeState <- use $ _1 . msFreezeState
+    -- aBefore <- use $ _2 . csA
     _2 . csA %= V.zipWith3 go popSize freezeState
+    -- aAfter <- use $ _2 . csA
+    -- trace (show aBefore ++ " " ++ show aAfter) $ return ()
   where
     go popSizeK freezeStateK aK = aK * if freezeStateK || aK < 1.0 then 1.0 else
         exp (-0.5 * (aK - 1.0) * (1.0 / popSizeK) * deltaT)
