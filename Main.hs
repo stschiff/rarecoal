@@ -101,7 +101,7 @@ parseProb :: OP.Parser Command
 parseProb = CmdProb <$> parseProbOpt
 
 parseProbOpt :: OP.Parser ProbOpt
-parseProbOpt = ProbOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams <*> parseModelEvents
+parseProbOpt = ProbOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams <*> parseModelEvents <*> parseLinGen
                        <*> OP.argument OP.auto (OP.metavar "NVec")
                        <*> OP.argument OP.auto (OP.metavar "MVec")
 
@@ -162,12 +162,18 @@ parseSetM = OP.option (OP.str >>= readSetM) $ OP.long "mig" <> OP.metavar "t,k,l
         let [t, k, l, m] = splitOn "," s
         return $ ModelEvent (read t) (SetMigration (read k) (read l) (read m))
 
+parseLinGen :: OP.Parser Int
+parseLinGen = OP.option OP.auto $ OP.long "lingen"
+                                              <> OP.metavar "INT"
+                                              <> OP.value 400 <> OP.showDefault
+                                              <> OP.help "set the number of linear generations in discretization"
+
 parseLogl :: OP.Parser Command
 parseLogl = CmdLogl <$> parseLoglOpt
 
 parseLoglOpt :: OP.Parser LoglOpt
 parseLoglOpt = LoglOpt <$> parseSpectrumPath <*> parseTheta <*> parseTemplateFilePath <*> parseParams
-                                 <*> parseModelEvents <*> parseMaxAf
+                                 <*> parseModelEvents <*> parseLinGen <*> parseMaxAf
                                  <*> parseNrCalledSites <*> parseIndices <*> parseHistPath
 
 parseSpectrumPath :: OP.Parser FilePath
@@ -183,7 +189,7 @@ parseMaxl = CmdMaxl <$> parseMaxlOpt
 parseMaxlOpt :: OP.Parser MaxlOpt
 parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams <*> parseMaxCycles
                        <*> parseTraceFilePath  <*> parseMaxAf
-                       <*> parseNrCalledSites <*> parseIndices <*> parseHistPath
+                       <*> parseNrCalledSites <*> parseLinGen <*> parseIndices <*> parseHistPath
   where
     parseMaxCycles = OP.option OP.auto $ OP.short 'c' <> OP.long "maxCycles"
                                                       <> OP.metavar "<NR_MAX_CYCLES>"
@@ -201,7 +207,7 @@ parseMcmc = CmdMcmc <$> parseMcmcOpt
 parseMcmcOpt :: OP.Parser McmcOpt
 parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams
                        <*> parseNrCycles <*> parseTraceFilePath
-                       <*> parseMaxAf <*> parseNrCalledSites
+                       <*> parseMaxAf <*> parseNrCalledSites <*> parseLinGen
                        <*> parseIndices
                        <*> parseHistPath <*> parseRandomSeed
   where
@@ -215,7 +221,7 @@ parseFind = CmdFind <$> parseFindOpt
 
 parseFindOpt = FindOpt <$> parseQueryIndex <*> parseBranchAge <*> parseDeltaTime <*> parseMaxTime <*> parseTheta
                        <*> parseTemplateFilePath <*> parseParams <*> parseModelEvents <*> parseMinAf <*> parseMaxAf
-                       <*> parseNrCalledSites <*> parseIndices <*> parseIgnoreList <*> parseHistPath
+                       <*> parseNrCalledSites <*> parseLinGen <*> parseIndices <*> parseIgnoreList <*> parseHistPath
   where
     parseQueryIndex = OP.option OP.auto $ OP.short 'q' <> OP.long "queryIndex" <> OP.metavar "<INT>"
                                                        <> OP.help "index of query branch"

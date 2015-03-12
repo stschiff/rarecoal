@@ -18,6 +18,7 @@ data LoglOpt = LoglOpt {
    loTemplatePath :: FilePath,
    loParams :: [Double],
    loModelEvents :: [ModelEvent],
+   loLinGen :: Int,
    loMaxAf :: Int,
    loNrCalledSites :: Int64,
    loIndices :: [Int],
@@ -26,7 +27,7 @@ data LoglOpt = LoglOpt {
 
 runLogl :: LoglOpt -> Script ()
 runLogl opts = do
-    modelSpec <- getModelSpec (loTemplatePath opts) (loTheta opts) (loParams opts) (loModelEvents opts)
+    modelSpec <- getModelSpec (loTemplatePath opts) (loTheta opts) (loParams opts) (loModelEvents opts) (loLinGen opts)
     hist <- loadHistogram (loIndices opts) 1 (loMaxAf opts) (loNrCalledSites opts) (loHistPath opts)
     val <- hoistEither $ computeLikelihood modelSpec hist
     scriptIO $ print val

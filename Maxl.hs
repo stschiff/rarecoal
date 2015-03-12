@@ -7,7 +7,7 @@ import Numeric.GSL.Minimization (minimize, MinimizeMethod(..))
 import ModelTemplate (ModelTemplate(..), instantiateModel, readModelTemplate)
 import Data.List (intercalate)
 import Data.Int (Int64)
-import Core (defaultTimes)
+import Core (getTimeSteps)
 import qualified Data.Vector.Unboxed as V
 import Control.Error (Script, scriptIO)
 import Control.Error.Safe (assertErr)
@@ -21,13 +21,15 @@ data MaxlOpt = MaxlOpt {
    maTracePath :: FilePath,
    maMaxAf :: Int,
    maNrCalledSites :: Int64,
+   maLinGen :: Int,
    maIndices :: [Int],
    maHistPath :: FilePath
 }
 
 runMaxl :: MaxlOpt -> Script ()
 runMaxl opts = do
-    modelTemplate <- readModelTemplate (maTemplatePath opts) (maTheta opts) defaultTimes
+    let times = getTimeSteps 20000 (maLinGen opts) 20.0
+    modelTemplate <- readModelTemplate (maTemplatePath opts) (maTheta opts) times
     hist <- loadHistogram (maIndices opts) 1 (maMaxAf opts) (maNrCalledSites opts) (maHistPath opts)
     _ <- hoistEither $ minFunc modelTemplate hist (V.fromList $ maInitialParams opts)
     let minFunc' = either (const penalty) id . minFunc modelTemplate hist . V.fromList

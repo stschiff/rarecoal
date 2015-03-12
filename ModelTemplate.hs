@@ -6,7 +6,7 @@ import Control.Monad (liftM, unless)
 import Control.Error (Script, scriptIO)
 import Control.Error.Safe (assertErr, readErr, justErr)
 import Control.Monad.Trans.Either (hoistEither, left, right)
-import Core (defaultTimes, ModelSpec(..), ModelEvent(..), EventType(..))
+import Core (defaultTimes, getTimeSteps, ModelSpec(..), ModelEvent(..), EventType(..))
 import qualified Data.Vector.Unboxed as V
 import Text.Parsec.String (parseFromFile, Parser)
 import Text.Parsec.Char (char, newline, letter, oneOf, noneOf, space, alphaNum)
@@ -126,10 +126,11 @@ substituteParams (name:names) (p:ps) s =
     in  substituteParams names ps newS
 substituteParams _ _ _ = Left "wrong number of params for modelTemplate"
 
-getModelSpec :: FilePath -> Double -> [Double] -> [ModelEvent] -> Script ModelSpec
-getModelSpec path theta params events =
-    if path /= "/dev/null" then do
-        template <- readModelTemplate path theta defaultTimes                    
-        hoistEither $ instantiateModel template (V.fromList params)
-    else
-        return $ ModelSpec defaultTimes theta events
+getModelSpec :: FilePath -> Double -> [Double] -> [ModelEvent] -> Int -> Script ModelSpec
+getModelSpec path theta params events lingen =
+    let times = getTimeSteps 20000 lingen 20.0
+    in  if path /= "/dev/null" then do
+            template <- readModelTemplate path theta times
+            hoistEither $ instantiateModel template (V.fromList params)
+        else
+            return $ ModelSpec times theta events

@@ -1,7 +1,7 @@
 module Mcmc (runMcmc, McmcOpt(..)) where
 
 import ModelTemplate (ModelTemplate(..), readModelTemplate)
-import Core (defaultTimes) 
+import Core (getTimeSteps) 
 import qualified Data.Vector.Unboxed as V
 import qualified System.Random as R
 import Maxl (minFunc, penalty)
@@ -30,6 +30,7 @@ data McmcOpt = McmcOpt {
    mcTracePath :: FilePath,
    mcMaxAf :: Int,
    mcNrCalledSites :: Int64,
+   mcLinGen :: Int,
    mcIndices :: [Int],
    mcHistPath :: FilePath,
    mcRandomSeed :: Int
@@ -48,7 +49,8 @@ data MCMCstate = MCMCstate {
 
 runMcmc :: McmcOpt -> Script ()
 runMcmc opts = do
-    modelTemplate <- readModelTemplate (mcTemplatePath opts) (mcTheta opts) defaultTimes
+    let times = getTimeSteps 20000 (mcLinGen opts) 20.0
+    modelTemplate <- readModelTemplate (mcTemplatePath opts) (mcTheta opts) times
     hist <- loadHistogram (mcIndices opts) 1 (mcMaxAf opts) (mcNrCalledSites opts) (mcHistPath opts)
     _ <- hoistEither $ minFunc modelTemplate hist (V.fromList $ mcInitialParams opts)
     let minFunc' = either (const penalty) id . minFunc modelTemplate hist

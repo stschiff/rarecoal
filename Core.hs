@@ -1,6 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 
-module Core (defaultTimes, getProb, validateModel, ModelEvent(..), EventType(..), ModelSpec(..)) where
+module Core (defaultTimes, getTimeSteps, getProb, validateModel, ModelEvent(..), EventType(..), ModelSpec(..)) where
 
 import Control.Monad.Trans.State.Lazy (State, get, put, execState)
 import Data.List (sortBy)

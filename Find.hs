@@ -23,6 +23,7 @@ data FindOpt = FindOpt {
     fiMinAf :: Int,
     fiMaxAf :: Int,
     fiNrCalledSites :: Int64,
+    fiLinGen :: Int,
     fiIndices :: [Int],
     fiIgnoreList :: [SitePattern],
     fiHistPath :: FilePath
@@ -30,7 +31,7 @@ data FindOpt = FindOpt {
 
 runFind :: FindOpt -> Script ()
 runFind opts = do
-    modelSpec' <- getModelSpec (fiTemplatePath opts) (fiTheta opts) (fiParams opts) (fiModelEvents opts)
+    modelSpec' <- getModelSpec (fiTemplatePath opts) (fiTheta opts) (fiParams opts) (fiModelEvents opts) (fiLinGen opts)
     let l = fiQueryIndex opts
         modelSpec = if fiBranchAge opts > 0.0 then
             let events' = mEvents modelSpec'
