@@ -13,7 +13,7 @@ import Data.Vector.Unboxed.Base (Unbox)
 import qualified Data.IntMap as M
 import Control.Error.Safe (assertErr)
 import Control.Lens ((%~), ix, (&), makeLenses, use, (%=), uses, (+~),
-                     (-~), (*=), (+=), _1, _2, (.=), (^.))
+                     (-~), (*=), (+=), _1, _2, _3, (.=), (^.))
 import Data.MemoCombinators (arrayRange)
 import Control.Exception.Base (assert)
 
@@ -245,7 +245,8 @@ performEvent = do
             migrations <- use $ _1 . msMigrationRates
             let migList = [i | ((k', l', _), i) <- zip migrations [0..], k' == k, l' == l]
             when (null migList && m > 0) $ _1 . msMigrationRates %= (++[(k, l, m)])
-            when (not (null migList) && m == 0) $ _1 . msMigrationRates %= deleteFromList (head migList)
+            when (not (null migList)) $ _1 . msMigrationRates . ix (head migList) . _3 .= m
+            _1 . msMigrationRates %= filter (\(_,_,m) -> m > 0.0)
     _1 . msEventQueue .= tail events
   where
     deleteFromList index l = [v | (v, i) <- zip l [0..], i /= index]
@@ -372,7 +373,7 @@ validateModel (ModelSpec _ _ events) = do
     checkEvents (ModelEvent _ (SetGrowthRate _ r):rest) =
         if abs r > 1000.0 then Left "Illegal growth rates" else checkEvents rest
     checkEvents (ModelEvent _ (SetMigration _ _ r):rest) =
-        if abs r < 0.0 then Left "Illegal migration rate" else checkEvents rest
+        if r < 0.0 then Left "Illegal migration rate" else checkEvents rest
 
 choose :: Int -> Int -> Double
 choose _ 0 = 1
