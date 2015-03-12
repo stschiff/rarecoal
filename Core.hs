@@ -184,13 +184,18 @@ canUseShortcut :: State (ModelState, CoalState) Bool
 canUseShortcut = do
     (ms, cs) <- get
     let a = _csA cs
+        b = _csB cs
+        js = _csStateSpace cs
+        nonZeroStates = [(_jsIdToState js) xId | (xId, prob) <- M.toList b, prob > 0.0]
+        allDerivedHaveCoalesced = and [(V.length . V.filter (>0)) x == 1 | x <- nonZeroStates]
+        allAncestralHaveCoalesced = (V.length . V.filter (>0.0)) a == 1
         r = _msGrowthRates ms
         e = _msEventQueue ms
-    return $ ((V.length . V.filter (>0.0)) a == 1) && V.all (==0.0) r && null e
+    return $ allDerivedHaveCoalesced && allAncestralHaveCoalesced && V.all (==0.0) r && null e
 
 propagateStateShortcut :: State (ModelState, CoalState) ()
 propagateStateShortcut = do
-    nrA <- uses (_2 . csA) (floor . V.sum)
+    nrA <- uses (_2 . csA) (round . V.sum)
     b <- use $ _2 . csB
     idToState <- use $ _2 . csStateSpace . jsIdToState
     let additionalBranchLength = sum [prob * goState nrA (idToState xId) | (xId, prob) <- M.toList b, prob > 0.0]
@@ -372,3 +377,4 @@ validateModel (ModelSpec _ _ events) = do
 choose :: Int -> Int -> Double
 choose _ 0 = 1
 choose n k = product [fromIntegral (n + 1 - j) / fromIntegral j | j <- [1..k]]
+
