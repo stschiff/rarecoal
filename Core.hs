@@ -220,20 +220,25 @@ singleStep nextTime = do
     events <- use $ _1 . msEventQueue
     let ModelEvent t _ = if null events then ModelEvent (1.0/0.0) undefined else head events
     if  t < nextTime then do
-        singleStep t
+        -- singleStep t
         performEvent
         singleStep nextTime
     else do
         deltaT <- uses (_1 . msT) (nextTime-)
-        updateCoalState deltaT
-        migrations <- use $ _1 . msMigrationRates
-        mapM_ (updateCoalStateMig deltaT) migrations
-        updateModelState deltaT
+        when (deltaT > 0) $ do
+            -- t <- use $ _1 . msT
+            -- trace ("time: " ++ show t ++ ": stepping forward with deltaT=" ++ show deltaT) $ return ()
+            updateCoalState deltaT
+            migrations <- use $ _1 . msMigrationRates
+            mapM_ (updateCoalStateMig deltaT) migrations
+            updateModelState deltaT
 
 performEvent :: State (ModelState, CoalState) ()
 performEvent = do
     events <- use $ _1 . msEventQueue
-    let ModelEvent t e = head events
+    let ModelEvent _ e = head events
+    -- t <- use $ _1 . msT
+    -- trace ("time: " ++ show t ++ ": performing event " ++ show (head events)) $ return ()
     case e of
         Join k l -> popJoin k l
         SetPopSize k p -> do
@@ -307,13 +312,12 @@ updateA :: Double -> State (ModelState, CoalState) ()
 updateA deltaT = do
     popSize <- use $ _1 . msPopSize
     freezeState <- use $ _1 . msFreezeState
-    -- aBefore <- use $ _2 . csA
     _2 . csA %= V.zipWith3 go popSize freezeState
-    -- aAfter <- use $ _2 . csA
-    -- trace (show aBefore ++ " " ++ show aAfter) $ return ()
   where
-    go popSizeK freezeStateK aK = aK * if freezeStateK || aK < 1.0 then 1.0 else
-        exp (-0.5 * (aK - 1.0) * (1.0 / popSizeK) * deltaT)
+    go popSizeK freezeStateK aK = if freezeStateK || aK < 1.0 then aK else propagateA deltaT popSizeK aK
+
+propagateA :: Double -> Double -> Double -> Double
+propagateA deltaT popSize a0 = 1.0 / (1.0 + ((1.0 / a0) - 1.0) * exp (- 0.5 * deltaT / popSize))
 
 updateB :: Double -> State (ModelState, CoalState) ()
 updateB deltaT = do
@@ -321,6 +325,7 @@ updateB deltaT = do
     freezeState <- use $ _1 . msFreezeState
     allIds <- uses (_2 . csB) M.keys 
     a <- use $ _2 . csA
+    -- let midPointA = V.zipWith (propagateA (deltaT / 2.0)) popSize a
     stateSpace <- use $ _2 . csStateSpace
     forM_ allIds $ \xId -> do
         b <- use $ _2 . csB
@@ -329,6 +334,7 @@ updateB deltaT = do
             x = stateSpace ^. jsIdToState $ xId
             nrPop = V.length x
             x' = V.map fromIntegral x
+            -- t1s = V.zipWith4 t1func x' popSize midPointA freezeState
             t1s = V.zipWith4 t1func x' popSize a freezeState
             t2s = V.zipWith4 t2func b1ups x' popSize freezeState 
             val = b M.! xId
