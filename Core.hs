@@ -157,20 +157,19 @@ fillStateSpace jointStateSpace b =
         nrPop = jointStateSpace ^. jsNrPop
         maxAf = jointStateSpace ^. jsMaxAf
         maxMVec = V.fromList . map maximum $ [map (V.!i) states | i <- [0 .. nrPop - 1]]
-        allStates = expandPattern maxMVec
+        allStates = filter (\v -> V.sum v > 0 && V.sum v <= maxAf) $ expandPattern maxMVec
         allStateIds = map (jointStateSpace ^. jsStateToId) allStates
         safeInsert m k = M.insertWith (\_ oldVal -> oldVal) k 0.0 m
     in  foldl safeInsert b allStateIds
-
-expandPattern :: JointState -> [JointState]
-expandPattern maxMVec =
-    let k = V.length maxMVec
-        maxAf = V.sum maxMVec
-    in  filter (\v -> V.sum v > 0 && V.sum v <= maxAf) $ foldM go maxMVec [0..k-1]
   where
-    go vec_ i = 
-        let maxVal = vec_ ! i
-        in if maxVal == 0 then [vec_] else [vec_ // [(i, val)] | val <- [0..maxVal]]
+    expandPattern :: JointState -> [JointState]
+    expandPattern maxMVec =
+        let k = V.length maxMVec
+        in  foldM go maxMVec [0..k-1]
+      where
+        go vec_ i = 
+            let maxVal = vec_ ! i
+            in if maxVal == 0 then [vec_] else [vec_ // [(i, val)] | val <- [0..maxVal]]
 
 propagateStates :: [Double] -> State (ModelState, CoalState) ()
 propagateStates [] = return ()
