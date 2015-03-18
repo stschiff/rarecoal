@@ -28,6 +28,7 @@ data McmcOpt = McmcOpt {
    mcInitialParams :: [Double],
    mcNrCycles :: Int,
    mcTracePath :: FilePath,
+   mcMinAf :: Int,
    mcMaxAf :: Int,
    mcNrCalledSites :: Int64,
    mcLinGen :: Int,
@@ -51,7 +52,7 @@ runMcmc :: McmcOpt -> Script ()
 runMcmc opts = do
     let times = getTimeSteps 20000 (mcLinGen opts) 20.0
     modelTemplate <- readModelTemplate (mcTemplatePath opts) (mcTheta opts) times
-    hist <- loadHistogram (mcIndices opts) 1 (mcMaxAf opts) (mcNrCalledSites opts) (mcHistPath opts)
+    hist <- loadHistogram (mcIndices opts) (mcMinAf opts) (mcMaxAf opts) (mcNrCalledSites opts) (mcHistPath opts)
     _ <- hoistEither $ minFunc modelTemplate hist (V.fromList $ mcInitialParams opts)
     let minFunc' = either (const penalty) id . minFunc modelTemplate hist
         params = V.fromList $ mcInitialParams opts

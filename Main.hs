@@ -206,7 +206,7 @@ parseMcmc = CmdMcmc <$> parseMcmcOpt
 
 parseMcmcOpt :: OP.Parser McmcOpt
 parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams
-                       <*> parseNrCycles <*> parseTraceFilePath
+                       <*> parseNrCycles <*> parseTraceFilePath <*> parseMinAf
                        <*> parseMaxAf <*> parseNrCalledSites <*> parseLinGen
                        <*> parseIndices
                        <*> parseHistPath <*> parseRandomSeed
