@@ -7,7 +7,7 @@ import Numeric.GSL.Minimization (minimize, MinimizeMethod(..))
 import ModelTemplate (ModelTemplate(..), instantiateModel, readModelTemplate)
 import Data.List (intercalate)
 import Data.Int (Int64)
-import Core (getTimeSteps)
+import Core (getTimeSteps, ModelSpec(..), ModelEvent(..))
 import qualified Data.Vector.Unboxed as V
 import Control.Error (Script, scriptIO)
 import Control.Error.Safe (assertErr)
@@ -31,8 +31,8 @@ runMaxl opts = do
     let times = getTimeSteps 20000 (maLinGen opts) 20.0
     modelTemplate <- readModelTemplate (maTemplatePath opts) (maTheta opts) times
     hist <- loadHistogram (maIndices opts) 1 (maMaxAf opts) (maNrCalledSites opts) (maHistPath opts)
-    _ <- hoistEither $ minFunc modelTemplate hist (V.fromList $ maInitialParams opts)
-    let minFunc' = either (const penalty) id . minFunc modelTemplate hist . V.fromList
+    _ <- hoistEither $ minFunc modelTemplate [] hist (V.fromList $ maInitialParams opts)
+    let minFunc' = either (const penalty) id . minFunc modelTemplate [] hist . V.fromList
         stepWidths = [max 1.0e-4 $ abs (0.01 * p) | p <- maInitialParams opts]
         (minResult, trace) = minimize NMSimplex2 1.0e-8 (maMaxCycles opts) stepWidths minFunc' (maInitialParams opts)
         minScore = minFunc' minResult
@@ -51,10 +51,13 @@ reportTrace modelTemplate trace path = do
         body = unlines [intercalate "\t" [show val | val <- row] | row <- trace]
     writeFile path $ header ++ "\n" ++ body
 
-minFunc :: ModelTemplate -> RareAlleleHistogram -> V.Vector Double -> Either String Double
-minFunc modelTemplate hist params = do
+minFunc :: ModelTemplate -> [ModelEvent] -> RareAlleleHistogram -> V.Vector Double -> Either String Double
+minFunc modelTemplate extraEvents hist params = do
     modelSpec <- instantiateModel modelTemplate params
-    val <- computeLikelihood modelSpec hist
+    let events = mEvents modelSpec
+        events' = extraEvents ++ events
+        modelSpec' = modelSpec {mEvents = events'}
+    val <- computeLikelihood modelSpec' hist
     assertErr ("likelihood infinite for params " ++ show params) $ not (isInfinite val)
     assertErr ("likelihood NaN for params " ++ show params) $ not (isNaN val)
     return (-val)

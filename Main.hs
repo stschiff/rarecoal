@@ -209,12 +209,14 @@ parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams
                        <*> parseNrCycles <*> parseTraceFilePath <*> parseMinAf
                        <*> parseMaxAf <*> parseNrCalledSites <*> parseLinGen
                        <*> parseIndices
-                       <*> parseHistPath <*> parseRandomSeed
+                       <*> parseHistPath <*> parseRandomSeed <*> parseBranchAges
   where
     parseRandomSeed = OP.option OP.auto $ OP.short 'S' <> OP.long "seed" <> OP.metavar "<INT>" <> OP.help "Random Seed"
     parseNrCycles = OP.option OP.auto $ OP.long "cycles" <> OP.short 'c' <> OP.value 1000 <> OP.metavar "<INT>"
                                                                <> OP.help "nr of MCMC cycles" <> OP.showDefault
-
+    parseBranchAges = OP.option OP.auto $ OP.long "branchAges" <> OP.short 'b' <> OP.metavar "<LIST>"
+                                                               <> OP.help "scaled ages of samples" <> OP.value []
+                                                               <> OP.showDefault
 
 parseFind :: OP.Parser Command
 parseFind = CmdFind <$> parseFindOpt

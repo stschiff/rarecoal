@@ -1,7 +1,7 @@
 module Mcmc (runMcmc, McmcOpt(..)) where
 
 import ModelTemplate (ModelTemplate(..), readModelTemplate)
-import Core (getTimeSteps) 
+import Core (getTimeSteps, ModelEvent(..), EventType(..)) 
 import qualified Data.Vector.Unboxed as V
 import qualified System.Random as R
 import Maxl (minFunc, penalty)
@@ -34,7 +34,8 @@ data McmcOpt = McmcOpt {
    mcLinGen :: Int,
    mcIndices :: [Int],
    mcHistPath :: FilePath,
-   mcRandomSeed :: Int
+   mcRandomSeed :: Int,
+   mcBranchAges :: [Double]
 }
 
 data MCMCstate = MCMCstate {
@@ -53,8 +54,9 @@ runMcmc opts = do
     let times = getTimeSteps 20000 (mcLinGen opts) 20.0
     modelTemplate <- readModelTemplate (mcTemplatePath opts) (mcTheta opts) times
     hist <- loadHistogram (mcIndices opts) (mcMinAf opts) (mcMaxAf opts) (mcNrCalledSites opts) (mcHistPath opts)
-    _ <- hoistEither $ minFunc modelTemplate hist (V.fromList $ mcInitialParams opts)
-    let minFunc' = either (const penalty) id . minFunc modelTemplate hist
+    let extraEvents = concat [[ModelEvent 0.0 (SetFreeze k True), ModelEvent t (SetFreeze k False)] | (t, k) <- zip (mcBranchAges opts) [0..], t > 0]
+    _ <- hoistEither $ minFunc modelTemplate extraEvents hist (V.fromList $ mcInitialParams opts)
+    let minFunc' = either (const penalty) id . minFunc modelTemplate extraEvents hist
         params = V.fromList $ mcInitialParams opts
     let initV = minFunc' params
     let stepWidths = V.map (\p -> max 1.0e-8 $ abs p / 100.0) params
