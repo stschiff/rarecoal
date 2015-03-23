@@ -284,12 +284,14 @@ updateCoalState deltaT = do
 
 updateCoalStateMig :: Double -> (Int, Int, Double) -> State (ModelState, CoalState) ()
 updateCoalStateMig deltaT (k, l, m) = do
-    b <- use $ _2 . csB
-    stateSpace <- use $ _2 . csStateSpace
-    _2 . csB .= foldl (updateState stateSpace) b (M.keys b)
-    a <- use $ _2 . csA
-    _2 . csA . ix l *= exp (-deltaT * m)
-    _2 . csA . ix k += a!l * (1.0 - exp (-deltaT * m))
+    freeze <- use $ _1 . msFreezeState
+    if freeze!k || freeze!l then return () else do
+        b <- use $ _2 . csB
+        stateSpace <- use $ _2 . csStateSpace
+        _2 . csB .= foldl (updateState stateSpace) b (M.keys b)
+        a <- use $ _2 . csA
+        _2 . csA . ix l *= exp (-deltaT * m)
+        _2 . csA . ix k += a!l * (1.0 - exp (-deltaT * m))
   where
     updateState :: JointStateSpace -> M.IntMap Double -> Int -> M.IntMap Double
     updateState stateSpace b sourceId =
@@ -374,11 +376,12 @@ validateModel (ModelSpec _ _ events) = do
             then Left "Illegal joins"
             else checkEvents rest
     checkEvents (ModelEvent _ (SetPopSize _ p):rest) =
-        if p < 0.001 || p > 1000 then Left $ "Illegal populaton size: " ++ show p else checkEvents rest
+        if p < 0.001 || p > 1000 then Left $ "Illegal population size: " ++ show p else checkEvents rest
     checkEvents (ModelEvent _ (SetGrowthRate _ r):rest) =
         if abs r > 10000.0 then Left "Illegal growth rates" else checkEvents rest
     checkEvents (ModelEvent _ (SetMigration _ _ r):rest) =
-        if r < 0.0 then Left "Illegal migration rate" else checkEvents rest
+        if r < 0.0 || r > 10000.0 then Left "Illegal migration rate" else checkEvents rest
+    checkEvents (ModelEvent _ (SetFreeze _ _):rest) = checkEvents rest
 
 choose :: Int -> Int -> Double
 choose _ 0 = 1
