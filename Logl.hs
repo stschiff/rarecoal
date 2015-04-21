@@ -19,7 +19,9 @@ data LoglOpt = LoglOpt {
    loParams :: [Double],
    loModelEvents :: [ModelEvent],
    loLinGen :: Int,
+   loMinAf :: Int,
    loMaxAf :: Int,
+   loConditionOn :: [Int],
    loNrCalledSites :: Int64,
    loIndices :: [Int],
    loHistPath :: FilePath
@@ -28,7 +30,7 @@ data LoglOpt = LoglOpt {
 runLogl :: LoglOpt -> Script ()
 runLogl opts = do
     modelSpec <- getModelSpec (loTemplatePath opts) (loTheta opts) (loParams opts) (loModelEvents opts) (loLinGen opts)
-    hist <- loadHistogram (loIndices opts) 1 (loMaxAf opts) (loNrCalledSites opts) (loHistPath opts)
+    hist <- loadHistogram (loIndices opts) (loMinAf opts) (loMaxAf opts) (loConditionOn opts) (loNrCalledSites opts) (loHistPath opts)
     val <- hoistEither $ computeLikelihood modelSpec hist
     scriptIO $ print val
     writeSpectrumFile (loSpectrumPath opts) modelSpec hist
@@ -50,7 +52,6 @@ computeLikelihood modelSpec histogram = do
     defaultLookup sitePattern = Map.findWithDefault 0 sitePattern (raCounts histogram)
     parMapChunk strat f = (`using` (parListChunk 20) strat) . map f
 
-
 writeSpectrumFile :: FilePath -> ModelSpec -> RareAlleleHistogram -> Script ()
 writeSpectrumFile spectrumFile modelSpec histogram = 
     when (spectrumFile /= "/dev/null") $ do
@@ -66,5 +67,6 @@ computeStandardOrder histogram =
     else
         let nrPop = length $ raNVec histogram
             nVec = raNVec histogram
-        in  Right $ filter (\p -> sum p >= raMinAf histogram) $ computeAllConfigs nrPop (raMaxAf histogram) nVec
-
+        in  Right $ filter (\p -> sum p >= raMinAf histogram && hasConditioning (raConditionOn histogram) p) $ computeAllConfigs nrPop (raMaxAf histogram) nVec
+  where
+    hasConditioning indices pat = all (\i -> pat !! i > 0) indices

@@ -27,7 +27,7 @@ runView opts = do
     outs <- hoistEither $ showHistogram hist'
     scriptIO $ putStrLn outs
   where
-   transform = return . combineIndices (viCombineIndices opts)
+   transform = combineIndices (viCombineIndices opts)
                <=< if viNrCalledSites opts > 0 then setNrCalledSites (viNrCalledSites opts) else return
                <=< filterMaxAf (viGlobalMax opts) (viMaxAf opts)
                <=< reduceIndices (viIndices opts) 

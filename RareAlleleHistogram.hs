@@ -2,7 +2,7 @@ module RareAlleleHistogram (RareAlleleHistogram(..),
                             SitePattern(..),
                             addHistograms, filterMaxAf, setNrCalledSites,
                             loadHistogram, reduceIndices, combineIndices,
-                            filterGlobalMinAf, parseHistogram, showHistogram, simpleReadHistogram) where
+                            filterGlobalMinAf, parseHistogram, showHistogram) where
 
 import qualified Data.Map.Strict as Map
 import Data.List (intercalate, sortBy)
@@ -20,12 +20,24 @@ data RareAlleleHistogram = RareAlleleHistogram {
     raMinAf :: Int,
     raMaxAf :: Int,
     raGlobalMax :: Bool,
+    raConditionOn :: [Int],
     raCounts :: Map.Map SitePattern Int64
 }
 
+data SitePattern = Pattern [Int] | Higher deriving (Eq, Ord)
+instance Show SitePattern where
+    show (Pattern nVec) = commaSep nVec
+    show Higher = "HIGHER"
+
+instance Read SitePattern where
+    readsPrec _ s =
+        let val = if s == "HIGHER" then Higher else Pattern $ map read . splitOn "," $ s
+        in  [(val, "")]
+
 showHistogram :: RareAlleleHistogram -> Either String String
 showHistogram hist = do
-    assertErr "cannot only print histogram with minAf=0 due to format-legacy" $ raMinAf hist == 0
+    assertErr "can only print histogram with minAf=0 due to format-legacy" $ raMinAf hist == 0
+    assertErr "can only print histogram with no conditioning due to format-legacy" $ length (raConditionOn hist) == 0
     let head1 = "N=" ++ commaSep (raNVec hist)
         head2 = "MAX_M=" ++ show (raMaxAf hist)
         head3 = "GLOBAL_MAX=" ++ show (raGlobalMax hist)
@@ -33,19 +45,19 @@ showHistogram hist = do
         body = [show k ++ " " ++ show v | (k, v) <- sorted]
     return $ unlines (head1:head2:head3:body)
 
-simpleReadHistogram :: String -> RareAlleleHistogram
-simpleReadHistogram s =
-    let lines_ = lines s
-        nVec = map read . splitOn "," $ drop 2 (head lines_)
-        maxM = read $ drop 6 (lines_ !! 1)
-        maxType = read $ drop 11 (lines_ !! 2)
-        body = map readBodyLine (filter (/="") $ drop 3 lines_)
-    in  RareAlleleHistogram nVec 0 maxM maxType (Map.fromList body)
-    where
-        readBodyLine :: String -> (SitePattern, Int64)
-        readBodyLine line =
-            let [patS, valS] = words line
-            in  (read patS, read valS)
+-- simpleReadHistogram :: String -> RareAlleleHistogram
+-- simpleReadHistogram s =
+--     let lines_ = lines s
+--         nVec = map read . splitOn "," $ drop 2 (head lines_)
+--         maxM = read $ drop 6 (lines_ !! 1)
+--         maxType = read $ drop 11 (lines_ !! 2)
+--         body = map readBodyLine (filter (/="") $ drop 3 lines_)
+--     in  RareAlleleHistogram nVec 0 maxM maxType (Map.fromList body)
+--     where
+--         readBodyLine :: String -> (SitePattern, Int64)
+--         readBodyLine line =
+--             let [patS, valS] = words line
+--             in  (read patS, read valS)
 
 parseHistogram :: String -> Either String RareAlleleHistogram
 parseHistogram s = do
@@ -57,8 +69,7 @@ parseHistogram s = do
     maxTypeLine <- atErr "file too short" lines_ 2
     maxType <- readErr "parse error in line 3" $ drop 11 maxTypeLine
     body <- mapM readBodyLine (filter (/="") $ drop 3 lines_)
-    -- let body = map readBodyLine (filter (/="") $ drop 3 lines_)
-    return $ RareAlleleHistogram nVec 0 maxM maxType (Map.fromList body)
+    return $ RareAlleleHistogram nVec 0 maxM maxType [] (Map.fromList body)
     where
         readBodyLine :: String -> Either String (SitePattern, Int64)
         readBodyLine line = do
@@ -66,36 +77,46 @@ parseHistogram s = do
             pat <- readErr "parse error" <=< headErr "parse error" $ fields
             val <- readErr "parse error" <=< lastErr "parse error" $ fields
             return (pat, val)
-        -- readBodyLine :: String -> (SitePattern, Int64)
-        -- readBodyLine line =
-        --     let [patS, valS] = words line
-        --     in  (read patS, read valS)
 
 commaSep :: Show a => [a] -> String
 commaSep = intercalate "," . map show
 
 addHistograms :: RareAlleleHistogram -> RareAlleleHistogram -> Either String RareAlleleHistogram
 addHistograms hist1 hist2 = do
-    when (raNVec hist1 /= raNVec hist2 || raMaxAf hist1 /= raMaxAf hist2 ||
-                      raGlobalMax hist1 /= raGlobalMax hist2) $ Left "histograms not compatible"
+    when (raNVec hist1 /= raNVec hist2) $ Left "histograms have different NVecs"
+    when (raMaxAf hist1 /= raMaxAf hist2) $ Left "histograms have different maxAf"
+    when (raGlobalMax hist1 /= raGlobalMax hist2) $ Left "histograms different locality of maximum"
+    when (raConditionOn hist1 /= raConditionOn hist2) $ Left "histograms differ in conditioning"
     return $ hist1 {raCounts = Map.unionWith (+) (raCounts hist1) (raCounts hist2)}
         
-data SitePattern = Pattern [Int] | Higher deriving (Eq, Ord)
-instance Show SitePattern where
-    show (Pattern nVec) = commaSep nVec
-    show Higher = "HIGHER"
-
-instance Read SitePattern where
-    readsPrec _ s =
-        let val = if s == "HIGHER" then Higher else Pattern $ map read . splitOn "," $ s
-        in  [(val, "")]
-
-loadHistogram :: [Int] -> Int -> Int -> Int64 -> FilePath -> Script RareAlleleHistogram
-loadHistogram indices minAf maxAf nrCalledSites path = do
+loadHistogram :: [Int] -> Int -> Int -> [Int] -> Int64 -> FilePath -> Script RareAlleleHistogram
+loadHistogram indices minAf maxAf conditionOn nrCalledSites path = do
     s <- scriptIO $ readFile path
     hist <- hoistEither $ parseHistogram s
     let f = if nrCalledSites > 0 then setNrCalledSites nrCalledSites else return
-    hoistEither $ (f <=< filterGlobalMinAf minAf <=< filterMaxAf True maxAf <=< reduceIndices indices <=< return) hist
+    hoistEither $ (f <=< filterConditionOn conditionOn
+                     <=< filterGlobalMinAf minAf
+                     <=< filterMaxAf True maxAf
+                     <=< reduceIndices indices
+                     <=< return) hist
+
+-- filterConditionOn :: [Int] -> RareAlleleHistogram -> Either String RareAlleleHistogram
+-- filterConditionOn indices hist =
+--     if (null indices) then return hist else do
+--         let newBody = Map.mapKeysWith (+) conditionPatternOn (raCounts hist)
+--         return $ hist {raCounts = newBody, raConditionOn = indices}
+--   where
+--     conditionPatternOn Higher = Higher
+--     conditionPatternOn (Pattern pat) = if all (\i -> pat !! i > 0) indices then Pattern pat else Higher
+
+filterConditionOn :: [Int] -> RareAlleleHistogram -> Either String RareAlleleHistogram
+filterConditionOn indices hist =
+    if (null indices) then return hist else do
+        let newBody = Map.filterWithKey conditionPatternOn (raCounts hist)
+        return $ hist {raCounts = newBody, raConditionOn = indices}
+  where
+    conditionPatternOn Higher _ = False
+    conditionPatternOn (Pattern pat) _ = all (\i -> pat !! i > 0) indices
 
 setNrCalledSites :: Int64 -> RareAlleleHistogram -> Either String RareAlleleHistogram
 setNrCalledSites nrCalledSites hist = do
@@ -125,18 +146,20 @@ reduceIndices :: [Int] -> RareAlleleHistogram -> Either String RareAlleleHistogr
 reduceIndices indices hist =
     if null indices || indices == [0..(length $ raNVec hist)] then return hist else do
         when (raGlobalMax hist && (length (raNVec hist) < length indices)) $ Left "Histogram cannot have global maxAF for this operation"
+        when (not . null . raConditionOn $ hist) $ Left "Histogram cannot have conditioning for this operation"
         let newNvec = selectFromList (raNVec hist) indices
             newBody = Map.mapKeysWith (+) (prunePatternIndices indices) (raCounts hist)
         return $ hist {raNVec = newNvec, raCounts = newBody}
 
-combineIndices :: [Int] -> RareAlleleHistogram -> RareAlleleHistogram
+combineIndices :: [Int] -> RareAlleleHistogram -> Either String RareAlleleHistogram
 combineIndices indices hist = 
     if null indices then
-        hist
-    else
+        return hist
+    else do
+        when (not . null . raConditionOn $ hist) $ Left "Histogram cannot have conditioning for combining indices"
         let newNvec = combineInPattern indices (raNVec hist)
             newBody = Map.mapKeysWith (+) transformPattern (raCounts hist)
-        in  hist {raNVec = newNvec, raCounts = newBody}
+        return $ hist {raNVec = newNvec, raCounts = newBody}
   where
     transformPattern Higher = Higher
     transformPattern (Pattern pattern) =

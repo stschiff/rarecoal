@@ -173,7 +173,7 @@ parseLogl = CmdLogl <$> parseLoglOpt
 
 parseLoglOpt :: OP.Parser LoglOpt
 parseLoglOpt = LoglOpt <$> parseSpectrumPath <*> parseTheta <*> parseTemplateFilePath <*> parseParams
-                                 <*> parseModelEvents <*> parseLinGen <*> parseMaxAf
+                                 <*> parseModelEvents <*> parseLinGen <*> parseMinAf <*> parseMaxAf <*> parseConditioning
                                  <*> parseNrCalledSites <*> parseIndices <*> parseHistPath
 
 parseSpectrumPath :: OP.Parser FilePath
@@ -188,7 +188,7 @@ parseMaxl = CmdMaxl <$> parseMaxlOpt
 
 parseMaxlOpt :: OP.Parser MaxlOpt
 parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams <*> parseMaxCycles
-                       <*> parseTraceFilePath  <*> parseMaxAf
+                       <*> parseTraceFilePath  <*> parseMinAf <*> parseMaxAf <*> parseConditioning
                        <*> parseNrCalledSites <*> parseLinGen <*> parseIndices <*> parseHistPath
   where
     parseMaxCycles = OP.option OP.auto $ OP.short 'c' <> OP.long "maxCycles"
@@ -207,7 +207,7 @@ parseMcmc = CmdMcmc <$> parseMcmcOpt
 parseMcmcOpt :: OP.Parser McmcOpt
 parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams
                        <*> parseNrCycles <*> parseTraceFilePath <*> parseMinAf
-                       <*> parseMaxAf <*> parseNrCalledSites <*> parseLinGen
+                       <*> parseMaxAf <*> parseConditioning <*> parseNrCalledSites <*> parseLinGen
                        <*> parseIndices
                        <*> parseHistPath <*> parseRandomSeed <*> parseBranchAges
   where
@@ -218,12 +218,17 @@ parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams
                                                                <> OP.help "scaled ages of samples" <> OP.value []
                                                                <> OP.showDefault
 
+parseConditioning :: OP.Parser [Int]
+parseConditioning = OP.option OP.auto $ OP.long "conditionOn" <> OP.metavar "<List>"
+                                        <> OP.help "condition on those populations having positive counts"
+                                        <> OP.value [] <> OP.showDefault
+
 parseFind :: OP.Parser Command
 parseFind = CmdFind <$> parseFindOpt
 
 parseFindOpt = FindOpt <$> parseQueryIndex <*> parseBranchAge <*> parseDeltaTime <*> parseMaxTime <*> parseTheta
                        <*> parseTemplateFilePath <*> parseParams <*> parseModelEvents <*> parseMinAf <*> parseMaxAf
-                       <*> parseNrCalledSites <*> parseLinGen <*> parseIndices <*> parseIgnoreList <*> parseHistPath
+                       <*> parseConditioning <*> parseNrCalledSites <*> parseLinGen <*> parseIndices <*> parseIgnoreList <*> parseHistPath
   where
     parseQueryIndex = OP.option OP.auto $ OP.short 'q' <> OP.long "queryIndex" <> OP.metavar "<INT>"
                                                        <> OP.help "index of query branch"

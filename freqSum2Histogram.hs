@@ -45,7 +45,7 @@ runWithOptions :: MyOpts -> IO ()
 runWithOptions (MyOpts nVec maxM popIndices nrCalledSites globalMax) = runScript $ do
     let prod = P.stdinLn >-> P.map (mkPat maxM popIndices globalMax)
     res <- scriptIO $ P.fold insertPattern Map.empty id prod
-    let hist = RareAlleleHistogram (selectFromList nVec popIndices) 0 maxM globalMax res
+    let hist = RareAlleleHistogram (selectFromList nVec popIndices) 0 maxM globalMax [] res
     hist' <- hoistEither $ setNrCalledSites nrCalledSites hist 
     outs <- hoistEither $ showHistogram hist'
     scriptIO $ putStr outs

@@ -51,4 +51,4 @@ makeHist nVec maxAf global s = do
         toPattern p = if pred_ p then Pattern p else Higher
         insert m k = M.insertWith (+) k 1 m
         counts = foldl insert M.empty $ map toPattern freqSums
-    return $ RareAlleleHistogram nVec 0 maxAf global counts
+    return $ RareAlleleHistogram nVec 0 maxAf global [] counts

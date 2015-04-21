@@ -30,6 +30,7 @@ data McmcOpt = McmcOpt {
    mcTracePath :: FilePath,
    mcMinAf :: Int,
    mcMaxAf :: Int,
+   mcConditionOn :: [Int],
    mcNrCalledSites :: Int64,
    mcLinGen :: Int,
    mcIndices :: [Int],
@@ -53,7 +54,7 @@ runMcmc :: McmcOpt -> Script ()
 runMcmc opts = do
     let times = getTimeSteps 20000 (mcLinGen opts) 20.0
     modelTemplate <- readModelTemplate (mcTemplatePath opts) (mcTheta opts) times
-    hist <- loadHistogram (mcIndices opts) (mcMinAf opts) (mcMaxAf opts) (mcNrCalledSites opts) (mcHistPath opts)
+    hist <- loadHistogram (mcIndices opts) (mcMinAf opts) (mcMaxAf opts) (mcConditionOn opts) (mcNrCalledSites opts) (mcHistPath opts)
     let extraEvents = concat [[ModelEvent 0.0 (SetFreeze k True), ModelEvent t (SetFreeze k False)] | (t, k) <- zip (mcBranchAges opts) [0..], t > 0]
     _ <- hoistEither $ minFunc modelTemplate extraEvents hist (V.fromList $ mcInitialParams opts)
     let minFunc' = either (const penalty) id . minFunc modelTemplate extraEvents hist
