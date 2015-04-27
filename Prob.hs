@@ -1,6 +1,6 @@
 module Prob (runProb, ProbOpt(..)) where
 
-import ModelTemplate (getModelSpec)
+import ModelTemplate (getModelSpec, InitialParams(..))
 import Core (getProb, ModelEvent(..))
 import Control.Error (Script, scriptIO)
 import Control.Monad.Trans.Either (hoistEither)
@@ -8,7 +8,7 @@ import Control.Monad.Trans.Either (hoistEither)
 data ProbOpt = ProbOpt {
     prTheta :: Double,
     prTemplatePath :: FilePath,
-    prParams :: [Double],
+    prParams :: InitialParams,
     prModelEvents :: [ModelEvent],
     prLinGen :: Int,
     prNvec :: [Int],

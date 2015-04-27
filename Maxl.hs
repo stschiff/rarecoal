@@ -4,7 +4,7 @@ import RareAlleleHistogram (RareAlleleHistogram, loadHistogram)
 import Logl (computeLikelihood)
 import Numeric.LinearAlgebra.Data (toRows, toList)
 import Numeric.GSL.Minimization (minimize, MinimizeMethod(..))
-import ModelTemplate (ModelTemplate(..), instantiateModel, readModelTemplate)
+import ModelTemplate (ModelTemplate(..), instantiateModel, readModelTemplate, InitialParams(..), getInitialParams)
 import Data.List (intercalate)
 import Data.Int (Int64)
 import Core (getTimeSteps, ModelSpec(..), ModelEvent(..))
@@ -16,7 +16,7 @@ import Control.Monad.Trans.Either (hoistEither)
 data MaxlOpt = MaxlOpt {
    maTheta :: Double,
    maTemplatePath :: FilePath,
-   maInitialParams :: [Double],
+   maInitialParams :: InitialParams,
    maMaxCycles :: Int,
    maTracePath :: FilePath,
    maMinAf :: Int,
@@ -33,10 +33,11 @@ runMaxl opts = do
     let times = getTimeSteps 20000 (maLinGen opts) 20.0
     modelTemplate <- readModelTemplate (maTemplatePath opts) (maTheta opts) times
     hist <- loadHistogram (maIndices opts) (maMinAf opts) (maMaxAf opts) (maConditionOn opts) (maNrCalledSites opts) (maHistPath opts)
-    _ <- hoistEither $ minFunc modelTemplate [] hist (V.fromList $ maInitialParams opts)
+    x <- getInitialParams modelTemplate $ maInitialParams opts
+    _ <- hoistEither $ minFunc modelTemplate [] hist x
     let minFunc' = either (const penalty) id . minFunc modelTemplate [] hist . V.fromList
-        stepWidths = [max 1.0e-4 $ abs (0.01 * p) | p <- maInitialParams opts]
-        (minResult, trace) = minimize NMSimplex2 1.0e-8 (maMaxCycles opts) stepWidths minFunc' (maInitialParams opts)
+        stepWidths = V.toList . V.map (max 1.0e-4 . abs . (0.01*)) $ x
+        (minResult, trace) = minimize NMSimplex2 1.0e-8 (maMaxCycles opts) stepWidths minFunc' $ V.toList x
         minScore = minFunc' minResult
         trace' = map toList $ toRows trace
     scriptIO $ reportMaxResult modelTemplate (V.fromList minResult) minScore

@@ -1,6 +1,6 @@
 module Mcmc (runMcmc, McmcOpt(..)) where
 
-import ModelTemplate (ModelTemplate(..), readModelTemplate)
+import ModelTemplate (ModelTemplate(..), readModelTemplate, InitialParams(..), getInitialParams)
 import Core (getTimeSteps, ModelEvent(..), EventType(..)) 
 import qualified Data.Vector.Unboxed as V
 import qualified System.Random as R
@@ -25,7 +25,7 @@ import Control.Monad.Loops (whileM)
 data McmcOpt = McmcOpt {
    mcTheta :: Double,
    mcTemplatePath :: FilePath,
-   mcInitialParams :: [Double],
+   mcInitialParams :: InitialParams,
    mcNrCycles :: Int,
    mcTracePath :: FilePath,
    mcMinAf :: Int,
@@ -56,14 +56,14 @@ runMcmc opts = do
     modelTemplate <- readModelTemplate (mcTemplatePath opts) (mcTheta opts) times
     hist <- loadHistogram (mcIndices opts) (mcMinAf opts) (mcMaxAf opts) (mcConditionOn opts) (mcNrCalledSites opts) (mcHistPath opts)
     let extraEvents = concat [[ModelEvent 0.0 (SetFreeze k True), ModelEvent t (SetFreeze k False)] | (t, k) <- zip (mcBranchAges opts) [0..], t > 0]
-    _ <- hoistEither $ minFunc modelTemplate extraEvents hist (V.fromList $ mcInitialParams opts)
+    x <- getInitialParams modelTemplate $ mcInitialParams opts
+    _ <- hoistEither $ minFunc modelTemplate extraEvents hist x
     let minFunc' = either (const penalty) id . minFunc modelTemplate extraEvents hist
-        params = V.fromList $ mcInitialParams opts
-    let initV = minFunc' params
-    let stepWidths = V.map (\p -> max 1.0e-8 $ abs p / 100.0) params
-        successRates = V.replicate (V.length params) 0.44
+        initV = minFunc' x
+        stepWidths = V.map (max 1.0e-8 . abs . (/100.0)) x
+        successRates = V.replicate (V.length x) 0.44
         ranGen = R.mkStdGen $ mcRandomSeed opts 
-        initState = MCMCstate 0 0 initV params stepWidths successRates ranGen []
+        initState = MCMCstate 0 0 initV x stepWidths successRates ranGen []
         pred_ = mcmcNotDone (mcNrCycles opts)
         act = mcmcCycle minFunc'
     states <- evalStateT (whileM pred_ act) initState

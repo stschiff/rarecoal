@@ -1,4 +1,5 @@
-module ModelTemplate (ModelTemplate(..), readModelTemplate, instantiateModel, getModelSpec) where
+module ModelTemplate (InitialParams(..), getInitialParams, ModelTemplate(..), readModelTemplate, instantiateModel,      
+                      getModelSpec) where
 
 import Data.String.Utils (replace)
 import Data.List.Split (splitOn)
@@ -11,6 +12,7 @@ import qualified Data.Vector.Unboxed as V
 import Text.Parsec.String (parseFromFile, Parser)
 import Text.Parsec.Char (char, newline, letter, oneOf, noneOf, space, alphaNum)
 import Text.Parsec (sepBy, many)
+import Control.Applicative ((<$>), (<*>))
 
 data ModelTemplate = ModelTemplate {
     mtParams :: [String],
@@ -30,6 +32,11 @@ data ConstraintTemplate = ConstraintTemplate {
     ctComp :: Char,
     ctName2 :: String
 }
+
+data InitialParams = InitialParamsList [Double] | InitialParamsFile FilePath
+
+getInitialParams :: ModelTemplate -> InitialParams -> Script (V.Vector Double)
+getInitialParams = undefined
 
 readModelTemplate :: FilePath -> Double -> [Double] -> Script ModelTemplate
 readModelTemplate path theta timeSteps = do
@@ -53,10 +60,7 @@ parseParams = do
     return names
 
 parseParamName :: Parser String
-parseParamName = do
-    s <- letter
-    s' <- many alphaNum
-    return (s:s')
+parseParamName = (:) <$> letter <*> many alphaNum
 
 parseEvents :: Parser [EventTemplate]
 parseEvents = many $ do
@@ -126,11 +130,12 @@ substituteParams (name:names) (p:ps) s =
     in  substituteParams names ps newS
 substituteParams _ _ _ = Left "wrong number of params for modelTemplate"
 
-getModelSpec :: FilePath -> Double -> [Double] -> [ModelEvent] -> Int -> Script ModelSpec
+getModelSpec :: FilePath -> Double -> InitialParams -> [ModelEvent] -> Int -> Script ModelSpec
 getModelSpec path theta params events lingen =
     let times = getTimeSteps 20000 lingen 20.0
     in  if path /= "/dev/null" then do
             template <- readModelTemplate path theta times
-            hoistEither $ instantiateModel template (V.fromList params)
+            x <- getInitialParams template params
+            hoistEither $ instantiateModel template x
         else
             return $ ModelSpec times theta events

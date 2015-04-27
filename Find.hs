@@ -1,6 +1,6 @@
 module Find (runFind, FindOpt(..)) where
 
-import ModelTemplate (getModelSpec)
+import ModelTemplate (getModelSpec, InitialParams(..), getInitialParams)
 import RareAlleleHistogram (loadHistogram, RareAlleleHistogram(..), SitePattern(..))
 import Control.Monad.Trans.Either (hoistEither)
 import Control.Error.Script (Script, scriptIO)
@@ -18,7 +18,7 @@ data FindOpt = FindOpt {
     fiMaxTime :: Double,
     fiTheta :: Double,
     fiTemplatePath :: FilePath,
-    fiParams :: [Double],
+    fiParams :: InitialParams,
     fiModelEvents :: [ModelEvent],
     fiMinAf :: Int,
     fiMaxAf :: Int,

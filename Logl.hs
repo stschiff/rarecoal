@@ -1,10 +1,10 @@
-module Logl (computeLikelihood, runLogl, LoglOpt(..)) where
+module Logl (computeLikelihood, runLogl, LoglOpt(..), InitialParams(..)) where
 
 import RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..), loadHistogram)
 import Utils (computeAllConfigs)
 import Core (getProb, ModelSpec(..), ModelEvent(..))
 import Data.Int (Int64)
-import ModelTemplate (getModelSpec)
+import ModelTemplate (getModelSpec, InitialParams(..))
 import Control.Error (Script, scriptIO, assertErr)
 import qualified Data.Map.Strict as Map
 import Control.Parallel.Strategies (rdeepseq, parMap, parListChunk, using)
@@ -16,7 +16,7 @@ data LoglOpt = LoglOpt {
    loSpectrumPath :: FilePath,
    loTheta :: Double,
    loTemplatePath :: FilePath,
-   loParams :: [Double],
+   loParams :: InitialParams,
    loModelEvents :: [ModelEvent],
    loLinGen :: Int,
    loMinAf :: Int,

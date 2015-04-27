@@ -16,6 +16,7 @@ import Data.Int (Int64)
 import Debug.Trace (trace)
 import RareAlleleHistogram (SitePattern(..))
 import Control.Monad.Trans.Reader (ask)
+import ModelTemplate (InitialParams(..))
 
 data Options = Options Command
 
@@ -91,7 +92,7 @@ parseGlobal :: OP.Parser Bool
 parseGlobal = OP.switch (OP.long "globalMax" <> OP.short 'g' <> OP.help "constrain global allele frequency")
 
 parseHistPath :: OP.Parser FilePath
-parseHistPath = OP.option OP.str $ OP.short 'i' <> OP.long "input"
+parseHistPath = OP.strOption $ OP.short 'i' <> OP.long "input"
                                                 <> OP.metavar "<Input File>" <> OP.help "Input File, use - for stdin"
 
 withInfo :: OP.Parser a -> String -> OP.ParserInfo a
@@ -112,14 +113,21 @@ parseTheta = OP.option OP.auto $ OP.short 't' <> OP.long "theta"
                                               <> OP.help "set the scaled mutation rate"
 
 parseTemplateFilePath :: OP.Parser FilePath
-parseTemplateFilePath = OP.option OP.str $ OP.short 'T' <> OP.long "template" <> OP.metavar "<Input Template File>" <> OP.value "/dev/null"
+parseTemplateFilePath = OP.strOption $ OP.short 'T' <> OP.long "template" <> OP.metavar "<Input Template File>" <> OP.value "/dev/null"
                                                               <> OP.help "Specify that the model should be read from a template file"
 
-parseParams :: OP.Parser [Double]
-parseParams = OP.option OP.auto $ OP.short 'x' <> OP.long "params"
-                                               <> OP.metavar "[p1,p2,...]"
-                                               <> OP.value [] <> OP.showDefault
-                                               <> OP.help "initial parameters for the template"
+parseParams :: OP.Parser InitialParams
+parseParams = (InitialParamsList <$> parseInitialParamsList) <|> (InitialParamsFile <$> parseInitialParamsFile)
+
+parseInitialParamsList :: OP.Parser [Double]
+parseInitialParamsList = OP.option OP.auto $ OP.short 'x' <> OP.long "params" <>
+                         OP.metavar "[p1,p2,...]" <>
+                         OP.help "initial parameters for the template"
+
+parseInitialParamsFile :: OP.Parser FilePath
+parseInitialParamsFile = OP.strOption $ OP.long "paramsFile" <>
+                         OP.metavar "<FILE>" <>
+                         OP.help "file with initial parameters, can be maxl- or mcmc-output"
 
 parseModelEvents :: OP.Parser [ModelEvent]
 parseModelEvents = many parseEvent
@@ -177,7 +185,7 @@ parseLoglOpt = LoglOpt <$> parseSpectrumPath <*> parseTheta <*> parseTemplateFil
                                  <*> parseNrCalledSites <*> parseIndices <*> parseHistPath
 
 parseSpectrumPath :: OP.Parser FilePath
-parseSpectrumPath = OP.option OP.str $ OP.short 's' <> OP.long "spectrumFile"
+parseSpectrumPath = OP.strOption $ OP.short 's' <> OP.long "spectrumFile"
                                                 <> OP.metavar "<Output Spectrum File>"
                                                 <> OP.value "/dev/null" <> OP.showDefault
                                                 <> OP.help "Output the allele frequencies to file"
@@ -197,7 +205,7 @@ parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams 
                                                       <> OP.help "Specifies the maximum number of cycles in the minimization routine"
 
 parseTraceFilePath :: OP.Parser FilePath
-parseTraceFilePath = OP.option OP.str $ OP.short 'f' <> OP.long "traceFile" <> OP.metavar "<FILE>"
+parseTraceFilePath = OP.strOption $ OP.short 'f' <> OP.long "traceFile" <> OP.metavar "<FILE>"
                                                             <> OP.value "/dev/null" <> OP.showDefault
                                                             <> OP.help "The file to write the trace"
 
