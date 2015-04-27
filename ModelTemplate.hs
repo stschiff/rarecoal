@@ -5,7 +5,7 @@ import Data.String.Utils (replace)
 import Data.List.Split (splitOn)
 import Control.Monad (liftM, unless)
 import Control.Error (Script, scriptIO)
-import Control.Error.Safe (assertErr, readErr, justErr)
+import Control.Error.Safe (assertErr, readErr, justErr, tryJust)
 import Control.Monad.Trans.Either (hoistEither, left, right)
 import Core (defaultTimes, getTimeSteps, ModelSpec(..), ModelEvent(..), EventType(..))
 import qualified Data.Vector.Unboxed as V
@@ -36,8 +36,21 @@ data ConstraintTemplate = ConstraintTemplate {
 data InitialParams = InitialParamsList [Double] | InitialParamsFile FilePath
 
 getInitialParams :: ModelTemplate -> InitialParams -> Script (V.Vector Double)
-getInitialParams = undefined
-
+getInitialParams modelTemplate params = do
+    case params of
+        InitialParamsList x -> return . V.fromList $ x
+        InitialParamsFile path -> do
+            l <- lines <$> (scriptIO . readFile $ path)
+            if (head . head $ l) == '#' then
+                loadFromDict [(k, read $ v !! 2) | (k : v) <- map words . drop 3 $ l]
+            else
+                loadFromDict [(k, read v) | [k, v] <- map words $ l]
+  where
+    loadFromDict dict = do
+        let err = "parameters in the initialParams-file do not match the parameters in the modelTemplate"
+        x <- tryJust err . mapM (`lookup` dict) $ mtParams modelTemplate
+        return . V.fromList $ x
+        
 readModelTemplate :: FilePath -> Double -> [Double] -> Script ModelTemplate
 readModelTemplate path theta timeSteps = do
     parseResult <- scriptIO $ parseFromFile parseModelTemplate path
