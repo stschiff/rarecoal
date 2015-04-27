@@ -41,10 +41,12 @@ getInitialParams modelTemplate params = do
         InitialParamsList x -> return . V.fromList $ x
         InitialParamsFile path -> do
             l <- lines <$> (scriptIO . readFile $ path)
-            if (head . head $ l) == '#' then
-                loadFromDict [(k, read $ v !! 2) | (k : v) <- map words . drop 3 $ l]
-            else
-                loadFromDict [(k, read v) | [k, v] <- map words $ l]
+            ret <- if (head . head $ l) == '#' then
+                    loadFromDict [(k, read $ v !! 2) | (k : v) <- map words . drop 3 $ l]
+                else
+                    loadFromDict [(k, read v) | [k, v] <- map words $ l]
+            scriptIO . putStrLn $ "initial parameters loaded: " ++ show ret
+            return ret
   where
     loadFromDict dict = do
         let err = "parameters in the initialParams-file do not match the parameters in the modelTemplate"
