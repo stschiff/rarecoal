@@ -219,7 +219,7 @@ singleStep nextTime = do
     events <- use $ _1 . msEventQueue
     let ModelEvent t _ = if null events then ModelEvent (1.0/0.0) undefined else head events
     if  t < nextTime then do
-        -- singleStep t
+        singleStep t
         performEvent
         singleStep nextTime
     else do
