@@ -37,7 +37,8 @@ executable rarecoal
                        regex-compat,
                        data-memocombinators,
                        monad-loops,
-                       lens
+                       lens,
+                       text-format-simple
   default-language:    Haskell2010
   extra-lib-dirs:      /usr/lib
   ghc-options:         -fno-ignore-asserts -rtsopts -threaded "-with-rtsopts=-A200m -K100m"

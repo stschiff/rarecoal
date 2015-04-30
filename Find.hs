@@ -1,18 +1,20 @@
 module Find (runFind, FindOpt(..)) where
 
-import ModelTemplate (getModelSpec, InitialParams(..), getInitialParams)
+import ModelTemplate (getModelSpec, InitialParams(..))
 import RareAlleleHistogram (loadHistogram, RareAlleleHistogram(..), SitePattern(..))
 import Control.Monad.Trans.Either (hoistEither)
 import Control.Error.Script (Script, scriptIO)
 import Control.Error.Safe (tryAssert)
-import Control.Monad (forM_, (<=<))
 import Logl (computeLikelihood)
 import Core (ModelSpec(..), ModelEvent(..), EventType(..))
 import Data.Int (Int64)
-import System.IO (stderr, hPutStrLn)
+import System.IO (stderr, hPutStrLn, openFile, IOMode(..), hClose)
+import Data.List (sortBy)
+import Text.Format (format)
 
 data FindOpt = FindOpt {
     fiQueryIndex :: Int,
+    fiEvalPath :: FilePath,
     fiBranchAge :: Double,
     fiDeltaTime :: Double,
     fiMaxTime :: Double,
@@ -32,14 +34,15 @@ data FindOpt = FindOpt {
 
 runFind :: FindOpt -> Script ()
 runFind opts = do
-    modelSpec' <- getModelSpec (fiTemplatePath opts) (fiTheta opts) (fiParams opts) (fiModelEvents opts) (fiLinGen opts)
+    modelSpec <- getModelSpec (fiTemplatePath opts) (fiTheta opts) (fiParams opts) (fiModelEvents opts) (fiLinGen opts)
     let l = fiQueryIndex opts
-        modelSpec = if fiBranchAge opts > 0.0 then
-            let events' = mEvents modelSpec'
-                events = ModelEvent 0.0 (SetFreeze l True) : ModelEvent (fiBranchAge opts) (SetFreeze l False) : events'
-            in  modelSpec' {mEvents = events'}
-        else
-            modelSpec'
+        modelSpec' = if fiBranchAge opts > 0.0 then
+                let events = mEvents modelSpec
+                    events' = ModelEvent 0.0 (SetFreeze l True) :
+                              ModelEvent (fiBranchAge opts) (SetFreeze l False) : events
+                in  modelSpec {mEvents = events'}
+            else
+                modelSpec
     tryAssert ("model must have free branch " ++ show (fiQueryIndex opts)) $ hasFreeBranch l modelSpec
     hist <- loadHistogram (fiIndices opts) (fiMinAf opts) (fiMaxAf opts) (fiConditionOn opts) (fiNrCalledSites opts) (fiHistPath opts)
     let nrPops = length $ raNVec hist
@@ -47,7 +50,11 @@ runFind opts = do
         allJoinTimes = [getJoinTimes modelSpec (fiDeltaTime opts) (fiMaxTime opts) (fiBranchAge opts) k | k <- targetBranches]
         allParamPairs = concat $ zipWith (\k times -> [(k, t) | t <- times]) targetBranches allJoinTimes
     allLikelihoods <- mapM (\(k, t) -> computeLikelihoodIO hist modelSpec k l t) allParamPairs
-    scriptIO $ writeResult allParamPairs allLikelihoods
+    scriptIO $ writeResult (fiEvalPath opts) allParamPairs allLikelihoods
+    let ((minBranch, minTime), minLL) = last . sortBy (\(_, ll1) (_, ll2) -> ll1 `compare` ll2) $
+                                        zip allParamPairs allLikelihoods
+    scriptIO . putStrLn $ format "highest likelihood point:\nbranch {0}\ntime {1}\nlog-likelihood {2}"
+                                 [show minBranch, show minTime, show minLL] 
   where
     hasFreeBranch queryBranch modelSpec =
         let e = mEvents modelSpec
@@ -69,8 +76,10 @@ computeLikelihoodIO hist modelSpec k l t = do
     scriptIO $ hPutStrLn stderr ("branch=" ++ show k ++ ", time=" ++ show t ++ ", ll=" ++ show ll)
     return ll
 
-writeResult :: [(Int, Double)] -> [Double] -> IO ()
-writeResult paramPairs allLikelihoods = do
-    putStrLn "Branch\tTime\tLikelihood"
+writeResult :: FilePath -> [(Int, Double)] -> [Double] -> IO ()
+writeResult fp paramPairs allLikelihoods = do
+    h <- openFile fp WriteMode
+    hPutStrLn h "Branch\tTime\tLikelihood"
     let l_ = zipWith (\(k, t) l -> show k ++ "\t" ++ show t ++ "\t" ++ show l) paramPairs allLikelihoods
-    forM_ l_ putStrLn
+    mapM_ (hPutStrLn h) l_
+    hClose h

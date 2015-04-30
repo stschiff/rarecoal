@@ -13,9 +13,8 @@ import Data.Time.Clock (getCurrentTime)
 import Core (ModelEvent(..), EventType(..))
 import Control.Error.Script (runScript, scriptIO)
 import Data.Int (Int64)
-import Debug.Trace (trace)
+-- import Debug.Trace (trace)
 import RareAlleleHistogram (SitePattern(..))
-import Control.Monad.Trans.Reader (ask)
 import ModelTemplate (InitialParams(..))
 
 data Options = Options Command
@@ -234,12 +233,15 @@ parseConditioning = OP.option OP.auto $ OP.long "conditionOn" <> OP.metavar "<Li
 parseFind :: OP.Parser Command
 parseFind = CmdFind <$> parseFindOpt
 
-parseFindOpt = FindOpt <$> parseQueryIndex <*> parseBranchAge <*> parseDeltaTime <*> parseMaxTime <*> parseTheta
+parseFindOpt = FindOpt <$> parseQueryIndex <*> parseEvalFile <*> parseBranchAge <*> parseDeltaTime <*> parseMaxTime
+                       <*> parseTheta
                        <*> parseTemplateFilePath <*> parseParams <*> parseModelEvents <*> parseMinAf <*> parseMaxAf
                        <*> parseConditioning <*> parseNrCalledSites <*> parseLinGen <*> parseIndices <*> parseIgnoreList <*> parseHistPath
   where
     parseQueryIndex = OP.option OP.auto $ OP.short 'q' <> OP.long "queryIndex" <> OP.metavar "<INT>"
                                                        <> OP.help "index of query branch"
+    parseEvalFile = OP.strOption $ OP.short 'f' <> OP.long "evalFile" <> OP.metavar "<FILE>" <>
+                                   OP.help "file to write the trace to"
     parseBranchAge = OP.option OP.auto $ OP.short 'b' <> OP.long "branchAge" <> OP.metavar "<Double>"
                                                        <> OP.help "sampling age of query branch"
     parseDeltaTime = OP.option OP.auto $ OP.long "deltaTime" <> OP.metavar "<Double>" <> OP.showDefault
