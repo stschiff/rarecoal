@@ -12,12 +12,14 @@ import qualified Data.Vector.Unboxed as V
 import Control.Error (Script, scriptIO)
 import Control.Error.Safe (assertErr)
 import Control.Monad.Trans.Either (hoistEither)
+import System.Log.Logger (infoM)
 
 data MaxlOpt = MaxlOpt {
    maTheta :: Double,
    maTemplatePath :: FilePath,
    maInitialParams :: InitialParams,
    maMaxCycles :: Int,
+   maNrRestarts :: Int,
    maTracePath :: FilePath,
    maMinAf :: Int,
    maMaxAf :: Int,
@@ -35,24 +37,42 @@ runMaxl opts = do
     hist <- loadHistogram (maIndices opts) (maMinAf opts) (maMaxAf opts) (maConditionOn opts) (maNrCalledSites opts) (maHistPath opts)
     x <- getInitialParams modelTemplate $ maInitialParams opts
     _ <- hoistEither $ minFunc modelTemplate [] hist x
-    let minFunc' = either (const penalty) id . minFunc modelTemplate [] hist . V.fromList
-        stepWidths = V.toList . V.map (max 1.0e-4 . abs . (0.01*)) $ x
-        (minResult, trace) = minimize NMSimplex2 1.0e-8 (maMaxCycles opts) stepWidths minFunc' $ V.toList x
-        minScore = minFunc' minResult
-        trace' = map toList $ toRows trace
-    scriptIO $ reportMaxResult modelTemplate (V.fromList minResult) minScore
-    scriptIO $ reportTrace modelTemplate trace' (maTracePath opts)
+    let minFunc' = either (const penalty) id . minFunc modelTemplate [] hist
+        minimizationRoutine = minimizeV (maMaxCycles opts) minFunc'
+    (minResult, trace) <- scriptIO $ minimizeWithRestarts (maNrRestarts opts) minimizationRoutine x
+    scriptIO $ reportMaxResult modelTemplate minResult (minFunc' minResult)
+    scriptIO $ reportTrace modelTemplate trace (maTracePath opts)
+
+minimizeV :: Int -> (V.Vector Double -> Double) -> V.Vector Double -> (V.Vector Double, [V.Vector Double])
+minimizeV nrCycles minFunc' initial =
+    let (vec, trace) = minimize NMSimplex2 1.0e-8 nrCycles stepWidths (minFunc' . V.fromList) . V.toList $ initial
+    in  (V.fromList vec, map (V.fromList . toList) . toRows $ trace)
+  where
+    stepWidths = map (max 1.0e-4 . abs . (0.01*)) . V.toList $ initial
+
+minimizeWithRestarts :: Int
+                     -> (V.Vector Double -> (V.Vector Double, [V.Vector Double]))
+                     -> V.Vector Double
+                     -> IO (V.Vector Double, [V.Vector Double])
+minimizeWithRestarts nrRestarts minimizationRoutine initialParams =
+    go nrRestarts minimizationRoutine (initialParams, [])
+  where
+    go 0 minR (res, trace) = return (res, trace)
+    go n minR (res, trace) = do
+        infoM "rarecoal" $ "minimizing from point " ++ show res
+        let (newRes, newTrace) = minR res 
+        go (n - 1) minR (newRes, trace ++ newTrace)
 
 reportMaxResult :: ModelTemplate -> V.Vector Double -> Double -> IO ()
 reportMaxResult modelTemplate result minScore = do
     putStrLn $ "Score\t" ++ show minScore
     putStr $ unlines $ zipWith (\p v -> p ++ "\t" ++ show v) (mtParams modelTemplate) (V.toList result)
 
-reportTrace :: ModelTemplate -> [[Double]] -> FilePath -> IO ()
+reportTrace :: ModelTemplate -> [V.Vector Double] -> FilePath -> IO ()
 reportTrace modelTemplate trace path = do
     let header = intercalate "\t" $ ["Nr", "-Log-Likelihood", "Simplex size"] ++ mtParams modelTemplate
-        body = unlines [intercalate "\t" [show val | val <- row] | row <- trace]
-    writeFile path $ header ++ "\n" ++ body
+        body = map (intercalate "\t" . map show . V.toList) $ trace
+    writeFile path . unlines $ header : body
 
 minFunc :: ModelTemplate -> [ModelEvent] -> RareAlleleHistogram -> V.Vector Double -> Either String Double
 minFunc modelTemplate extraEvents hist params = do

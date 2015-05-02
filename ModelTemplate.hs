@@ -13,6 +13,7 @@ import Text.Parsec.String (parseFromFile, Parser)
 import Text.Parsec.Char (char, newline, letter, oneOf, noneOf, space, alphaNum)
 import Text.Parsec (sepBy, many)
 import Control.Applicative ((<$>), (<*>))
+import System.Log.Logger (infoM)
 
 data ModelTemplate = ModelTemplate {
     mtParams :: [String],
@@ -45,7 +46,7 @@ getInitialParams modelTemplate params = do
                     loadFromDict [(k, read $ v !! 2) | (k : v) <- map words . drop 3 $ l]
                 else
                     loadFromDict [(k, read v) | [k, v] <- map words $ l]
-            scriptIO . putStrLn $ "initial parameters loaded: " ++ show ret
+            scriptIO . infoM "rarecoal" $ "initial parameters loaded: " ++ show ret
             return ret
   where
     loadFromDict dict = do

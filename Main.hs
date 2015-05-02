@@ -194,7 +194,7 @@ parseMaxl :: OP.Parser Command
 parseMaxl = CmdMaxl <$> parseMaxlOpt
 
 parseMaxlOpt :: OP.Parser MaxlOpt
-parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams <*> parseMaxCycles
+parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams <*> parseMaxCycles <*> parseNrRestarts
                        <*> parseTraceFilePath  <*> parseMinAf <*> parseMaxAf <*> parseConditioning
                        <*> parseNrCalledSites <*> parseLinGen <*> parseIndices <*> parseHistPath
   where
@@ -202,6 +202,10 @@ parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams 
                                                       <> OP.metavar "<NR_MAX_CYCLES>"
                                                       <> OP.value 10000 <> OP.showDefault
                                                       <> OP.help "Specifies the maximum number of cycles in the minimization routine"
+    parseNrRestarts = OP.option OP.auto $ OP.long "nrRestarts"
+                                                      <> OP.metavar "<NR_Restarts>"
+                                                      <> OP.value 5 <> OP.showDefault
+                                                      <> OP.help "Specifies the number of restarts of the minimization routine"
 
 parseTraceFilePath :: OP.Parser FilePath
 parseTraceFilePath = OP.strOption $ OP.short 'f' <> OP.long "traceFile" <> OP.metavar "<FILE>"
