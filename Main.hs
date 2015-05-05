@@ -222,7 +222,9 @@ parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams
                        <*> parseIndices
                        <*> parseHistPath <*> parseRandomSeed <*> parseBranchAges
   where
-    parseRandomSeed = OP.option OP.auto $ OP.short 'S' <> OP.long "seed" <> OP.metavar "<INT>" <> OP.help "Random Seed"
+    parseRandomSeed = OP.option OP.auto $ OP.short 'S' <> OP.long "seed" <> OP.metavar "<INT>" <> OP.value 0 <> 
+                      OP.showDefault <>
+                      OP.help "Random Seed, set to zero to determine the seed from the machine clock"
     parseNrCycles = OP.option OP.auto $ OP.long "cycles" <> OP.short 'c' <> OP.value 1000 <> OP.metavar "<INT>"
                                                                <> OP.help "nr of MCMC cycles" <> OP.showDefault
     parseBranchAges = OP.option OP.auto $ OP.long "branchAges" <> OP.short 'b' <> OP.metavar "<LIST>"

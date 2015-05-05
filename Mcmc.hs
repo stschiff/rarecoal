@@ -62,8 +62,8 @@ runMcmc opts = do
         initV = minFunc' x
         stepWidths = V.map (max 1.0e-8 . abs . (/100.0)) x
         successRates = V.replicate (V.length x) 0.44
-        ranGen = R.mkStdGen $ mcRandomSeed opts 
-        initState = MCMCstate 0 0 initV x stepWidths successRates ranGen []
+    ranGen <- if mcRandomSeed opts == 0 then scriptIO R.getStdGen else return $ R.mkStdGen (mcRandomSeed opts)
+    let initState = MCMCstate 0 0 initV x stepWidths successRates ranGen []
         pred_ = mcmcNotDone (mcNrCycles opts)
         act = mcmcCycle minFunc'
     states <- evalStateT (whileM pred_ act) initState
