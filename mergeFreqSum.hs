@@ -1,12 +1,11 @@
 import Control.Applicative ((<$>), (<*>))
 import Data.Monoid (mempty)
-import System.IO (openFile, IOMode(..), FilePath, hGetLine, hClose)
+import System.IO (openFile, IOMode(..), hGetLine, hClose)
 import qualified Options.Applicative as OP
 import OrderedZip (orderedZip)
 import FreqSumEntry (FreqSumEntry(..))
 import qualified Pipes.Prelude as P
 import Pipes ((>->), runEffect)
-import Control.Exception (assert)
 import Control.Monad (liftM)
 
 data MyOpts = MyOpts FilePath FilePath
@@ -37,9 +36,10 @@ readNfromFile fn = do
     return $ length (fsCounts fs)
     
 freqSumCombine :: Int -> Int -> (Maybe FreqSumEntry, Maybe FreqSumEntry) -> FreqSumEntry
-freqSumCombine n1 n2 (Just fs1, Nothing) = fs1 {fsCounts = fsCounts fs1 ++ replicate n2 0}
-freqSumCombine n1 n2 (Nothing, Just fs2) = fs2 {fsCounts = replicate n1 0 ++ fsCounts fs2}
-freqSumCombine n1 n2 (Just fs1, Just fs2) =
+freqSumCombine _ n2 (Just fs1, Nothing) = fs1 {fsCounts = fsCounts fs1 ++ replicate n2 0}
+freqSumCombine n1 _ (Nothing, Just fs2) = fs2 {fsCounts = replicate n1 0 ++ fsCounts fs2}
+freqSumCombine _ n2 (Just fs1, Just fs2) =
     if fsChrom fs1 == fsChrom fs2 && fsRef fs1 == fsRef fs2 && fsAlt fs1 == fsAlt fs2
         then fs1 {fsCounts = fsCounts fs1 ++ fsCounts fs2}
         else fs1 {fsCounts = fsCounts fs1 ++ replicate n2 0}
+freqSumCombine _ _ (Nothing, Nothing) = undefined

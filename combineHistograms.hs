@@ -1,6 +1,6 @@
 import RareAlleleHistogram (RareAlleleHistogram(..), addHistograms, showHistogram, parseHistogram)
 import System.Environment (getArgs)
-import Control.Monad (liftM, foldM)
+import Control.Monad (foldM)
 import Control.Error.Script (scriptIO, runScript, Script)
 import Control.Monad.Trans.Either (hoistEither)
 

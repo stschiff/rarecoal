@@ -78,8 +78,8 @@ parseMinAf = OP.option OP.auto $ OP.long "minAf" <> OP.metavar "<INT>"
 parseMaxAf :: OP.Parser Int
 parseMaxAf = OP.option OP.auto $ OP.short 'm' <> OP.long "max_af"
                                               <> OP.metavar "INT"
-                                              <> OP.value 10 <> OP.showDefault
-                                              <> OP.help "set the maximum allele frequency"
+                                              <> OP.value 0 <> OP.showDefault
+                                              <> OP.help "set the maximum allele frequency [leave 0 to read maxAf from histogram]"
 
 parseNrCalledSites :: OP.Parser Int64
 parseNrCalledSites = OP.option OP.auto $ OP.short 'N' <> OP.long "nr_called_sites"

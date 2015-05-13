@@ -10,13 +10,7 @@ import Data.Int (Int64)
 import Control.Error.Script (scriptIO, runScript)
 import Control.Monad.Trans.Either (hoistEither)
 
-data MyOpts = MyOpts {
-    optNVec:: [Int],
-    optMaxM :: Int,
-    optPopIndices :: [Int],
-    optNrCalledSites :: Int64,
-    globalMax :: Bool
-}
+data MyOpts = MyOpts [Int] Int [Int] Int64 Bool
 
 main :: IO ()
 main = OP.execParser opts >>= runWithOptions

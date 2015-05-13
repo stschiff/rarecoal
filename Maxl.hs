@@ -57,7 +57,7 @@ minimizeWithRestarts :: Int
 minimizeWithRestarts nrRestarts minimizationRoutine initialParams =
     go nrRestarts minimizationRoutine (initialParams, [])
   where
-    go 0 minR (res, trace) = return (res, trace)
+    go 0 _ (res, trace) = return (res, trace)
     go n minR (res, trace) = do
         infoM "rarecoal" $ "minimizing from point " ++ show res
         let (newRes, newTrace) = minR res 

@@ -7,9 +7,9 @@ import Data.Int (Int64)
 import ModelTemplate (getModelSpec, InitialParams(..))
 import Control.Error (Script, scriptIO, assertErr)
 import qualified Data.Map.Strict as Map
-import Control.Parallel.Strategies (rdeepseq, parMap, parListChunk, using)
+import Control.Parallel.Strategies (rdeepseq, parMap)
 import Control.Monad.Trans.Either (hoistEither)
-import Debug.Trace (trace)
+-- import Debug.Trace (trace)
 import Control.Monad (when)
 
 data LoglOpt = LoglOpt {
@@ -50,7 +50,6 @@ computeLikelihood modelSpec histogram = do
     return $ ll + fromIntegral otherCounts * log (1.0 - sum patternProbs)
   where
     defaultLookup sitePattern = Map.findWithDefault 0 sitePattern (raCounts histogram)
-    parMapChunk strat f = (`using` (parListChunk 20) strat) . map f
 
 writeSpectrumFile :: FilePath -> ModelSpec -> RareAlleleHistogram -> Script ()
 writeSpectrumFile spectrumFile modelSpec histogram = 

@@ -202,6 +202,9 @@ reportPosteriorStats paramNames states = do
     
 reportTrace :: [String] -> [MCMCstate] -> FilePath -> IO ()
 reportTrace paramNames states traceFilePath = do
-    let body = [intercalate "\t" . map show . V.toList $ V.concat [V.singleton (mcmcCurrentValue s), mcmcCurrentPoint s, mcmcStepWidths s, mcmcSuccesRate s] | s <- states]
-        headerLine = intercalate "\t" $ ["Score"] ++ paramNames ++ map (++"_delta") paramNames ++ map (++"_success") paramNames
+    let body = [intercalate "\t" . map show . V.toList $
+                V.concat [V.singleton (mcmcCurrentValue s), mcmcCurrentPoint s, mcmcStepWidths s, mcmcSuccesRate s] |
+                s <- states]
+        headerLine = intercalate "\t" $ ["Score"] ++ paramNames ++ map (++"_delta") paramNames ++
+                     map (++"_success") paramNames
     writeFile traceFilePath $ unlines (headerLine:body)

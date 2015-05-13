@@ -4,15 +4,13 @@ module Core (defaultTimes, getTimeSteps, getProb, validateModel, ModelEvent(..),
 
 import Control.Monad.Trans.State.Lazy (State, get, put, execState)
 import Data.List (sortBy)
-import Debug.Trace (trace)
-import Utils (computeAllConfigs)
+-- import Debug.Trace (trace)
 import Control.Monad (when, foldM, forM_)
 import qualified Data.Vector.Unboxed as V
-import qualified Data.Vector as VB
 import Data.Vector.Unboxed.Base (Unbox)
 import qualified Data.IntMap as M
 import Control.Error.Safe (assertErr)
-import Control.Lens ((%~), ix, (&), makeLenses, use, (%=), uses, (+~),
+import Control.Lens (ix, (&), makeLenses, use, (%=), uses, (+~),
                      (-~), (*=), (+=), _1, _2, _3, (.=), (^.))
 import Data.MemoCombinators (arrayRange)
 import Control.Exception.Base (assert)
@@ -252,8 +250,6 @@ performEvent = do
             when (not (null migList)) $ _1 . msMigrationRates . ix (head migList) . _3 .= m
             _1 . msMigrationRates %= filter (\(_,_,m) -> m > 0.0)
     _1 . msEventQueue .= tail events
-  where
-    deleteFromList index l = [v | (v, i) <- zip l [0..], i /= index]
 
 popJoin :: Int -> Int -> State (ModelState, CoalState) ()
 popJoin k l = do
@@ -333,7 +329,6 @@ updateB deltaT = do
         let x1ups = stateSpace ^. jsX1up $ xId
             b1ups = V.fromList [M.findWithDefault 0.0 x1up b | x1up <- x1ups]
             x = stateSpace ^. jsIdToState $ xId
-            nrPop = V.length x
             x' = V.map fromIntegral x
             -- t1s = V.zipWith4 t1func x' popSize midPointA freezeState
             t1s = V.zipWith4 t1func x' popSize a freezeState

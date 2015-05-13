@@ -34,15 +34,15 @@ data FindOpt = FindOpt {
 
 runFind :: FindOpt -> Script ()
 runFind opts = do
-    modelSpec <- getModelSpec (fiTemplatePath opts) (fiTheta opts) (fiParams opts) (fiModelEvents opts) (fiLinGen opts)
+    modelSpec' <- getModelSpec (fiTemplatePath opts) (fiTheta opts) (fiParams opts) (fiModelEvents opts) (fiLinGen opts)
     let l = fiQueryIndex opts
-        modelSpec' = if fiBranchAge opts > 0.0 then
-                let events = mEvents modelSpec
-                    events' = ModelEvent 0.0 (SetFreeze l True) :
-                              ModelEvent (fiBranchAge opts) (SetFreeze l False) : events
-                in  modelSpec {mEvents = events'}
+        modelSpec = if fiBranchAge opts > 0.0 then
+                let events' = mEvents modelSpec'
+                    events = ModelEvent 0.0 (SetFreeze l True) :
+                             ModelEvent (fiBranchAge opts) (SetFreeze l False) : events'
+                in  modelSpec' {mEvents = events}
             else
-                modelSpec
+                modelSpec'
     tryAssert ("model must have free branch " ++ show (fiQueryIndex opts)) $ hasFreeBranch l modelSpec
     hist <- loadHistogram (fiIndices opts) (fiMinAf opts) (fiMaxAf opts) (fiConditionOn opts) (fiNrCalledSites opts) (fiHistPath opts)
     let nrPops = length $ raNVec hist

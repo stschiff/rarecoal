@@ -3,11 +3,11 @@ module ModelTemplate (InitialParams(..), getInitialParams, ModelTemplate(..), re
 
 import Data.String.Utils (replace)
 import Data.List.Split (splitOn)
-import Control.Monad (liftM, unless)
+import Control.Monad (unless)
 import Control.Error (Script, scriptIO)
-import Control.Error.Safe (assertErr, readErr, justErr, tryJust)
+import Control.Error.Safe (readErr, justErr, tryJust)
 import Control.Monad.Trans.Either (hoistEither, left, right)
-import Core (defaultTimes, getTimeSteps, ModelSpec(..), ModelEvent(..), EventType(..))
+import Core (getTimeSteps, ModelSpec(..), ModelEvent(..), EventType(..))
 import qualified Data.Vector.Unboxed as V
 import Text.Parsec.String (parseFromFile, Parser)
 import Text.Parsec.Char (char, newline, letter, oneOf, noneOf, space, alphaNum)
@@ -23,16 +23,9 @@ data ModelTemplate = ModelTemplate {
     mtConstraintTemplates :: [ConstraintTemplate]
 }
 
-data EventTemplate = EventTemplate {
-    etType :: Char,
-    etBody :: String
-}
+data EventTemplate = EventTemplate Char String
 
-data ConstraintTemplate = ConstraintTemplate {
-    ctName1 :: String,
-    ctComp :: Char,
-    ctName2 :: String
-}
+data ConstraintTemplate = ConstraintTemplate String Char String
 
 data InitialParams = InitialParamsList [Double] | InitialParamsFile FilePath
 
@@ -128,6 +121,7 @@ instantiateEvent pnames params (EventTemplate et body) = do
             l <- readErr err $ fields!!2
             r <- readErr err $ fields!!3
             return $ ModelEvent t (SetMigration k l r)
+        _   -> Left "cannot parse modelTemplate Event"
 
 validateConstraint :: [String] -> [Double] -> ConstraintTemplate -> Either String ()
 validateConstraint pNames params (ConstraintTemplate name1 comp name2) = do

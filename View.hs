@@ -5,7 +5,7 @@ import Control.Error.Script (Script, scriptIO)
 import RareAlleleHistogram (reduceIndices, combineIndices, setNrCalledSites,
                             filterMaxAf, parseHistogram, showHistogram)
 import Control.Monad.Trans.Either (hoistEither)
-import Control.Monad (liftM, (<=<))
+import Control.Monad ((<=<))
 import System.IO (stdin, openFile, hGetContents, IOMode(..))
 
 data ViewOpt = ViewOpt {

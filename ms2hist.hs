@@ -2,26 +2,18 @@
 
 import Data.List.Split (splitPlaces)
 import qualified Data.ByteString.Char8 as B
-import Control.Applicative ((<$>), (<*>), pure)
+import Control.Applicative ((<$>), (<*>))
 import Data.Monoid (mempty, (<>))
 import qualified Data.Map as M
 import qualified Options.Applicative as OP
 import RareAlleleHistogram(RareAlleleHistogram(..), showHistogram, setNrCalledSites, SitePattern(..))
-import Control.Lens (makeLenses, views, view)
-import Control.Error.Script (runScript, Script, scriptIO)
+import Control.Lens (makeLenses)
+import Control.Error.Script (runScript, scriptIO)
 import Control.Error.Safe (assertErr)
-import Control.Monad.Trans.Reader (runReaderT, ReaderT)
 import Control.Monad.Trans.Either (hoistEither)
-import Control.Monad.Trans.Class (lift)
-import Data.List (transpose)
 import Data.Int (Int64)
 
-data MyOpts = MyOpts {
-    _optNVec :: [Int],
-    _optMaxM :: Int,
-    _optNrCalledSites :: Int64,
-    _optGlobalMax :: Bool
-}
+data MyOpts = MyOpts [Int] Int Int64 Bool
 
 makeLenses ''MyOpts
 

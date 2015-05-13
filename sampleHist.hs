@@ -1,18 +1,17 @@
 {-# LANGUAGE TemplateHaskell #-}
 
-import System.Environment (getArgs)
 import qualified Options.Applicative as OP
 import Control.Monad.Trans.State.Strict (evalState, State, get, put)
 import Control.Error.Script (runScript, scriptIO)
-import Control.Lens (makeLenses, makeLensesFor, (^.), (&), (%~), (.~), ix, (.=)) 
-import RareAlleleHistogram (parseHistogram, showHistogram, RareAlleleHistogram(..), SitePattern(..), reduceIndices)
+import Control.Lens ((&), (%~), ix) 
+import RareAlleleHistogram (parseHistogram, showHistogram, RareAlleleHistogram(..), SitePattern(..))
 import Control.Applicative ((<*>), (<$>))
 import Data.Monoid ((<>), mempty)
 import Control.Monad.Trans.Either (hoistEither, left)
 import qualified Data.Map.Strict as Map
 import Data.Int (Int64)
-import Data.Foldable (foldlM, foldl')
-import System.Random (mkStdGen, newStdGen, StdGen, random)
+import Data.Foldable (foldl')
+import System.Random (newStdGen, StdGen, random)
 import Control.Monad (replicateM, when)
 
 data MyOpts = MyOpts {
@@ -20,13 +19,6 @@ data MyOpts = MyOpts {
     _optHowMany :: Int,
     _optHistPath :: FilePath
 }
-
-makeLenses ''MyOpts
-makeLensesFor [("raNVec", "raNVecL"),
-               ("raMinAf", "raMinAfL"),
-               ("raMaxAf", "raMaxAfL"),
-               ("raGlobalMax", "raGlobalMaxL"),
-               ("raCounts", "raCountsL")] ''RareAlleleHistogram
 
 main :: IO ()
 main = OP.execParser opts >>= runWithOptions
@@ -40,13 +32,11 @@ parser = MyOpts <$> OP.option OP.auto (OP.short 'q' <> OP.long "queryBranch" <> 
 
 runWithOptions :: MyOpts -> IO ()
 runWithOptions opts = runScript $ do
-    s <- scriptIO (readFile (opts ^. optHistPath))
+    s <- scriptIO . readFile $ _optHistPath opts
     hist <- hoistEither $ parseHistogram s
     when (raGlobalMax hist) $ left "histogram cannot have global max for this operation"
     rng <- scriptIO newStdGen
-    let q = _optQueryPop opts
-        nVec = raNVec hist
-        hist' = evalState (addSamplePop (_optQueryPop opts) (_optHowMany opts) hist) rng
+    let hist' = evalState (addSamplePop (_optQueryPop opts) (_optHowMany opts) hist) rng
     outs <- hoistEither $ showHistogram hist'
     scriptIO $ putStrLn outs
 
@@ -81,8 +71,8 @@ sampleFromPattern query howMany nVec (Pattern pattern) = do
 sampleWithoutReplacement :: Int -> Int -> Int -> State StdGen Int 
 sampleWithoutReplacement n k howMany = go n k howMany 0
   where
-    go n k 0 ret = return ret
-    go n 0 howMany ret = return ret
+    go _ _ 0 ret = return ret
+    go _ 0 _ ret = return ret
     go n k howMany ret = do
         val <- bernoulli $ fromIntegral k / fromIntegral n
         if val then go (n - 1) (k - 1) (howMany - 1) (ret + 1) else go (n - 1) k (howMany - 1) ret

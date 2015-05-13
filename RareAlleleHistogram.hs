@@ -7,13 +7,10 @@ module RareAlleleHistogram (RareAlleleHistogram(..),
 import qualified Data.Map.Strict as Map
 import Data.List (intercalate, sortBy)
 import Data.List.Split (splitOn)
-import Control.Monad (liftM, when, (<=<))
-import System.Log.Logger (infoM)
+import Control.Monad (when, (<=<))
 import Data.Int (Int64)
-import Debug.Trace (trace)
 import Control.Error.Script (Script, scriptIO)
-import Control.Error.Safe (assertErr, readErr, headErr, atErr, lastErr)
-import Control.Monad.Trans.Either (hoistEither)
+import Control.Error.Safe (assertErr, readErr, headErr, atErr, lastErr, tryRight)
 
 data RareAlleleHistogram = RareAlleleHistogram {
     raNVec :: [Int],
@@ -92,9 +89,9 @@ addHistograms hist1 hist2 = do
 loadHistogram :: [Int] -> Int -> Int -> [Int] -> Int64 -> FilePath -> Script RareAlleleHistogram
 loadHistogram indices minAf maxAf conditionOn nrCalledSites path = do
     s <- scriptIO $ readFile path
-    hist <- hoistEither $ parseHistogram s
+    hist <- tryRight $ parseHistogram s
     let f = if nrCalledSites > 0 then setNrCalledSites nrCalledSites else return
-    hoistEither $ (f <=< filterConditionOn conditionOn
+    tryRight $ (f <=< filterConditionOn conditionOn
                      <=< filterGlobalMinAf minAf
                      <=< filterMaxAf True maxAf
                      <=< reduceIndices indices
@@ -128,7 +125,8 @@ setNrCalledSites nrCalledSites hist = do
     return $ hist {raCounts = newHistBody}
 
 filterMaxAf :: Bool -> Int -> RareAlleleHistogram -> Either String RareAlleleHistogram
-filterMaxAf global maxAf hist = do
+filterMaxAf global maxAf' hist = do
+    let maxAf = if maxAf' == 0 then raMaxAf hist else maxAf'
     when (maxAf > raMaxAf hist || maxAf < raMinAf hist) $ Left "illegal maxAF"
     when (not global && raGlobalMax hist) $ Left "cannot make maximum local"
     if maxAf == raMaxAf hist && global == raGlobalMax hist then return hist else do

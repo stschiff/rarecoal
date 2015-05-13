@@ -1,6 +1,4 @@
-import RareAlleleHistogram (loadHistogram, showHistogram, parseHistogram)
-import Control.Error.Script (runScript)
-import Control.Monad.Trans.Either (hoistEither)
+import RareAlleleHistogram (showHistogram, parseHistogram)
 
 main = do
     let fn = "/lustre/scratch114/projects/ancient-hinxton/EUR.gonl.gdk.histogram.combined.txt"
