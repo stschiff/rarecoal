@@ -2,17 +2,19 @@
 
 import qualified Options.Applicative as OP
 import Control.Monad.Trans.State.Strict (evalState, State, get, put)
-import Control.Error.Script (runScript, scriptIO)
+import Control.Error (runScript, scriptIO, tryRight)
 import Control.Lens ((&), (%~), ix) 
 import RareAlleleHistogram (parseHistogram, showHistogram, RareAlleleHistogram(..), SitePattern(..))
 import Control.Applicative ((<*>), (<$>))
 import Data.Monoid ((<>), mempty)
-import Control.Monad.Trans.Either (hoistEither, left)
+import Control.Monad.Trans.Either (left)
 import qualified Data.Map.Strict as Map
 import Data.Int (Int64)
 import Data.Foldable (foldl')
 import System.Random (newStdGen, StdGen, random)
 import Control.Monad (replicateM, when)
+import qualified Data.ByteString.Lazy.Char8 as B
+import System.IO (stdin, IOMode(..), openFile)
 
 data MyOpts = MyOpts {
     _optQueryPop :: Int,
@@ -32,13 +34,14 @@ parser = MyOpts <$> OP.option OP.auto (OP.short 'q' <> OP.long "queryBranch" <> 
 
 runWithOptions :: MyOpts -> IO ()
 runWithOptions opts = runScript $ do
-    s <- scriptIO . readFile $ _optHistPath opts
-    hist <- hoistEither $ parseHistogram s
+    handle <- if _optHistPath opts == "-" then return stdin else scriptIO $ openFile (_optHistPath opts) ReadMode
+    s <- scriptIO . B.hGetContents $ handle
+    hist <- tryRight $ parseHistogram s
     when (raGlobalMax hist) $ left "histogram cannot have global max for this operation"
     rng <- scriptIO newStdGen
     let hist' = evalState (addSamplePop (_optQueryPop opts) (_optHowMany opts) hist) rng
-    outs <- hoistEither $ showHistogram hist'
-    scriptIO $ putStrLn outs
+    outs <- tryRight $ showHistogram hist'
+    scriptIO $ B.putStr outs
 
 addSamplePop :: Int -> Int -> RareAlleleHistogram -> State StdGen RareAlleleHistogram
 addSamplePop query howMany hist = do

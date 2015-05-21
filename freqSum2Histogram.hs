@@ -7,8 +7,8 @@ import Pipes ((>->))
 import qualified Pipes.Prelude as P
 import FreqSumEntry (FreqSumEntry(..))
 import Data.Int (Int64)
-import Control.Error.Script (scriptIO, runScript)
-import Control.Monad.Trans.Either (hoistEither)
+import Control.Error (scriptIO, runScript, tryRight)
+import qualified Data.ByteString.Lazy.Char8 as B
 
 data MyOpts = MyOpts [Int] Int [Int] Int64 Bool
 
@@ -40,9 +40,9 @@ runWithOptions (MyOpts nVec maxM popIndices nrCalledSites globalMax) = runScript
     let prod = P.stdinLn >-> P.map (mkPat maxM popIndices globalMax)
     res <- scriptIO $ P.fold insertPattern Map.empty id prod
     let hist = RareAlleleHistogram (selectFromList nVec popIndices) 0 maxM globalMax [] res
-    hist' <- hoistEither $ setNrCalledSites nrCalledSites hist 
-    outs <- hoistEither $ showHistogram hist'
-    scriptIO $ putStr outs
+    hist' <- tryRight $ setNrCalledSites nrCalledSites hist 
+    outs <- tryRight $ showHistogram hist'
+    scriptIO $ B.putStr outs
 
 mkPat :: Int -> [Int] -> Bool -> String -> SitePattern
 mkPat maxM popIndices globalMax line =

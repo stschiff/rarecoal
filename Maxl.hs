@@ -9,9 +9,7 @@ import Data.List (intercalate)
 import Data.Int (Int64)
 import Core (getTimeSteps, ModelSpec(..), ModelEvent(..))
 import qualified Data.Vector.Unboxed as V
-import Control.Error (Script, scriptIO)
-import Control.Error.Safe (assertErr)
-import Control.Monad.Trans.Either (hoistEither)
+import Control.Error (Script, scriptIO, assertErr, tryRight)
 import System.Log.Logger (infoM)
 
 data MaxlOpt = MaxlOpt {
@@ -36,7 +34,7 @@ runMaxl opts = do
     modelTemplate <- readModelTemplate (maTemplatePath opts) (maTheta opts) times
     hist <- loadHistogram (maIndices opts) (maMinAf opts) (maMaxAf opts) (maConditionOn opts) (maNrCalledSites opts) (maHistPath opts)
     x <- getInitialParams modelTemplate $ maInitialParams opts
-    _ <- hoistEither $ minFunc modelTemplate [] hist x
+    _ <- tryRight $ minFunc modelTemplate [] hist x
     let minFunc' = either (const penalty) id . minFunc modelTemplate [] hist
         minimizationRoutine = minimizeV (maMaxCycles opts) minFunc'
     (minResult, trace) <- scriptIO $ minimizeWithRestarts (maNrRestarts opts) minimizationRoutine x

@@ -2,9 +2,7 @@ module Find (runFind, FindOpt(..)) where
 
 import ModelTemplate (getModelSpec, InitialParams(..))
 import RareAlleleHistogram (loadHistogram, RareAlleleHistogram(..), SitePattern(..))
-import Control.Monad.Trans.Either (hoistEither)
-import Control.Error.Script (Script, scriptIO)
-import Control.Error.Safe (tryAssert)
+import Control.Error (Script, scriptIO, tryAssert, tryRight)
 import Logl (computeLikelihood)
 import Core (ModelSpec(..), ModelEvent(..), EventType(..))
 import Data.Int (Int64)
@@ -72,7 +70,7 @@ computeLikelihoodIO hist modelSpec k l t = do
     let e = mEvents modelSpec
         newE = ModelEvent t (Join k l)
         modelSpec' = modelSpec {mEvents = newE : e}
-    ll <- hoistEither $ computeLikelihood modelSpec' hist
+    ll <- tryRight $ computeLikelihood modelSpec' hist
     scriptIO $ hPutStrLn stderr ("branch=" ++ show k ++ ", time=" ++ show t ++ ", ll=" ++ show ll)
     return ll
 

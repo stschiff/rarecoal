@@ -17,7 +17,8 @@ library
                        containers,
                        split,
                        hslogger,
-                       errors
+                       errors,
+                       bytestring
   default-language:    Haskell2010
 
 
@@ -48,7 +49,8 @@ executable rarecoal
                        data-memocombinators,
                        monad-loops,
                        lens,
-                       text-format-simple
+                       text-format-simple,
+                       bytestring
   default-language:    Haskell2010
   extra-lib-dirs:      /usr/lib
   ghc-options:         -fno-ignore-asserts -rtsopts -threaded "-with-rtsopts=-A200m -K100m"
@@ -82,7 +84,8 @@ executable freqSum2Histogram
                        hslogger,
                        errors,
                        either,
-                       deepseq
+                       deepseq,
+                       bytestring
   default-language:    Haskell2010
   ghc-options:         -fno-ignore-asserts
 
@@ -94,20 +97,10 @@ executable combineHistograms
                        hslogger,
                        errors,
                        either,
-                       deepseq
+                       deepseq,
+                       bytestring
   default-language:    Haskell2010
   ghc-options:         -fno-ignore-asserts
-
-executable test
-  main-is:             test.hs
-  build-depends:       base,
-                       split,
-                       containers,
-                       hslogger,
-                       errors,
-                       either
-  default-language:    Haskell2010
-  ghc-options:         -fno-ignore-asserts -rtsopts
 
 executable sampleHist
   main-is:             sampleHist.hs
@@ -120,7 +113,8 @@ executable sampleHist
                        transformers,
                        lens,
                        optparse-applicative,
-                       random
+                       random,
+                       bytestring
   default-language:    Haskell2010
   ghc-options:         -fno-ignore-asserts -rtsopts "-with-rtsopts=-A10m -K100m"
 

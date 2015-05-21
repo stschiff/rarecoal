@@ -4,9 +4,8 @@ module ModelTemplate (InitialParams(..), getInitialParams, ModelTemplate(..), re
 import Data.String.Utils (replace)
 import Data.List.Split (splitOn)
 import Control.Monad (unless)
-import Control.Error (Script, scriptIO)
-import Control.Error.Safe (readErr, justErr, tryJust)
-import Control.Monad.Trans.Either (hoistEither, left, right)
+import Control.Error (Script, scriptIO, tryRight, readErr, justErr, tryJust)
+import Control.Monad.Trans.Either (left, right)
 import Core (getTimeSteps, ModelSpec(..), ModelEvent(..), EventType(..))
 import qualified Data.Vector.Unboxed as V
 import Text.Parsec.String (parseFromFile, Parser)
@@ -146,6 +145,6 @@ getModelSpec path theta params events lingen =
     in  if path /= "/dev/null" then do
             template <- readModelTemplate path theta times
             x <- getInitialParams template params
-            hoistEither $ instantiateModel template x
+            tryRight $ instantiateModel template x
         else
             return $ ModelSpec times theta events

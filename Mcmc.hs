@@ -9,9 +9,8 @@ import Control.Monad.Trans.State.Lazy (StateT, get, gets, put, evalStateT, modif
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad (when, forM_)
 import Data.List (intercalate, sort, minimumBy)
-import Control.Error (Script, scriptIO)
+import Control.Error (Script, scriptIO, tryRight)
 import RareAlleleHistogram (loadHistogram)
-import Control.Monad.Trans.Either (hoistEither)
 import Data.Int (Int64)
 import Data.Ord (comparing)
 import System.Log.Logger (infoM)
@@ -57,7 +56,7 @@ runMcmc opts = do
     hist <- loadHistogram (mcIndices opts) (mcMinAf opts) (mcMaxAf opts) (mcConditionOn opts) (mcNrCalledSites opts) (mcHistPath opts)
     let extraEvents = concat [[ModelEvent 0.0 (SetFreeze k True), ModelEvent t (SetFreeze k False)] | (t, k) <- zip (mcBranchAges opts) [0..], t > 0]
     x <- getInitialParams modelTemplate $ mcInitialParams opts
-    _ <- hoistEither $ minFunc modelTemplate extraEvents hist x
+    _ <- tryRight $ minFunc modelTemplate extraEvents hist x
     let minFunc' = either (const penalty) id . minFunc modelTemplate extraEvents hist
         initV = minFunc' x
         stepWidths = V.map (max 1.0e-8 . abs . (/100.0)) x

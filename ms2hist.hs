@@ -1,17 +1,15 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 import Data.List.Split (splitPlaces)
-import qualified Data.ByteString.Char8 as B
 import Control.Applicative ((<$>), (<*>))
 import Data.Monoid (mempty, (<>))
 import qualified Data.Map as M
 import qualified Options.Applicative as OP
 import RareAlleleHistogram(RareAlleleHistogram(..), showHistogram, setNrCalledSites, SitePattern(..))
 import Control.Lens (makeLenses)
-import Control.Error.Script (runScript, scriptIO)
-import Control.Error.Safe (assertErr)
-import Control.Monad.Trans.Either (hoistEither)
+import Control.Error (runScript, scriptIO, assertErr, tryRight)
 import Data.Int (Int64)
+import qualified Data.ByteString.Lazy.Char8 as B
 
 data MyOpts = MyOpts [Int] Int Int64 Bool
 
@@ -28,15 +26,15 @@ main = OP.execParser opts >>= mainWithOptions
 
 mainWithOptions :: MyOpts -> IO ()
 mainWithOptions (MyOpts nVec maxAf nrCalledSites globalMax) = runScript $
-    scriptIO B.getContents >>= hoistEither . makeHist nVec maxAf globalMax
-                           >>= hoistEither . setNrCalledSites nrCalledSites
-                           >>= hoistEither . showHistogram
-                           >>= scriptIO . putStr
+    scriptIO B.getContents >>= tryRight . makeHist nVec maxAf globalMax
+                           >>= tryRight . setNrCalledSites nrCalledSites
+                           >>= tryRight . showHistogram
+                           >>= scriptIO . B.putStr
 
 makeHist :: [Int] -> Int -> Bool -> B.ByteString -> Either String RareAlleleHistogram
 makeHist nVec maxAf global s = do
     let loci = B.transpose . B.lines $ s
-    assertErr "nVec doesn't sum up to correct number of samples" $ B.length (head loci) == sum nVec
+    assertErr "nVec doesn't sum up to correct number of samples" $ B.length (head loci) == sum (map fromIntegral nVec)
     let getFreqSum = map (length . filter (=='1')) . splitPlaces nVec . B.unpack
         freqSums = map getFreqSum loci
         pred_ = if global then (<=maxAf) . sum else any (<=maxAf)
