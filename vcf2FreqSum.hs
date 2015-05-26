@@ -6,6 +6,7 @@ import Control.Applicative ((<$>))
 import Data.Monoid (mempty, (<>))
 import qualified Options.Applicative as OP
 import FreqSumEntry (FreqSumEntry(..))
+import Control.Error (assertErr, runScript, tryRight)
 
 data MyOpts = MyOpts [Int]
 
@@ -17,12 +18,13 @@ main = OP.execParser opts >>= runWithOptions
 
 runWithOptions :: MyOpts -> IO ()
 runWithOptions (MyOpts nVec) =
-    runEffect $ P.stdinLn >-> P.filter (\l -> head l /= '#') >-> P.map (processVCFline nVec) >-> P.stdoutLn
+    runScript . runEffect $ P.stdinLn >-> P.filter (\l -> head l /= '#') >->
+                            P.mapM (tryRight . processVCFline nVec) >-> P.stdoutLn
 
-processVCFline :: [Int] -> String -> String
-processVCFline nVec line = 
+processVCFline :: [Int] -> String -> Either String String
+processVCFline nVec line = do
     let (chrom:pos:_:ref:alt:_:_:_:_:genFields) = words line
         gens = concat [[g1, g2] | (g1:_:g2:_) <- genFields]
-        ass = assert $ 2 * sum nVec == length gens
-        counts = ass [length $ filter (=='1') c | c <- splitPlaces (map (*2) nVec) gens]
-    in  show $ FreqSumEntry chrom (read pos) (head ref) (head alt) counts
+    assertErr "number of samples doesn't match nVec" $ 2 * sum nVec == length gens
+    let counts = [length $ filter (=='1') c | c <- splitPlaces (map (*2) nVec) gens]
+    return . show $ FreqSumEntry chrom (read pos) (head ref) (head alt) counts
