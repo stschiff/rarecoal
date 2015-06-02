@@ -3,10 +3,15 @@ import Data.Monoid (mempty)
 import System.IO (openFile, IOMode(..), hGetLine, hClose)
 import qualified Options.Applicative as OP
 import OrderedZip (orderedZip)
-import FreqSumEntry (FreqSumEntry(..))
 import qualified Pipes.Prelude as P
-import Pipes ((>->), runEffect)
-import Control.Monad (liftM)
+import Pipes ((>->), runEffect, for)
+import Control.Monad.Trans.Class (lift)
+import FreqSumEntry (FreqSumEntry(..), parseFreqSumEntry)
+import Pipes.Attoparsec (parsed)
+import qualified Pipes.Text.IO as PT
+import qualified Data.Text as T
+import Control.Error (runScript, Script, scriptIO, left, tryRight)
+import Data.Attoparsec.Text (parseOnly)
 
 data MyOpts = MyOpts FilePath FilePath
 
@@ -17,22 +22,29 @@ main = OP.execParser opts >>= runWithOptions
     opts = OP.info parser mempty
 
 runWithOptions :: MyOpts -> IO ()
-runWithOptions (MyOpts f1 f2) = do
+runWithOptions (MyOpts f1 f2) = runScript $ do
     n1 <- readNfromFile f1
-    n2 <- readNfromFile f2
-    h1 <- openFile f1 ReadMode
-    h2 <- openFile f2 ReadMode
-    let p1 = P.fromHandle h1 >-> P.map read
-        p2 = P.fromHandle h2 >-> P.map read
-    runEffect $ orderedZip compare p1 p2 >-> P.map (freqSumCombine n1 n2) >-> P.map show >-> P.stdoutLn
-    hClose h1
-    hClose h2
+    n2 <- readNfromFile f1
+    h1 <- scriptIO $ openFile f1 ReadMode
+    h2 <- scriptIO $ openFile f2 ReadMode
+    let p1 = parsed parseFreqSumEntry . PT.fromHandle $ h1
+        p2 = parsed parseFreqSumEntry . PT.fromHandle $ h2
+        combinedProd = orderedZip comp p1 p2 >-> P.map (freqSumCombine n1 n2)
+    res <- runEffect $ for combinedProd $ lift . scriptIO . putStrLn . show
+    case res of
+        Left (err, _) -> left $ "Parsing error: " ++ show err
+        Right () -> return ()
+    scriptIO . hClose $ h1
+    scriptIO . hClose $ h2
+  where
+    comp fs1 fs2 = fsPos fs1 `compare` fsPos fs2
 
-readNfromFile :: FilePath -> IO Int
+readNfromFile :: FilePath -> Script Int
 readNfromFile fn = do
-    h <- openFile fn ReadMode
-    fs <- liftM read $ hGetLine h
-    hClose h
+    h <- scriptIO $ openFile fn ReadMode
+    l <- scriptIO . hGetLine $ h
+    fs <- tryRight . parseOnly parseFreqSumEntry . T.pack $ l
+    scriptIO $ hClose h
     return $ length (fsCounts fs)
     
 freqSumCombine :: Int -> Int -> (Maybe FreqSumEntry, Maybe FreqSumEntry) -> FreqSumEntry

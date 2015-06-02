@@ -10,6 +10,7 @@ import Control.Lens (makeLenses)
 import Control.Error (runScript, scriptIO, assertErr, tryRight)
 import Data.Int (Int64)
 import qualified Data.ByteString.Lazy.Char8 as B
+import qualified Data.Text.IO as T
 
 data MyOpts = MyOpts [Int] Int Int64 Bool
 
@@ -29,7 +30,7 @@ mainWithOptions (MyOpts nVec maxAf nrCalledSites globalMax) = runScript $
     scriptIO B.getContents >>= tryRight . makeHist nVec maxAf globalMax
                            >>= tryRight . setNrCalledSites nrCalledSites
                            >>= tryRight . showHistogram
-                           >>= scriptIO . B.putStr
+                           >>= scriptIO . T.putStr
 
 makeHist :: [Int] -> Int -> Bool -> B.ByteString -> Either String RareAlleleHistogram
 makeHist nVec maxAf global s = do

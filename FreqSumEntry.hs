@@ -1,6 +1,9 @@
-module FreqSumEntry (FreqSumEntry(..)) where
+module FreqSumEntry (parseFreqSumEntry, FreqSumEntry(..)) where
 
 import Data.List (intercalate)
+import qualified Data.Attoparsec.Text as A
+import Data.Text (unpack)
+import Control.Applicative ((<$>), (<*>), (<*))
 
 data FreqSumEntry = FreqSumEntry {
     fsChrom  :: String,
@@ -11,15 +14,13 @@ data FreqSumEntry = FreqSumEntry {
 }
 
 instance Show FreqSumEntry where
-    show (FreqSumEntry c p r a counts) = intercalate "\t" $ [c, show p, [r], [a]] ++ map show counts
+	show (FreqSumEntry chrom pos ref alt counts) =
+		intercalate "\t" [chrom, show pos, [ref], [alt], intercalate "\t" . map show $ counts]
 
-instance Read FreqSumEntry where
-    readsPrec _ line =
-        let (c:pStr:rStr:aStr:countsStr) = words line
-        in  [(FreqSumEntry c (read pStr) (head rStr) (head aStr) (map read countsStr), "")]
-
-instance Eq FreqSumEntry where
-    fs1 == fs2 = fsPos fs1 == fsPos fs2
-
-instance Ord FreqSumEntry where
-    compare fs1 fs2 = compare (fsPos fs1) (fsPos fs2)
+parseFreqSumEntry :: A.Parser FreqSumEntry
+parseFreqSumEntry = FreqSumEntry <$> word <* A.skipSpace <*> A.decimal <* A.skipSpace <*>
+                                     A.letter <* A.skipSpace <*> A.letter <* A.skipSpace <*>
+                                     counts <* A.endOfLine
+  where
+    word = unpack <$> A.takeWhile1 (A.notInClass "\n\t\r")
+    counts = A.decimal `A.sepBy` A.char '\t'

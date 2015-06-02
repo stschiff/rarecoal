@@ -4,15 +4,20 @@ module RareAlleleHistogram (RareAlleleHistogram(..),
                             SitePattern(..),
                             addHistograms, filterMaxAf, setNrCalledSites,
                             loadHistogram, reduceIndices, combineIndices,
-                            filterGlobalMinAf, parseHistogram, showHistogram) where
+                            filterGlobalMinAf, readHistogram, showHistogram, readHistogramFromHandle) where
 
 import qualified Data.Map.Strict as Map
 import Data.List (intercalate, sortBy)
 import Control.Monad (when, (<=<))
 import Data.Int (Int64)
-import Control.Error (Script, scriptIO, justErr, assertErr, readErr, headErr, atErr, lastErr, tryRight)
-import qualified Data.ByteString.Lazy.Char8 as B
-import Control.Applicative ((<$>))
+import Control.Error (Script, scriptIO, assertErr, tryRight, left)
+import Control.Applicative ((<$>), (<*>), pure, (*>), (<*), (<|>))
+import qualified Data.Text as T
+import qualified Data.Attoparsec.Text as A
+import qualified Pipes.Text.IO as PT
+import System.IO (Handle, openFile, IOMode(..), hClose)
+import Control.Monad.Trans.State.Strict (evalStateT)
+import Pipes.Attoparsec (parse)
 
 data RareAlleleHistogram = RareAlleleHistogram {
     raNVec :: [Int],
@@ -25,84 +30,58 @@ data RareAlleleHistogram = RareAlleleHistogram {
 
 data SitePattern = Pattern [Int] | Higher deriving (Eq, Ord)
 instance Show SitePattern where
-    show (Pattern nVec) = commaSep nVec
+    show (Pattern nVec) = intercalate "," . map show $ nVec
     show Higher = "HIGHER"
 
--- instance Read SitePattern where
---     readsPrec _ s =
---         let val = if s == "HIGHER" then Higher else Pattern $ map read . splitOn "," $ s
---         in  [(val, "")]
-
-commaSep :: Show a => [a] -> String
-commaSep = intercalate "," . map show
-
-showHistogram :: RareAlleleHistogram -> Either String B.ByteString
+showHistogram :: RareAlleleHistogram -> Either String T.Text
 showHistogram hist = do
     assertErr "can only print histogram with minAf=0 due to format-legacy" $ raMinAf hist == 0
     assertErr "can only print histogram with no conditioning due to format-legacy" $ length (raConditionOn hist) == 0
-    let head1 = B.concat ["N=", B.pack . commaSep . raNVec $ hist]
-        head2 = B.concat ["MAX_M=", B.pack . show . raMaxAf $ hist]
-        head3 = B.concat ["GLOBAL_MAX=", B.pack . show . raGlobalMax $ hist]
-        body = [B.intercalate " " [B.pack . show $ k, B.pack . show $ v] | (k, v) <- sorted]
-    return $ B.unlines (head1:head2:head3:body)
+    let head1 = T.concat ["N=", T.pack . intercalate "," . map show . raNVec $ hist]
+        head2 = T.concat ["MAX_M=", T.pack . show . raMaxAf $ hist]
+        head3 = T.concat ["GLOBAL_MAX=", T.pack . show . raGlobalMax $ hist]
+        body = [T.intercalate " " [T.pack . show $ k, T.pack . show $ v] | (k, v) <- sorted]
+    return $ T.unlines (head1:head2:head3:body)
   where
     sorted = sortBy (\(_, v1) (_, v2)  -> compare v2 v1) $ Map.toList (raCounts hist)
+
+readHistogram :: FilePath -> Script RareAlleleHistogram
+readHistogram path = do
+    h <- scriptIO $ openFile path ReadMode
+    hist <- readHistogramFromHandle h
+    scriptIO $ hClose h
+    return hist
+
+readHistogramFromHandle :: Handle -> Script RareAlleleHistogram
+readHistogramFromHandle handle = do
+    res <- evalStateT (parse parseHistogram) . PT.fromHandle $ handle
+    case res of
+        Nothing -> left "file exhausted too early"
+        Just (Left err) -> left $ "Parser error: " ++ show err
+        Just (Right hist) -> return hist
     
--- simpleReadHistogram :: String -> RareAlleleHistogram
--- simpleReadHistogram s =
---     let lines_ = lines s
---         nVec = map read . splitOn "," $ drop 2 (head lines_)
---         maxM = read $ drop 6 (lines_ !! 1)
---         maxType = read $ drop 11 (lines_ !! 2)
---         body = map readBodyLine (filter (/="") $ drop 3 lines_)
---     in  RareAlleleHistogram nVec 0 maxM maxType (Map.fromList body)
---     where
---         readBodyLine :: String -> (SitePattern, Int64)
---         readBodyLine line =
---             let [patS, valS] = words line
---             in  (read patS, read valS)
+parseHistogram :: A.Parser RareAlleleHistogram
+parseHistogram = RareAlleleHistogram <$> parseNVec <*> pure 0 <*> parseMaxM <*> parseIsGlobal <*> pure [] <*> parseBody
+  where
+    parseNVec = A.string "N=" *> A.decimal `A.sepBy1` A.char ',' <* A.endOfLine
+    parseMaxM = A.string "MAX_M=" *> A.decimal <* A.endOfLine
+    parseIsGlobal = A.string "GLOBAL_MAX=" *> parseBool <* A.endOfLine
+    parseBool = do
+        s <- A.string "False" <|> A.string "True"
+        if s == "False" then return False else return True
 
--- parseHistogram :: String -> Either String RareAlleleHistogram
--- parseHistogram s = do
---     let lines_ = lines s
---     nVecLine <- headErr "empty parse" lines_
---     nVec <- mapM (readErr $ "error in line 1" ++ nVecLine) $ splitOn "," $ drop 2 nVecLine
---     maxMLine <- atErr "file too short" lines_ 1
---     maxM <- readErr "parse error in line 2" $ drop 6 maxMLine
---     maxTypeLine <- atErr "file too short" lines_ 2
---     maxType <- readErr "parse error in line 3" $ drop 11 maxTypeLine
---     body <- mapM readBodyLine (filter (/="") $ drop 3 lines_)
---     return $ RareAlleleHistogram nVec 0 maxM maxType [] (Map.fromList body)
---     where
---         readBodyLine :: String -> Either String (SitePattern, Int64)
---         readBodyLine line = do
---             let fields = words line
---             pat <- readErr "parse error" <=< headErr "parse error" $ fields
---             val <- readErr "parse error" <=< lastErr "parse error" $ fields
---             return (pat, val)
-
-parseHistogram :: B.ByteString -> Either String RareAlleleHistogram
-parseHistogram s = do
-    let lines_ = B.lines s
-    nVecLine <- headErr "empty parse" lines_
-    nVec <- map fst <$> (justErr "error in line 1" . mapM B.readInt . B.split ',' . B.drop 2 $ nVecLine)
-    maxMLine <- atErr "file too short" lines_ 1
-    maxM <- fst <$> (justErr "parse error in line 2" . B.readInt . B.drop 6 $ maxMLine)
-    maxTypeLine <- atErr "file too short" lines_ 2
-    maxType <- readErr "parse error in line 3" . B.unpack . B.drop 11 $ maxTypeLine
-    body <- mapM readBodyLine . filter ((>0) . B.length) . drop 3 $ lines_
-    return $ RareAlleleHistogram nVec 0 maxM maxType [] (Map.fromList body)
-    where
-        readBodyLine :: B.ByteString -> Either String (SitePattern, Int64)
-        readBodyLine line = do
-            let fields = B.words line
-            pat <- readPattern <=< headErr "parse error" $ fields
-            val <- readErr "parse error" . B.unpack <=< lastErr "parse error" $ fields
-            return (pat, val)
-        readPattern :: B.ByteString -> Either String SitePattern
-        readPattern w =
-            if w == "HIGHER" then Right Higher
-            else Pattern . map fst <$> (justErr "error parsing pattern" . mapM B.readInt . B.split ',' $ w)
+parseBody :: A.Parser (Map.Map SitePattern Int64)
+parseBody = Map.fromList <$> A.many1 patternLine
+  where
+    patternLine = do
+        pat <- parsePattern <|> parseHigher
+        A.space
+        num <- parseLargeInt
+        A.endOfLine
+        return (pat, num)
+    parsePattern = Pattern <$> A.decimal `A.sepBy1` A.char ','
+    parseHigher = A.string "HIGHER" *> pure Higher
+    parseLargeInt = read <$> A.many1 A.digit
 
 addHistograms :: RareAlleleHistogram -> RareAlleleHistogram -> Either String RareAlleleHistogram
 addHistograms hist1 hist2 = do
@@ -114,23 +93,10 @@ addHistograms hist1 hist2 = do
         
 loadHistogram :: [Int] -> Int -> Int -> [Int] -> Int64 -> FilePath -> Script RareAlleleHistogram
 loadHistogram indices minAf maxAf conditionOn nrCalledSites path = do
-    s <- scriptIO $ B.readFile path
-    hist <- tryRight $ parseHistogram s
+    hist <- readHistogram path
     let f = if nrCalledSites > 0 then setNrCalledSites nrCalledSites else return
-    tryRight $ (f <=< filterConditionOn conditionOn
-                     <=< filterGlobalMinAf minAf
-                     <=< filterMaxAf True maxAf
-                     <=< reduceIndices indices
-                     <=< return) hist
-
--- filterConditionOn :: [Int] -> RareAlleleHistogram -> Either String RareAlleleHistogram
--- filterConditionOn indices hist =
---     if (null indices) then return hist else do
---         let newBody = Map.mapKeysWith (+) conditionPatternOn (raCounts hist)
---         return $ hist {raCounts = newBody, raConditionOn = indices}
---   where
---     conditionPatternOn Higher = Higher
---     conditionPatternOn (Pattern pat) = if all (\i -> pat !! i > 0) indices then Pattern pat else Higher
+    tryRight $ (f <=< filterConditionOn conditionOn <=< filterGlobalMinAf minAf <=< filterMaxAf True maxAf <=<
+                      reduceIndices indices <=< return) hist
 
 filterConditionOn :: [Int] -> RareAlleleHistogram -> Either String RareAlleleHistogram
 filterConditionOn indices hist =

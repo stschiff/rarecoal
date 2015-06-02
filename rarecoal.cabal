@@ -12,13 +12,21 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     RareAlleleHistogram
+  exposed-modules:     RareAlleleHistogram, FreqSumEntry
   build-depends:       base,
                        containers,
                        split,
                        hslogger,
                        errors,
-                       bytestring
+                       bytestring,
+                       vector,
+                       text,
+                       attoparsec,
+                       pipes-text,
+                       transformers,
+                       pipes-attoparsec,
+                       pipes,
+                       pipes-parse
   default-language:    Haskell2010
 
 
@@ -50,7 +58,12 @@ executable rarecoal
                        monad-loops,
                        lens,
                        text-format-simple,
-                       bytestring
+                       bytestring,
+                       pipes-text,
+                       text,
+                       attoparsec,
+                       pipes-text,
+                       pipes-attoparsec
   default-language:    Haskell2010
   extra-lib-dirs:      /usr/lib
   ghc-options:         -fno-ignore-asserts -rtsopts -threaded "-with-rtsopts=-A200m -K100m"
@@ -62,7 +75,13 @@ executable vcf2FreqSum
                        assert,
                        optparse-applicative,
                        pipes,
-                       errors
+                       errors,
+                       pipes-text,
+                       text,
+                       foldl,
+                       pipes-group,
+                       lens,
+                       attoparsec
   default-language:    Haskell2010
   ghc-options:         -fno-ignore-asserts
 
@@ -71,7 +90,13 @@ executable mergeFreqSum
   build-depends:       base,
                        split,
                        optparse-applicative,
-                       pipes
+                       pipes,
+                       attoparsec,
+                       pipes-attoparsec,
+                       pipes-text,
+                       text,
+                       errors,
+                       transformers
   default-language:    Haskell2010
   ghc-options:         -fno-ignore-asserts
 
@@ -86,13 +111,16 @@ executable freqSum2Histogram
                        errors,
                        either,
                        deepseq,
-                       bytestring
+                       bytestring,
+                       attoparsec,
+                       text,
+                       transformers, pipes-text, pipes-attoparsec, vector, foldl
   default-language:    Haskell2010
   ghc-options:         -fno-ignore-asserts
 
 executable combineHistograms
   main-is:             combineHistograms.hs
-  build-depends:       base,
+  build-depends:       base, text, attoparsec, pipes-text, transformers, pipes-attoparsec,
                        split,
                        containers,
                        hslogger,
@@ -105,7 +133,7 @@ executable combineHistograms
 
 executable sampleHist
   main-is:             sampleHist.hs
-  build-depends:       base,
+  build-depends:       base, text, attoparsec, pipes-text, pipes-attoparsec,
                        split,
                        containers,
                        hslogger,
@@ -121,7 +149,7 @@ executable sampleHist
 
 executable ms2hist
   main-is:              ms2hist.hs
-  build-depends:        base,
+  build-depends:        base, text, attoparsec, pipes-text, pipes-attoparsec,
                         split,
                         errors,
                         transformers,
