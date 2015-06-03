@@ -24,7 +24,7 @@ main = OP.execParser opts >>= runWithOptions
 runWithOptions :: MyOpts -> IO ()
 runWithOptions (MyOpts f1 f2) = runScript $ do
     n1 <- readNfromFile f1
-    n2 <- readNfromFile f1
+    n2 <- readNfromFile f2
     h1 <- scriptIO $ openFile f1 ReadMode
     h2 <- scriptIO $ openFile f2 ReadMode
     let p1 = parsed parseFreqSumEntry . PT.fromHandle $ h1
@@ -43,7 +43,7 @@ readNfromFile :: FilePath -> Script Int
 readNfromFile fn = do
     h <- scriptIO $ openFile fn ReadMode
     l <- scriptIO . hGetLine $ h
-    fs <- tryRight . parseOnly parseFreqSumEntry . T.pack $ l
+    fs <- tryRight . parseOnly parseFreqSumEntry . flip T.snoc '\n' . T.pack $ l
     scriptIO $ hClose h
     return $ length (fsCounts fs)
     
