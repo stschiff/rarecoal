@@ -11,7 +11,6 @@ import qualified Data.Vector.Unboxed as V
 import Text.Parsec.String (parseFromFile, Parser)
 import Text.Parsec.Char (char, newline, letter, oneOf, noneOf, space, alphaNum)
 import Text.Parsec (sepBy, many)
-import Control.Applicative ((<$>), (<*>))
 import System.Log.Logger (infoM)
 
 data ModelTemplate = ModelTemplate {

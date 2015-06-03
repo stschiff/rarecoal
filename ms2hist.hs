@@ -1,8 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 import Data.List.Split (splitPlaces)
-import Control.Applicative ((<$>), (<*>))
-import Data.Monoid (mempty, (<>))
+import Data.Monoid ((<>))
 import qualified Data.Map as M
 import qualified Options.Applicative as OP
 import RareAlleleHistogram(RareAlleleHistogram(..), showHistogram, setNrCalledSites, SitePattern(..))

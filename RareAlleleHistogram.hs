@@ -11,7 +11,7 @@ import Data.List (intercalate, sortBy)
 import Control.Monad (when, (<=<))
 import Data.Int (Int64)
 import Control.Error (Script, scriptIO, assertErr, tryRight, left)
-import Control.Applicative ((<$>), (<*>), pure, (*>), (<*), (<|>))
+import Control.Applicative ((<|>))
 import qualified Data.Text as T
 import qualified Data.Attoparsec.Text as A
 import qualified Pipes.Text.IO as PT

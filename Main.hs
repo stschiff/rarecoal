@@ -1,5 +1,5 @@
 import Data.List.Split (splitOn)
-import Control.Applicative ((<$>), (<*>), many, (<|>))
+import Control.Applicative (many, (<|>))
 import qualified Options.Applicative as OP
 import Data.Monoid ((<>))
 import Logl (runLogl, LoglOpt(..))

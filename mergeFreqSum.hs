@@ -1,5 +1,3 @@
-import Control.Applicative ((<$>), (<*>))
-import Data.Monoid (mempty)
 import System.IO (openFile, IOMode(..), hGetLine, hClose)
 import qualified Options.Applicative as OP
 import OrderedZip (orderedZip)

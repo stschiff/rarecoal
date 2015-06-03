@@ -1,6 +1,5 @@
 import qualified Data.Map.Strict as Map
-import Control.Applicative ((<$>), (<*>))
-import Data.Monoid (mempty, (<>))
+import Data.Monoid ((<>))
 import RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..), setNrCalledSites, showHistogram)
 import qualified Options.Applicative as OP
 import qualified Pipes.Text.IO as PT

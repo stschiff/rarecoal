@@ -6,13 +6,13 @@ import qualified Data.Text as T
 import Pipes.Group (folds)
 import Control.Foldl (purely, mconcat)
 import Data.List.Split (splitPlaces)
-import Control.Applicative ((<$>), (<|>))
-import Data.Monoid (mempty, (<>))
+import Control.Applicative ((<|>))
+import Data.Monoid ((<>))
 import qualified Options.Applicative as OP
 import Control.Error (assertErr, runScript, tryRight, Script)
 import Control.Lens (view)
 import Data.Attoparsec.Text (Parser, char, decimal, letter, notInClass, parseOnly, sepBy1, takeWhile)
-import Prelude hiding (takeWhile)
+import Prelude hiding (takeWhile, mconcat)
 import Control.Monad (replicateM_)
 import FreqSumEntry (FreqSumEntry(..))
 

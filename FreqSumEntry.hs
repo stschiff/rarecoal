@@ -3,7 +3,6 @@ module FreqSumEntry (parseFreqSumEntry, FreqSumEntry(..)) where
 import Data.List (intercalate)
 import qualified Data.Attoparsec.Text as A
 import Data.Text (unpack)
-import Control.Applicative ((<$>), (<*>), (<*))
 
 data FreqSumEntry = FreqSumEntry {
     fsChrom  :: String,
@@ -14,8 +13,8 @@ data FreqSumEntry = FreqSumEntry {
 }
 
 instance Show FreqSumEntry where
-	show (FreqSumEntry chrom pos ref alt counts) =
-		intercalate "\t" [chrom, show pos, [ref], [alt], intercalate "\t" . map show $ counts]
+    show (FreqSumEntry chrom pos ref alt counts) =
+        intercalate "\t" [chrom, show pos, [ref], [alt], intercalate "\t" . map show $ counts]
 
 parseFreqSumEntry :: A.Parser FreqSumEntry
 parseFreqSumEntry = FreqSumEntry <$> word <* A.skipSpace <*> A.decimal <* A.skipSpace <*>
