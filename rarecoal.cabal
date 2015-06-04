@@ -15,55 +15,41 @@ library
   exposed-modules:     RareAlleleHistogram, FreqSumEntry
   build-depends:       base,
                        containers,
-                       split,
-                       hslogger,
                        errors,
-                       bytestring,
-                       vector,
                        text,
                        attoparsec,
                        pipes-text,
                        transformers,
-                       pipes-attoparsec,
-                       pipes,
-                       pipes-parse
+                       pipes-attoparsec
   default-language:    Haskell2010
 
 
 executable rarecoal
   main-is:             Main.hs
   build-depends:       base,
-                       exact-combinatorics,
-                       containers,
                        split,
                        optparse-applicative,
                        hslogger,
+                       transformers,
                        vector,
+                       containers,
+                       lens,
+                       data-memocombinators,
+                       text-format-simple,
                        parallel,
                        hmatrix,
                        hmatrix-gsl,
+                       random,
+                       time,
+                       monad-loops,
                        MissingH,
                        either,
-                       time,
-                       random,
-                       transformers,
-                       ansi-terminal,
-                       storable-complex,
-                       errors,
-                       tagged,
                        parsec,
-                       transformers-compat,
-                       regex-compat,
-                       data-memocombinators,
-                       monad-loops,
-                       lens,
-                       text-format-simple,
-                       bytestring,
-                       pipes-text,
                        text,
                        attoparsec,
-                       pipes-text,
-                       pipes-attoparsec
+                       pipes-attoparsec,
+                       errors,
+                       pipes-text
   default-language:    Haskell2010
   extra-lib-dirs:      /usr/lib
   ghc-options:         -fno-ignore-asserts -rtsopts -threaded "-with-rtsopts=-A200m -K100m"
@@ -72,7 +58,6 @@ executable vcf2FreqSum
   main-is:             vcf2FreqSum.hs
   build-depends:       base,
                        split,
-                       assert,
                        optparse-applicative,
                        pipes,
                        errors,
@@ -88,7 +73,6 @@ executable vcf2FreqSum
 executable mergeFreqSum
   main-is:             mergeFreqSum.hs
   build-depends:       base,
-                       split,
                        optparse-applicative,
                        pipes,
                        attoparsec,
@@ -103,59 +87,55 @@ executable mergeFreqSum
 executable freqSum2Histogram
   main-is:             freqSum2Histogram.hs
   build-depends:       base,
-                       split,
                        containers,
                        optparse-applicative,
                        pipes,
-                       hslogger,
-                       errors,
-                       either,
-                       deepseq,
-                       bytestring,
                        attoparsec,
+                       transformers,
+                       errors,
                        text,
-                       transformers, pipes-text, pipes-attoparsec, vector, foldl
+                       pipes-text, pipes-attoparsec, foldl
   default-language:    Haskell2010
   ghc-options:         -fno-ignore-asserts
 
 executable combineHistograms
   main-is:             combineHistograms.hs
-  build-depends:       base, text, attoparsec, pipes-text, transformers, pipes-attoparsec,
-                       split,
-                       containers,
-                       hslogger,
+  build-depends:       base, text,
                        errors,
-                       either,
-                       deepseq,
-                       bytestring
+                       containers,
+                       attoparsec,
+                       pipes-text,
+                       transformers,
+                       pipes-attoparsec
   default-language:    Haskell2010
   ghc-options:         -fno-ignore-asserts
 
 executable sampleHist
   main-is:             sampleHist.hs
-  build-depends:       base, text, attoparsec, pipes-text, pipes-attoparsec,
-                       split,
+  build-depends:       base, text,
                        containers,
-                       hslogger,
                        errors,
+                       attoparsec,
+                       pipes-text,
+                       pipes-attoparsec,
                        either,
                        transformers,
                        lens,
                        optparse-applicative,
-                       random,
-                       bytestring
+                       random
   default-language:    Haskell2010
   ghc-options:         -fno-ignore-asserts -rtsopts "-with-rtsopts=-A10m -K100m"
 
 executable ms2hist
   main-is:              ms2hist.hs
-  build-depends:        base, text, attoparsec, pipes-text, pipes-attoparsec,
+  build-depends:        base, text, 
                         split,
                         errors,
-                        transformers,
-                        either,
                         containers,
-                        hslogger,
+                        attoparsec,
+                        pipes-text,
+                        transformers,
+                        pipes-attoparsec,
                         lens,
                         optparse-applicative,
                         bytestring
