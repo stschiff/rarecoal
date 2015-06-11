@@ -1,29 +1,28 @@
-import System.IO (openFile, IOMode(..), hGetLine, hClose)
+import System.IO (openFile, IOMode(..), hClose, stdin)
 import qualified Options.Applicative as OP
 import OrderedZip (orderedZip)
 import qualified Pipes.Prelude as P
 import Pipes ((>->), runEffect, for)
+import Data.Monoid ((<>))
 import Control.Monad.Trans.Class (lift)
 import FreqSumEntry (FreqSumEntry(..), parseFreqSumEntry)
 import Pipes.Attoparsec (parsed)
 import qualified Pipes.Text.IO as PT
-import qualified Data.Text as T
-import Control.Error (runScript, Script, scriptIO, left, tryRight)
-import Data.Attoparsec.Text (parseOnly)
+import Control.Error (runScript, scriptIO, left)
 
-data MyOpts = MyOpts FilePath FilePath
+data MyOpts = MyOpts FilePath FilePath Int Int
 
 main = OP.execParser opts >>= runWithOptions
   where
-    parser = MyOpts <$> OP.argument OP.str (OP.metavar "freqSumFile1")
-                    <*> OP.argument OP.str (OP.metavar "freqSumFile2")
-    opts = OP.info parser mempty
+    parser = MyOpts <$> OP.argument OP.str (OP.metavar "freqSumFile1" <> OP.help "file 1, put - for stdin")
+                    <*> OP.argument OP.str (OP.metavar "freqSumFile2" <> OP.help "file 1")
+                    <*> OP.argument OP.auto (OP.metavar "<n1>" <> OP.help "number of populations in file 1")
+                    <*> OP.argument OP.auto (OP.metavar "<n2>" <> OP.help "number of populations in file 2")
+    opts = OP.info (OP.helper <*> parser) mempty
 
 runWithOptions :: MyOpts -> IO ()
-runWithOptions (MyOpts f1 f2) = runScript $ do
-    n1 <- readNfromFile f1
-    n2 <- readNfromFile f2
-    h1 <- scriptIO $ openFile f1 ReadMode
+runWithOptions (MyOpts f1 f2 n1 n2) = runScript $ do
+    h1 <- if f1 == "-" then return stdin else scriptIO $ openFile f1 ReadMode
     h2 <- scriptIO $ openFile f2 ReadMode
     let p1 = parsed parseFreqSumEntry . PT.fromHandle $ h1
         p2 = parsed parseFreqSumEntry . PT.fromHandle $ h2
@@ -37,14 +36,6 @@ runWithOptions (MyOpts f1 f2) = runScript $ do
   where
     comp fs1 fs2 = fsPos fs1 `compare` fsPos fs2
 
-readNfromFile :: FilePath -> Script Int
-readNfromFile fn = do
-    h <- scriptIO $ openFile fn ReadMode
-    l <- scriptIO . hGetLine $ h
-    fs <- tryRight . parseOnly parseFreqSumEntry . flip T.snoc '\n' . T.pack $ l
-    scriptIO $ hClose h
-    return $ length (fsCounts fs)
-    
 freqSumCombine :: Int -> Int -> (Maybe FreqSumEntry, Maybe FreqSumEntry) -> FreqSumEntry
 freqSumCombine _ n2 (Just fs1, Nothing) = fs1 {fsCounts = fsCounts fs1 ++ replicate n2 0}
 freqSumCombine n1 _ (Nothing, Just fs2) = fs2 {fsCounts = replicate n1 0 ++ fsCounts fs2}
