@@ -27,7 +27,8 @@ data FindOpt = FindOpt {
     fiLinGen :: Int,
     fiIndices :: [Int],
     fiIgnoreList :: [SitePattern],
-    fiHistPath :: FilePath
+    fiHistPath :: FilePath,
+    fiNoShortcut :: Bool
 }
 
 runFind :: FindOpt -> Script ()
@@ -47,7 +48,7 @@ runFind opts = do
         targetBranches = [branch | branch <- [0..nrPops-1], branch /= l]
         allJoinTimes = [getJoinTimes modelSpec (fiDeltaTime opts) (fiMaxTime opts) (fiBranchAge opts) k | k <- targetBranches]
         allParamPairs = concat $ zipWith (\k times -> [(k, t) | t <- times]) targetBranches allJoinTimes
-    allLikelihoods <- mapM (\(k, t) -> computeLikelihoodIO hist modelSpec k l t) allParamPairs
+    allLikelihoods <- mapM (\(k, t) -> computeLikelihoodIO hist modelSpec k l t (fiNoShortcut opts)) allParamPairs
     scriptIO $ writeResult (fiEvalPath opts) allParamPairs allLikelihoods
     let ((minBranch, minTime), minLL) = last . sortBy (\(_, ll1) (_, ll2) -> ll1 `compare` ll2) $
                                         zip allParamPairs allLikelihoods
@@ -65,12 +66,12 @@ getJoinTimes modelSpec deltaT maxT branchAge k =
         leaveTimes = [t | ModelEvent t (Join _ l) <- mEvents modelSpec, k == l]
     in  if null leaveTimes then allTimes else filter (<head leaveTimes) allTimes
 
-computeLikelihoodIO :: RareAlleleHistogram -> ModelSpec -> Int -> Int -> Double -> Script Double
-computeLikelihoodIO hist modelSpec k l t = do
+computeLikelihoodIO :: RareAlleleHistogram -> ModelSpec -> Int -> Int -> Double -> Bool -> Script Double 
+computeLikelihoodIO hist modelSpec k l t noShortcut = do
     let e = mEvents modelSpec
         newE = ModelEvent t (Join k l)
         modelSpec' = modelSpec {mEvents = newE : e}
-    ll <- tryRight $ computeLikelihood modelSpec' hist
+    ll <- tryRight $ computeLikelihood modelSpec' hist noShortcut
     scriptIO $ hPutStrLn stderr ("branch=" ++ show k ++ ", time=" ++ show t ++ ", ll=" ++ show ll)
     return ll
 

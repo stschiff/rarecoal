@@ -86,13 +86,13 @@ getTimeSteps n0 lingen tMax =
     getTimeStep alpha nr_steps i =
         alpha * exp (fromIntegral i / fromIntegral nr_steps * log (1.0 + tMax / alpha)) - alpha
 
-getProb :: ModelSpec -> [Int] -> [Int] -> Either String Double
-getProb modelSpec nVec config = do
+getProb :: ModelSpec -> [Int] -> Bool -> [Int] -> Either String Double
+getProb modelSpec nVec noShortcut config = do
     validateModel modelSpec
     let timeSteps = mTimeSteps modelSpec
         ims = makeInitModelState modelSpec (length nVec)
         ics = makeInitCoalState nVec config
-        (_, fcs) = execState (propagateStates timeSteps) (ims, ics)
+        (_, fcs) = execState (propagateStates timeSteps noShortcut) (ims, ics)
         combFac = product $ zipWith choose nVec config
         err = "Overflow Error in getProb for nVec=" ++ show nVec ++ ", kVec=" ++ show config
     assertErr err $ combFac > 0
@@ -169,13 +169,13 @@ fillStateSpace jointStateSpace b =
             let maxVal = vec_ ! i
             in if maxVal == 0 then [vec_] else [vec_ // [(i, val)] | val <- [0..maxVal]]
 
-propagateStates :: [Double] -> State (ModelState, CoalState) ()
-propagateStates [] = return ()
-propagateStates (nextTime:restTimes) = do
+propagateStates :: [Double] -> Bool -> State (ModelState, CoalState) ()
+propagateStates [] _ = return ()
+propagateStates (nextTime:restTimes) noShortcut = do
     useShortcut <- canUseShortcut
-    if useShortcut then propagateStateShortcut else do
+    if (useShortcut && not noShortcut) then propagateStateShortcut else do
         singleStep nextTime
-        propagateStates restTimes
+        propagateStates restTimes noShortcut
 
 canUseShortcut :: State (ModelState, CoalState) Bool
 canUseShortcut = do

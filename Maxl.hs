@@ -78,7 +78,7 @@ minFunc modelTemplate extraEvents hist params = do
     let events = mEvents modelSpec
         events' = extraEvents ++ events
         modelSpec' = modelSpec {mEvents = events'}
-    val <- computeLikelihood modelSpec' hist
+    val <- computeLikelihood modelSpec' hist False
     assertErr ("likelihood infinite for params " ++ show params) $ not (isInfinite val)
     assertErr ("likelihood NaN for params " ++ show params) $ not (isNaN val)
     return (-val)

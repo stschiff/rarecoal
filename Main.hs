@@ -242,7 +242,8 @@ parseFind = CmdFind <$> parseFindOpt
 parseFindOpt = FindOpt <$> parseQueryIndex <*> parseEvalFile <*> parseBranchAge <*> parseDeltaTime <*> parseMaxTime
                        <*> parseTheta
                        <*> parseTemplateFilePath <*> parseParams <*> parseModelEvents <*> parseMinAf <*> parseMaxAf
-                       <*> parseConditioning <*> parseNrCalledSites <*> parseLinGen <*> parseIndices <*> parseIgnoreList <*> parseHistPath
+                       <*> parseConditioning <*> parseNrCalledSites <*> parseLinGen <*> parseIndices
+                       <*> parseIgnoreList <*> parseHistPath <*> parseNoShortcut
   where
     parseQueryIndex = OP.option OP.auto $ OP.short 'q' <> OP.long "queryIndex" <> OP.metavar "<INT>"
                                                        <> OP.help "index of query branch"
@@ -257,6 +258,8 @@ parseFindOpt = FindOpt <$> parseQueryIndex <*> parseEvalFile <*> parseBranchAge 
     parseIgnoreList = OP.option (OP.str >>= readIgnoreList) $ OP.long "exclude" <> OP.metavar "<list of lists>"
                                                             <> OP.help "ignore patterns" <> OP.value []
                                                             <> OP.showDefault
+    parseNoShortcut = OP.switch $ OP.long "noShortcut" <>
+                                  OP.help "do not use shortcut if all lineages are in one population"
     readIgnoreList s = do
         let ll = read s :: [[Int]]
         return $ map Pattern ll

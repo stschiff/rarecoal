@@ -30,17 +30,17 @@ runLogl :: LoglOpt -> Script ()
 runLogl opts = do
     modelSpec <- getModelSpec (loTemplatePath opts) (loTheta opts) (loParams opts) (loModelEvents opts) (loLinGen opts)
     hist <- loadHistogram (loIndices opts) (loMinAf opts) (loMaxAf opts) (loConditionOn opts) (loNrCalledSites opts) (loHistPath opts)
-    val <- tryRight $ computeLikelihood modelSpec hist
+    val <- tryRight $ computeLikelihood modelSpec hist False
     scriptIO $ print val
-    writeSpectrumFile (loSpectrumPath opts) modelSpec hist
+    writeSpectrumFile (loSpectrumPath opts) modelSpec False hist
 
-computeLikelihood :: ModelSpec -> RareAlleleHistogram -> Either String Double
-computeLikelihood modelSpec histogram = do
+computeLikelihood :: ModelSpec -> RareAlleleHistogram -> Bool -> Either String Double
+computeLikelihood modelSpec histogram noShortcut = do
     assertErr "minFreq must be greater than 0" $ raMinAf histogram > 0
     assertErr "maxType of histogram must be global" $ raGlobalMax histogram
     standardOrder <- computeStandardOrder histogram
     let nVec = raNVec histogram
-    patternProbs <- sequence $ parMap rdeepseq (getProb modelSpec nVec) standardOrder
+    patternProbs <- sequence $ parMap rdeepseq (getProb modelSpec nVec noShortcut) standardOrder
     -- patternProbs <- sequence $ parMapChunk rdeepseq (getProb modelSpec nVec) standardOrder
     -- trace (show $ zip standardOrder patternProbs) $ return ()
     let patternCounts = map (defaultLookup . Pattern) standardOrder
@@ -50,12 +50,12 @@ computeLikelihood modelSpec histogram = do
   where
     defaultLookup sitePattern = Map.findWithDefault 0 sitePattern (raCounts histogram)
 
-writeSpectrumFile :: FilePath -> ModelSpec -> RareAlleleHistogram -> Script ()
-writeSpectrumFile spectrumFile modelSpec histogram = 
+writeSpectrumFile :: FilePath -> ModelSpec -> Bool -> RareAlleleHistogram -> Script ()
+writeSpectrumFile spectrumFile modelSpec noShortcut histogram = 
     when (spectrumFile /= "/dev/null") $ do
         standardOrder <- tryRight $ computeStandardOrder histogram
         let nVec = raNVec histogram
-        vec <- tryRight $ sequence $ parMap rdeepseq (getProb modelSpec nVec) standardOrder
+        vec <- tryRight $ sequence $ parMap rdeepseq (getProb modelSpec nVec noShortcut) standardOrder
         scriptIO $ writeFile spectrumFile $ unlines $ zipWith (\p val -> show (Pattern p) ++ "\t" ++ show val) standardOrder vec
 
 computeStandardOrder :: RareAlleleHistogram -> Either String [[Int]]
