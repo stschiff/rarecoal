@@ -15,7 +15,7 @@ data MyOpts = MyOpts FilePath FilePath Int Int
 main = OP.execParser opts >>= runWithOptions
   where
     parser = MyOpts <$> OP.argument OP.str (OP.metavar "freqSumFile1" <> OP.help "file 1, put - for stdin")
-                    <*> OP.argument OP.str (OP.metavar "freqSumFile2" <> OP.help "file 1")
+                    <*> OP.argument OP.str (OP.metavar "freqSumFile2" <> OP.help "file 2")
                     <*> OP.argument OP.auto (OP.metavar "<n1>" <> OP.help "number of populations in file 1")
                     <*> OP.argument OP.auto (OP.metavar "<n2>" <> OP.help "number of populations in file 2")
     opts = OP.info (OP.helper <*> parser) mempty

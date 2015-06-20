@@ -192,7 +192,7 @@ canUseShortcut = do
 
 propagateStateShortcut :: State (ModelState, CoalState) ()
 propagateStateShortcut = do
-    nrA <- uses (_2 . csA) (round . V.sum)
+    nrA <- uses (_2 . csA) V.sum
     b <- use $ _2 . csB
     idToState <- use $ _2 . csStateSpace . jsIdToState
     let additionalBranchLength = sum [prob * goState nrA (idToState xId) | (xId, prob) <- M.toList b, prob > 0.0]
@@ -204,10 +204,10 @@ propagateStateShortcut = do
         let nrDerived = assert ((V.length . V.filter (>0)) x == 1) $ V.sum x
         in  singlePopMutBranchLength nrA nrDerived
         
-singlePopMutBranchLength :: Int -> Int -> Double
+singlePopMutBranchLength :: Double -> Int -> Double
 singlePopMutBranchLength nrA nrDerived =
     let withCombinatorics = 2.0 / fromIntegral nrDerived
-        combFactor = choose (nrA + nrDerived) nrDerived
+        combFactor = chooseCont (nrA + fromIntegral nrDerived) nrDerived
     in  withCombinatorics / combFactor
 
 singleStep :: Double -> State (ModelState, CoalState) ()
@@ -381,4 +381,9 @@ validateModel (ModelSpec _ _ events) = do
 choose :: Int -> Int -> Double
 choose _ 0 = 1
 choose n k = product [fromIntegral (n + 1 - j) / fromIntegral j | j <- [1..k]]
+
+-- see https://en.wikipedia.org/wiki/Binomial_coefficient
+chooseCont :: Double -> Int -> Double
+chooseCont _ 0 = 1
+chooseCont n k = product [(n + 1.0 - fromIntegral j) / fromIntegral j | j <- [1..k]]
 
