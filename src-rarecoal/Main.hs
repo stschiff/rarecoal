@@ -14,7 +14,7 @@ import Core (ModelEvent(..), EventType(..))
 import Control.Error.Script (runScript, scriptIO)
 import Data.Int (Int64)
 -- import Debug.Trace (trace)
-import RareAlleleHistogram (SitePattern(..))
+import Rarecoal.RareAlleleHistogram (SitePattern(..))
 import ModelTemplate (InitialParams(..))
 
 data Options = Options Command

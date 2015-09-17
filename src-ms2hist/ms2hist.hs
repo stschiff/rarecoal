@@ -4,7 +4,7 @@ import Data.List.Split (splitPlaces)
 import Data.Monoid ((<>))
 import qualified Data.Map as M
 import qualified Options.Applicative as OP
-import RareAlleleHistogram(RareAlleleHistogram(..), showHistogram, setNrCalledSites, SitePattern(..))
+import Rarecoal.RareAlleleHistogram(RareAlleleHistogram(..), showHistogram, setNrCalledSites, SitePattern(..))
 import Control.Lens (makeLenses)
 import Control.Error (runScript, scriptIO, assertErr, tryRight)
 import Data.Int (Int64)

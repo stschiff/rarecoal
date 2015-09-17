@@ -1,6 +1,6 @@
 module Maxl (minFunc, penalty, runMaxl, MaxlOpt(..)) where
 
-import RareAlleleHistogram (RareAlleleHistogram, loadHistogram)
+import Rarecoal.RareAlleleHistogram (RareAlleleHistogram, loadHistogram)
 import Logl (computeLikelihood)
 import Numeric.LinearAlgebra.Data (toRows, toList)
 import Numeric.GSL.Minimization (minimize, MinimizeMethod(..))

@@ -2,11 +2,10 @@
 
 import qualified Options.Applicative as OP
 import Control.Monad.Trans.State.Strict (evalState, State, get, put)
-import Control.Error (runScript, scriptIO, tryRight)
+import Control.Error (runScript, scriptIO, tryRight, throwE)
 import Control.Lens ((&), (%~), ix) 
-import RareAlleleHistogram (readHistogramFromHandle, showHistogram, RareAlleleHistogram(..), SitePattern(..))
+import Rarecoal.RareAlleleHistogram (readHistogramFromHandle, showHistogram, RareAlleleHistogram(..), SitePattern(..))
 import Data.Monoid ((<>))
-import Control.Monad.Trans.Either (left)
 import qualified Data.Map.Strict as Map
 import Data.Int (Int64)
 import Data.Foldable (foldl')
@@ -35,7 +34,7 @@ runWithOptions :: MyOpts -> IO ()
 runWithOptions opts = runScript $ do
     handle <- if _optHistPath opts == "-" then return stdin else scriptIO $ openFile (_optHistPath opts) ReadMode
     hist <- readHistogramFromHandle handle
-    when (raGlobalMax hist) $ left "histogram cannot have global max for this operation"
+    when (raGlobalMax hist) $ throwE "histogram cannot have global max for this operation"
     rng <- scriptIO newStdGen
     let hist' = evalState (addSamplePop (_optQueryPop opts) (_optHowMany opts) hist) rng
     outs <- tryRight $ showHistogram hist'

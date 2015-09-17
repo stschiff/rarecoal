@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module RareAlleleHistogram (RareAlleleHistogram(..),
+module Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..),
                             SitePattern(..),
                             addHistograms, filterMaxAf, setNrCalledSites,
                             loadHistogram, reduceIndices, combineIndices,
@@ -10,7 +10,7 @@ import qualified Data.Map.Strict as Map
 import Data.List (intercalate, sortBy)
 import Control.Monad (when, (<=<))
 import Data.Int (Int64)
-import Control.Error (Script, scriptIO, assertErr, tryRight, left)
+import Control.Error (Script, scriptIO, assertErr, tryRight, throwE)
 import Control.Applicative ((<|>))
 import qualified Data.Text as T
 import qualified Data.Attoparsec.Text as A
@@ -56,8 +56,8 @@ readHistogramFromHandle :: Handle -> Script RareAlleleHistogram
 readHistogramFromHandle handle = do
     res <- evalStateT (parse parseHistogram) . PT.fromHandle $ handle
     case res of
-        Nothing -> left "file exhausted too early"
-        Just (Left err) -> left $ "Parser error: " ++ show err
+        Nothing -> throwE "file exhausted too early"
+        Just (Left err) -> throwE $ "Parser error: " ++ show err
         Just (Right hist) -> return hist
     
 parseHistogram :: A.Parser RareAlleleHistogram
@@ -75,9 +75,9 @@ parseBody = Map.fromList <$> A.many1 patternLine
   where
     patternLine = do
         pat <- parsePattern <|> parseHigher
-        A.space
+        _ <- A.space
         num <- parseLargeInt
-        A.endOfLine
+        _ <- A.endOfLine
         return (pat, num)
     parsePattern = Pattern <$> A.decimal `A.sepBy1` A.char ','
     parseHigher = A.string "HIGHER" *> pure Higher

@@ -1,14 +1,13 @@
 module Find (runFind, FindOpt(..)) where
 
 import ModelTemplate (getModelSpec, InitialParams(..))
-import RareAlleleHistogram (loadHistogram, RareAlleleHistogram(..), SitePattern(..))
+import Rarecoal.RareAlleleHistogram (loadHistogram, RareAlleleHistogram(..), SitePattern(..))
 import Control.Error (Script, scriptIO, tryAssert, tryRight)
 import Logl (computeLikelihood)
 import Core (ModelSpec(..), ModelEvent(..), EventType(..))
 import Data.Int (Int64)
 import System.IO (stderr, hPutStrLn, openFile, IOMode(..), hClose)
 import Data.List (sortBy)
-import Text.Format (format)
 
 data FindOpt = FindOpt {
     fiQueryIndex :: Int,
@@ -52,8 +51,8 @@ runFind opts = do
     scriptIO $ writeResult (fiEvalPath opts) allParamPairs allLikelihoods
     let ((minBranch, minTime), minLL) = last . sortBy (\(_, ll1) (_, ll2) -> ll1 `compare` ll2) $
                                         zip allParamPairs allLikelihoods
-    scriptIO . putStrLn $ format "highest likelihood point:\nbranch {0}\ntime {1}\nlog-likelihood {2}"
-                                 [show minBranch, show minTime, show minLL] 
+    scriptIO . putStrLn $ "highest likelihood point:\nbranch " ++ show minBranch ++
+                          "\ntime " ++ show minTime ++ "\nlog-likelihood " ++ show minLL
   where
     hasFreeBranch queryBranch modelSpec =
         let e = mEvents modelSpec

@@ -1,4 +1,4 @@
-module FreqSumEntry (parseFreqSumEntry, FreqSumEntry(..)) where
+module Rarecoal.FreqSumEntry (parseFreqSumEntry, FreqSumEntry(..)) where
 
 import Data.List (intercalate)
 import qualified Data.Attoparsec.Text as A

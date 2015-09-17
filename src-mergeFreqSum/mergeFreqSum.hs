@@ -5,13 +5,14 @@ import qualified Pipes.Prelude as P
 import Pipes ((>->), runEffect, for)
 import Data.Monoid ((<>))
 import Control.Monad.Trans.Class (lift)
-import FreqSumEntry (FreqSumEntry(..), parseFreqSumEntry)
+import Rarecoal.FreqSumEntry (FreqSumEntry(..), parseFreqSumEntry)
 import Pipes.Attoparsec (parsed)
 import qualified Pipes.Text.IO as PT
-import Control.Error (runScript, scriptIO, left)
+import Control.Error (runScript, scriptIO, throwE)
 
 data MyOpts = MyOpts FilePath FilePath Int Int
 
+main :: IO ()
 main = OP.execParser opts >>= runWithOptions
   where
     parser = MyOpts <$> OP.argument OP.str (OP.metavar "freqSumFile1" <> OP.help "file 1, put - for stdin")
@@ -29,7 +30,7 @@ runWithOptions (MyOpts f1 f2 n1 n2) = runScript $ do
         combinedProd = orderedZip comp p1 p2 >-> P.map (freqSumCombine n1 n2)
     res <- runEffect $ for combinedProd $ lift . scriptIO . putStrLn . show
     case res of
-        Left (err, _) -> left $ "Parsing error: " ++ show err
+        Left (err, _) -> throwE $ "Parsing error: " ++ show err
         Right () -> return ()
     scriptIO . hClose $ h1
     scriptIO . hClose $ h2

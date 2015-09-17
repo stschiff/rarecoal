@@ -3,8 +3,8 @@ import qualified Pipes.Text.IO as PT
 import Data.Monoid ((<>))
 import Pipes (runEffect, for, lift)
 import Pipes.Attoparsec (parsed)
-import Control.Error (runScript, left, tryRight, assertErr, scriptIO)
-import FreqSumEntry (FreqSumEntry(..), parseFreqSumEntry)
+import Control.Error (runScript, throwE, tryRight, assertErr, scriptIO)
+import Rarecoal.FreqSumEntry (FreqSumEntry(..), parseFreqSumEntry)
 import Control.Monad ((>=>))
 
 data MyOpts = MyOpts Int
@@ -22,7 +22,7 @@ runWithOptions (MyOpts position) = runScript $ do
     let freqSums = parsed parseFreqSumEntry PT.stdin
     res <- runEffect $ for freqSums $ lift . tryRight . extractInFreqSum position >=> lift . scriptIO . putStrLn . show
     case res of
-        Left (err, _) -> left $ "Parsing error: " ++ show err
+        Left (err, _) -> throwE $ "Parsing error: " ++ show err
         Right () -> return ()
 
 extractInFreqSum :: Int -> FreqSumEntry -> Either String FreqSumEntry

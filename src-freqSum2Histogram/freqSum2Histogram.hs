@@ -1,15 +1,15 @@
 import qualified Data.Map.Strict as Map
 import Data.Monoid ((<>))
-import RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..), setNrCalledSites, showHistogram)
+import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..), setNrCalledSites, showHistogram)
 import qualified Options.Applicative as OP
 import qualified Pipes.Text.IO as PT
 import qualified Pipes.Prelude as P
 import Pipes.Attoparsec (parsed)
 import Data.Int (Int64)
-import Control.Error (scriptIO, runScript, tryRight, left)
+import Control.Error (scriptIO, runScript, tryRight, throwE)
 import qualified Data.Text.IO as T
 import Control.Foldl (purely, Fold(..))
-import FreqSumEntry (FreqSumEntry(..), parseFreqSumEntry)
+import Rarecoal.FreqSumEntry (FreqSumEntry(..), parseFreqSumEntry)
 
 data MyOpts = MyOpts [Int] Int [Int] Int64 Bool
 
@@ -40,7 +40,7 @@ runWithOptions :: MyOpts -> IO ()
 runWithOptions (MyOpts nVec maxM popIndices nrCalledSites globalMax) = runScript $ do
     (patternHist, res) <- purely P.fold' buildPatternHist (parsed parseFreqSumEntry PT.stdin)
     case res of
-        Left (err, _) -> left $ "Parsing error: " ++ show err
+        Left (err, _) -> throwE $ "Parsing error: " ++ show err
         Right () -> return ()
     let hist = RareAlleleHistogram (selectFromList popIndices nVec) 0 maxM globalMax [] patternHist
     hist' <- tryRight $ setNrCalledSites nrCalledSites hist

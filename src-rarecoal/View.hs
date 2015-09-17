@@ -2,7 +2,7 @@ module View (runView, ViewOpt(..)) where
 
 import Data.Int (Int64)
 import Control.Error (Script, scriptIO, tryRight)
-import RareAlleleHistogram (reduceIndices, combineIndices, setNrCalledSites,
+import Rarecoal.RareAlleleHistogram (reduceIndices, combineIndices, setNrCalledSites,
                             filterMaxAf, readHistogramFromHandle, showHistogram)
 import Control.Monad ((<=<))
 import System.IO (stdin, openFile, IOMode(..))

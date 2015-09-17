@@ -1,6 +1,6 @@
 module Logl (computeLikelihood, runLogl, LoglOpt(..), InitialParams(..)) where
 
-import RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..), loadHistogram)
+import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..), loadHistogram)
 import Utils (computeAllConfigs)
 import Core (getProb, ModelSpec(..), ModelEvent(..))
 import Data.Int (Int64)

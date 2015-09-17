@@ -2,8 +2,8 @@ import qualified Options.Applicative as OP
 import qualified Pipes.Text.IO as PT
 import Pipes (runEffect, for, lift)
 import Pipes.Attoparsec (parsed)
-import Control.Error (runScript, left, tryAssert, scriptIO, Script)
-import FreqSumEntry (FreqSumEntry(..), parseFreqSumEntry)
+import Control.Error (runScript, tryAssert, scriptIO, Script, throwE)
+import Rarecoal.FreqSumEntry (FreqSumEntry(..), parseFreqSumEntry)
 import Control.Monad ((>=>))
 import System.Random (randomIO)
 
@@ -25,7 +25,7 @@ runWithOptions (MyOpts position nBefore nAfter) = runScript $ do
     let freqSums = parsed parseFreqSumEntry PT.stdin
     res <- runEffect $ for freqSums $ lift . downSample position nBefore nAfter >=> lift . scriptIO . putStrLn . show
     case res of
-        Left (err, _) -> left $ "Parsing error: " ++ show err
+        Left (err, _) -> throwE $ "Parsing error: " ++ show err
         Right () -> return ()
 
 downSample :: Int -> Int -> Int -> FreqSumEntry -> Script FreqSumEntry

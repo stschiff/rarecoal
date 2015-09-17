@@ -11,7 +11,7 @@ import Control.Lens (view)
 import Data.Attoparsec.Text (Parser, char, decimal, letter, notInClass, parseOnly, sepBy1, takeWhile)
 import Prelude hiding (takeWhile, mconcat)
 import Control.Monad (replicateM_)
-import FreqSumEntry (FreqSumEntry(..))
+import Rarecoal.FreqSumEntry (FreqSumEntry(..))
 
 data VCFentry = VCFentry T.Text Int Char Char [(Char,Char)]
 

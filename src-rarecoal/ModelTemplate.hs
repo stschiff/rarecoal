@@ -4,8 +4,7 @@ module ModelTemplate (InitialParams(..), getInitialParams, ModelTemplate(..), re
 import Data.String.Utils (replace)
 import Data.List.Split (splitOn)
 import Control.Monad (unless)
-import Control.Error (Script, scriptIO, tryRight, readErr, justErr, tryJust)
-import Control.Monad.Trans.Either (left, right)
+import Control.Error (Script, scriptIO, tryRight, readErr, justErr, tryJust, throwE)
 import Core (getTimeSteps, ModelSpec(..), ModelEvent(..), EventType(..))
 import qualified Data.Vector.Unboxed as V
 import Text.Parsec.String (parseFromFile, Parser)
@@ -49,8 +48,8 @@ readModelTemplate :: FilePath -> Double -> [Double] -> Script ModelTemplate
 readModelTemplate path theta timeSteps = do
     parseResult <- scriptIO $ parseFromFile parseModelTemplate path
     (names, events, constraints) <- case parseResult of
-        Left p -> left $ show p
-        Right p -> right p
+        Left p -> throwE $ show p
+        Right p -> return p
     return $ ModelTemplate names theta timeSteps events constraints
 
 parseModelTemplate :: Parser ([String], [EventTemplate], [ConstraintTemplate])
