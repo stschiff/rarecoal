@@ -70,6 +70,49 @@ executable vcf2FreqSum
   default-language:    Haskell2010
   ghc-options:         -fno-ignore-asserts
 
+executable groupFreqSum
+  main-is:             groupFreqSum.hs
+  build-depends:       base,
+                       split,
+                       optparse-applicative,
+                       pipes,
+                       errors,
+                       text,
+                       pipes-text,
+                       pipes-attoparsec,
+                       attoparsec
+  default-language:    Haskell2010
+  ghc-options:         -fno-ignore-asserts
+
+executable extractInFreqSum
+  main-is:             extractInFreqSum.hs
+  build-depends:       base,
+                       split,
+                       optparse-applicative,
+                       pipes,
+                       errors,
+                       text,
+                       pipes-text,
+                       pipes-attoparsec,
+                       attoparsec
+  default-language:    Haskell2010
+  ghc-options:         -fno-ignore-asserts
+
+executable downSampleFreqSum
+  main-is:             downSampleFreqSum.hs
+  build-depends:       base,
+                       split,
+                       optparse-applicative,
+                       pipes,
+                       errors,
+                       text,
+                       pipes-text,
+                       pipes-attoparsec,
+                       attoparsec,
+                       random
+  default-language:    Haskell2010
+  ghc-options:         -fno-ignore-asserts
+
 executable mergeFreqSum
   main-is:             mergeFreqSum.hs
   build-depends:       base,
