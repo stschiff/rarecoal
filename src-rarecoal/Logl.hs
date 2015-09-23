@@ -1,22 +1,21 @@
-module Logl (computeLikelihood, runLogl, LoglOpt(..)) where
+module Logl (computeLikelihood, runLogl, LoglOpt(..), InitialParams(..)) where
 
-import RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..), loadHistogram)
+import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..), loadHistogram)
 import Utils (computeAllConfigs)
 import Core (getProb, ModelSpec(..), ModelEvent(..))
 import Data.Int (Int64)
-import ModelTemplate (getModelSpec)
-import Control.Error (Script, scriptIO, assertErr)
+import ModelTemplate (getModelSpec, InitialParams(..))
+import Control.Error (Script, scriptIO, assertErr, tryRight)
 import qualified Data.Map.Strict as Map
-import Control.Parallel.Strategies (rdeepseq, parMap, parListChunk, using)
-import Control.Monad.Trans.Either (hoistEither)
-import Debug.Trace (trace)
+import Control.Parallel.Strategies (rdeepseq, parMap)
+-- import Debug.Trace (trace)
 import Control.Monad (when)
 
 data LoglOpt = LoglOpt {
    loSpectrumPath :: FilePath,
    loTheta :: Double,
    loTemplatePath :: FilePath,
-   loParams :: [Double],
+   loParams :: InitialParams,
    loModelEvents :: [ModelEvent],
    loLinGen :: Int,
    loMinAf :: Int,
@@ -31,17 +30,17 @@ runLogl :: LoglOpt -> Script ()
 runLogl opts = do
     modelSpec <- getModelSpec (loTemplatePath opts) (loTheta opts) (loParams opts) (loModelEvents opts) (loLinGen opts)
     hist <- loadHistogram (loIndices opts) (loMinAf opts) (loMaxAf opts) (loConditionOn opts) (loNrCalledSites opts) (loHistPath opts)
-    val <- hoistEither $ computeLikelihood modelSpec hist
+    val <- tryRight $ computeLikelihood modelSpec hist False
     scriptIO $ print val
-    writeSpectrumFile (loSpectrumPath opts) modelSpec hist
+    writeSpectrumFile (loSpectrumPath opts) modelSpec False hist
 
-computeLikelihood :: ModelSpec -> RareAlleleHistogram -> Either String Double
-computeLikelihood modelSpec histogram = do
+computeLikelihood :: ModelSpec -> RareAlleleHistogram -> Bool -> Either String Double
+computeLikelihood modelSpec histogram noShortcut = do
     assertErr "minFreq must be greater than 0" $ raMinAf histogram > 0
     assertErr "maxType of histogram must be global" $ raGlobalMax histogram
     standardOrder <- computeStandardOrder histogram
     let nVec = raNVec histogram
-    patternProbs <- sequence $ parMap rdeepseq (getProb modelSpec nVec) standardOrder
+    patternProbs <- sequence $ parMap rdeepseq (getProb modelSpec nVec noShortcut) standardOrder
     -- patternProbs <- sequence $ parMapChunk rdeepseq (getProb modelSpec nVec) standardOrder
     -- trace (show $ zip standardOrder patternProbs) $ return ()
     let patternCounts = map (defaultLookup . Pattern) standardOrder
@@ -50,14 +49,13 @@ computeLikelihood modelSpec histogram = do
     return $ ll + fromIntegral otherCounts * log (1.0 - sum patternProbs)
   where
     defaultLookup sitePattern = Map.findWithDefault 0 sitePattern (raCounts histogram)
-    parMapChunk strat f = (`using` (parListChunk 20) strat) . map f
 
-writeSpectrumFile :: FilePath -> ModelSpec -> RareAlleleHistogram -> Script ()
-writeSpectrumFile spectrumFile modelSpec histogram = 
+writeSpectrumFile :: FilePath -> ModelSpec -> Bool -> RareAlleleHistogram -> Script ()
+writeSpectrumFile spectrumFile modelSpec noShortcut histogram = 
     when (spectrumFile /= "/dev/null") $ do
-        standardOrder <- hoistEither $ computeStandardOrder histogram
+        standardOrder <- tryRight $ computeStandardOrder histogram
         let nVec = raNVec histogram
-        vec <- hoistEither $ sequence $ parMap rdeepseq (getProb modelSpec nVec) standardOrder
+        vec <- tryRight $ sequence $ parMap rdeepseq (getProb modelSpec nVec noShortcut) standardOrder
         scriptIO $ writeFile spectrumFile $ unlines $ zipWith (\p val -> show (Pattern p) ++ "\t" ++ show val) standardOrder vec
 
 computeStandardOrder :: RareAlleleHistogram -> Either String [[Int]]

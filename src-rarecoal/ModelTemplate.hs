@@ -1,16 +1,16 @@
-module ModelTemplate (ModelTemplate(..), readModelTemplate, instantiateModel, getModelSpec) where
+module ModelTemplate (InitialParams(..), getInitialParams, ModelTemplate(..), readModelTemplate, instantiateModel,      
+                      getModelSpec) where
 
 import Data.String.Utils (replace)
 import Data.List.Split (splitOn)
-import Control.Monad (liftM, unless)
-import Control.Error (Script, scriptIO)
-import Control.Error.Safe (assertErr, readErr, justErr)
-import Control.Monad.Trans.Either (hoistEither, left, right)
-import Core (defaultTimes, getTimeSteps, ModelSpec(..), ModelEvent(..), EventType(..))
+import Control.Monad (unless)
+import Control.Error (Script, scriptIO, tryRight, readErr, justErr, tryJust, throwE)
+import Core (getTimeSteps, ModelSpec(..), ModelEvent(..), EventType(..))
 import qualified Data.Vector.Unboxed as V
 import Text.Parsec.String (parseFromFile, Parser)
 import Text.Parsec.Char (char, newline, letter, oneOf, noneOf, space, alphaNum)
 import Text.Parsec (sepBy, many)
+import System.Log.Logger (infoM)
 
 data ModelTemplate = ModelTemplate {
     mtParams :: [String],
@@ -20,23 +20,36 @@ data ModelTemplate = ModelTemplate {
     mtConstraintTemplates :: [ConstraintTemplate]
 }
 
-data EventTemplate = EventTemplate {
-    etType :: Char,
-    etBody :: String
-}
+data EventTemplate = EventTemplate Char String
 
-data ConstraintTemplate = ConstraintTemplate {
-    ctName1 :: String,
-    ctComp :: Char,
-    ctName2 :: String
-}
+data ConstraintTemplate = ConstraintTemplate String Char String
 
+data InitialParams = InitialParamsList [Double] | InitialParamsFile FilePath
+
+getInitialParams :: ModelTemplate -> InitialParams -> Script (V.Vector Double)
+getInitialParams modelTemplate params = do
+    case params of
+        InitialParamsList x -> return . V.fromList $ x
+        InitialParamsFile path -> do
+            l <- lines <$> (scriptIO . readFile $ path)
+            ret <- if (head . head $ l) == '#' then
+                    loadFromDict [(k, read $ v !! 2) | (k : v) <- map words . drop 3 $ l]
+                else
+                    loadFromDict [(k, read v) | [k, v] <- map words $ l]
+            scriptIO . infoM "rarecoal" $ "initial parameters loaded: " ++ show ret
+            return ret
+  where
+    loadFromDict dict = do
+        let err = "parameters in the initialParams-file do not match the parameters in the modelTemplate"
+        x <- tryJust err . mapM (`lookup` dict) $ mtParams modelTemplate
+        return . V.fromList $ x
+        
 readModelTemplate :: FilePath -> Double -> [Double] -> Script ModelTemplate
 readModelTemplate path theta timeSteps = do
     parseResult <- scriptIO $ parseFromFile parseModelTemplate path
     (names, events, constraints) <- case parseResult of
-        Left p -> left $ show p
-        Right p -> right p
+        Left p -> throwE $ show p
+        Right p -> return p
     return $ ModelTemplate names theta timeSteps events constraints
 
 parseModelTemplate :: Parser ([String], [EventTemplate], [ConstraintTemplate])
@@ -53,10 +66,7 @@ parseParams = do
     return names
 
 parseParamName :: Parser String
-parseParamName = do
-    s <- letter
-    s' <- many alphaNum
-    return (s:s')
+parseParamName = (:) <$> letter <*> many alphaNum
 
 parseEvents :: Parser [EventTemplate]
 parseEvents = many $ do
@@ -108,6 +118,7 @@ instantiateEvent pnames params (EventTemplate et body) = do
             l <- readErr err $ fields!!2
             r <- readErr err $ fields!!3
             return $ ModelEvent t (SetMigration k l r)
+        _   -> Left "cannot parse modelTemplate Event"
 
 validateConstraint :: [String] -> [Double] -> ConstraintTemplate -> Either String ()
 validateConstraint pNames params (ConstraintTemplate name1 comp name2) = do
@@ -126,11 +137,12 @@ substituteParams (name:names) (p:ps) s =
     in  substituteParams names ps newS
 substituteParams _ _ _ = Left "wrong number of params for modelTemplate"
 
-getModelSpec :: FilePath -> Double -> [Double] -> [ModelEvent] -> Int -> Script ModelSpec
+getModelSpec :: FilePath -> Double -> InitialParams -> [ModelEvent] -> Int -> Script ModelSpec
 getModelSpec path theta params events lingen =
     let times = getTimeSteps 20000 lingen 20.0
     in  if path /= "/dev/null" then do
             template <- readModelTemplate path theta times
-            hoistEither $ instantiateModel template (V.fromList params)
+            x <- getInitialParams template params
+            tryRight $ instantiateModel template x
         else
             return $ ModelSpec times theta events

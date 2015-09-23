@@ -4,15 +4,13 @@ module Core (defaultTimes, getTimeSteps, getProb, validateModel, ModelEvent(..),
 
 import Control.Monad.Trans.State.Lazy (State, get, put, execState)
 import Data.List (sortBy)
-import Debug.Trace (trace)
-import Utils (computeAllConfigs)
+-- import Debug.Trace (trace)
 import Control.Monad (when, foldM, forM_)
 import qualified Data.Vector.Unboxed as V
-import qualified Data.Vector as VB
 import Data.Vector.Unboxed.Base (Unbox)
 import qualified Data.IntMap as M
 import Control.Error.Safe (assertErr)
-import Control.Lens ((%~), ix, (&), makeLenses, use, (%=), uses, (+~),
+import Control.Lens (ix, (&), makeLenses, use, (%=), uses, (+~),
                      (-~), (*=), (+=), _1, _2, _3, (.=), (^.))
 import Data.MemoCombinators (arrayRange)
 import Control.Exception.Base (assert)
@@ -88,13 +86,13 @@ getTimeSteps n0 lingen tMax =
     getTimeStep alpha nr_steps i =
         alpha * exp (fromIntegral i / fromIntegral nr_steps * log (1.0 + tMax / alpha)) - alpha
 
-getProb :: ModelSpec -> [Int] -> [Int] -> Either String Double
-getProb modelSpec nVec config = do
+getProb :: ModelSpec -> [Int] -> Bool -> [Int] -> Either String Double
+getProb modelSpec nVec noShortcut config = do
     validateModel modelSpec
     let timeSteps = mTimeSteps modelSpec
         ims = makeInitModelState modelSpec (length nVec)
         ics = makeInitCoalState nVec config
-        (_, fcs) = execState (propagateStates timeSteps) (ims, ics)
+        (_, fcs) = execState (propagateStates timeSteps noShortcut) (ims, ics)
         combFac = product $ zipWith choose nVec config
         err = "Overflow Error in getProb for nVec=" ++ show nVec ++ ", kVec=" ++ show config
     assertErr err $ combFac > 0
@@ -171,13 +169,13 @@ fillStateSpace jointStateSpace b =
             let maxVal = vec_ ! i
             in if maxVal == 0 then [vec_] else [vec_ // [(i, val)] | val <- [0..maxVal]]
 
-propagateStates :: [Double] -> State (ModelState, CoalState) ()
-propagateStates [] = return ()
-propagateStates (nextTime:restTimes) = do
+propagateStates :: [Double] -> Bool -> State (ModelState, CoalState) ()
+propagateStates [] _ = return ()
+propagateStates (nextTime:restTimes) noShortcut = do
     useShortcut <- canUseShortcut
-    if useShortcut then propagateStateShortcut else do
+    if (useShortcut && not noShortcut) then propagateStateShortcut else do
         singleStep nextTime
-        propagateStates restTimes
+        propagateStates restTimes noShortcut
 
 canUseShortcut :: State (ModelState, CoalState) Bool
 canUseShortcut = do
@@ -194,7 +192,7 @@ canUseShortcut = do
 
 propagateStateShortcut :: State (ModelState, CoalState) ()
 propagateStateShortcut = do
-    nrA <- uses (_2 . csA) (round . V.sum)
+    nrA <- uses (_2 . csA) V.sum
     b <- use $ _2 . csB
     idToState <- use $ _2 . csStateSpace . jsIdToState
     let additionalBranchLength = sum [prob * goState nrA (idToState xId) | (xId, prob) <- M.toList b, prob > 0.0]
@@ -206,10 +204,10 @@ propagateStateShortcut = do
         let nrDerived = assert ((V.length . V.filter (>0)) x == 1) $ V.sum x
         in  singlePopMutBranchLength nrA nrDerived
         
-singlePopMutBranchLength :: Int -> Int -> Double
+singlePopMutBranchLength :: Double -> Int -> Double
 singlePopMutBranchLength nrA nrDerived =
     let withCombinatorics = 2.0 / fromIntegral nrDerived
-        combFactor = choose (nrA + nrDerived) nrDerived
+        combFactor = chooseCont (nrA + fromIntegral nrDerived) nrDerived
     in  withCombinatorics / combFactor
 
 singleStep :: Double -> State (ModelState, CoalState) ()
@@ -252,8 +250,6 @@ performEvent = do
             when (not (null migList)) $ _1 . msMigrationRates . ix (head migList) . _3 .= m
             _1 . msMigrationRates %= filter (\(_,_,m) -> m > 0.0)
     _1 . msEventQueue .= tail events
-  where
-    deleteFromList index l = [v | (v, i) <- zip l [0..], i /= index]
 
 popJoin :: Int -> Int -> State (ModelState, CoalState) ()
 popJoin k l = do
@@ -333,7 +329,6 @@ updateB deltaT = do
         let x1ups = stateSpace ^. jsX1up $ xId
             b1ups = V.fromList [M.findWithDefault 0.0 x1up b | x1up <- x1ups]
             x = stateSpace ^. jsIdToState $ xId
-            nrPop = V.length x
             x' = V.map fromIntegral x
             -- t1s = V.zipWith4 t1func x' popSize midPointA freezeState
             t1s = V.zipWith4 t1func x' popSize a freezeState
@@ -386,4 +381,9 @@ validateModel (ModelSpec _ _ events) = do
 choose :: Int -> Int -> Double
 choose _ 0 = 1
 choose n k = product [fromIntegral (n + 1 - j) / fromIntegral j | j <- [1..k]]
+
+-- see https://en.wikipedia.org/wiki/Binomial_coefficient
+chooseCont :: Double -> Int -> Double
+chooseCont _ 0 = 1
+chooseCont n k = product [(n + 1.0 - fromIntegral j) / fromIntegral j | j <- [1..k]]
 

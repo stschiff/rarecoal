@@ -1,22 +1,17 @@
 import qualified Data.Map.Strict as Map
-import Control.Applicative ((<$>), (<*>))
-import Data.Monoid (mempty, (<>))
-import RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..), setNrCalledSites, showHistogram)
+import Data.Monoid ((<>))
+import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..), setNrCalledSites, showHistogram)
 import qualified Options.Applicative as OP
-import Pipes ((>->))
+import qualified Pipes.Text.IO as PT
 import qualified Pipes.Prelude as P
-import FreqSumEntry (FreqSumEntry(..))
+import Pipes.Attoparsec (parsed)
 import Data.Int (Int64)
-import Control.Error.Script (scriptIO, runScript)
-import Control.Monad.Trans.Either (hoistEither)
+import Control.Error (scriptIO, runScript, tryRight, throwE)
+import qualified Data.Text.IO as T
+import Control.Foldl (purely, Fold(..))
+import Rarecoal.FreqSumEntry (FreqSumEntry(..), parseFreqSumEntry)
 
-data MyOpts = MyOpts {
-    optNVec:: [Int],
-    optMaxM :: Int,
-    optPopIndices :: [Int],
-    optNrCalledSites :: Int64,
-    globalMax :: Bool
-}
+data MyOpts = MyOpts [Int] Int [Int] Int64 Bool
 
 main :: IO ()
 main = OP.execParser opts >>= runWithOptions
@@ -43,23 +38,21 @@ parser = MyOpts <$> OP.option OP.auto (OP.short 'n' <> OP.long "nVec" <> OP.meta
 
 runWithOptions :: MyOpts -> IO ()
 runWithOptions (MyOpts nVec maxM popIndices nrCalledSites globalMax) = runScript $ do
-    let prod = P.stdinLn >-> P.map (mkPat maxM popIndices globalMax)
-    res <- scriptIO $ P.fold insertPattern Map.empty id prod
-    let hist = RareAlleleHistogram (selectFromList nVec popIndices) 0 maxM globalMax [] res
-    hist' <- hoistEither $ setNrCalledSites nrCalledSites hist 
-    outs <- hoistEither $ showHistogram hist'
-    scriptIO $ putStr outs
-
-mkPat :: Int -> [Int] -> Bool -> String -> SitePattern
-mkPat maxM popIndices globalMax line =
-    let pattern = selectFromList (fsCounts $ read line) popIndices
-    in if filterPattern pattern then Higher else Pattern pattern
+    (patternHist, res) <- purely P.fold' buildPatternHist (parsed parseFreqSumEntry PT.stdin)
+    case res of
+        Left (err, _) -> throwE $ "Parsing error: " ++ show err
+        Right () -> return ()
+    let hist = RareAlleleHistogram (selectFromList popIndices nVec) 0 maxM globalMax [] patternHist
+    hist' <- tryRight $ setNrCalledSites nrCalledSites hist
+    outs <- tryRight $ showHistogram hist'
+    scriptIO $ T.putStr outs
   where
-    filterPattern = if globalMax then (>maxM) . sum else any (>maxM)
+    buildPatternHist = Fold step Map.empty id
+    step m fse = Map.insertWith (\_ v -> v + 1) (mkPat fse) 1 m
+    mkPat = makePattern . selectFromList popIndices . fsCounts
+    makePattern vec = if isHigherAF vec then Higher else Pattern vec
+    isHigherAF = if globalMax then (>maxM) . sum else any (>maxM)
 
-insertPattern :: Map.Map SitePattern Int64 -> SitePattern -> Map.Map SitePattern Int64
-insertPattern m p = Map.insertWith (\_ v -> v + 1) p 1 m
-
-selectFromList :: [a] -> [Int] -> [a]
-selectFromList l [] = l
-selectFromList l i = map (l!!) i
+selectFromList :: [Int] -> [a] -> [a]
+selectFromList [] v = v
+selectFromList i v = map (v !!) i

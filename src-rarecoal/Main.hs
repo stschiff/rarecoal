@@ -1,5 +1,5 @@
 import Data.List.Split (splitOn)
-import Control.Applicative ((<$>), (<*>), many, (<|>))
+import Control.Applicative (many, (<|>))
 import qualified Options.Applicative as OP
 import Data.Monoid ((<>))
 import Logl (runLogl, LoglOpt(..))
@@ -13,9 +13,9 @@ import Data.Time.Clock (getCurrentTime)
 import Core (ModelEvent(..), EventType(..))
 import Control.Error.Script (runScript, scriptIO)
 import Data.Int (Int64)
-import Debug.Trace (trace)
-import RareAlleleHistogram (SitePattern(..))
-import Control.Monad.Trans.Reader (ask)
+-- import Debug.Trace (trace)
+import Rarecoal.RareAlleleHistogram (SitePattern(..))
+import ModelTemplate (InitialParams(..))
 
 data Options = Options Command
 
@@ -78,8 +78,8 @@ parseMinAf = OP.option OP.auto $ OP.long "minAf" <> OP.metavar "<INT>"
 parseMaxAf :: OP.Parser Int
 parseMaxAf = OP.option OP.auto $ OP.short 'm' <> OP.long "max_af"
                                               <> OP.metavar "INT"
-                                              <> OP.value 10 <> OP.showDefault
-                                              <> OP.help "set the maximum allele frequency"
+                                              <> OP.value 0 <> OP.showDefault
+                                              <> OP.help "set the maximum allele frequency [leave 0 to read maxAf from histogram]"
 
 parseNrCalledSites :: OP.Parser Int64
 parseNrCalledSites = OP.option OP.auto $ OP.short 'N' <> OP.long "nr_called_sites"
@@ -91,7 +91,7 @@ parseGlobal :: OP.Parser Bool
 parseGlobal = OP.switch (OP.long "globalMax" <> OP.short 'g' <> OP.help "constrain global allele frequency")
 
 parseHistPath :: OP.Parser FilePath
-parseHistPath = OP.option OP.str $ OP.short 'i' <> OP.long "input"
+parseHistPath = OP.strOption $ OP.short 'i' <> OP.long "input"
                                                 <> OP.metavar "<Input File>" <> OP.help "Input File, use - for stdin"
 
 withInfo :: OP.Parser a -> String -> OP.ParserInfo a
@@ -112,14 +112,21 @@ parseTheta = OP.option OP.auto $ OP.short 't' <> OP.long "theta"
                                               <> OP.help "set the scaled mutation rate"
 
 parseTemplateFilePath :: OP.Parser FilePath
-parseTemplateFilePath = OP.option OP.str $ OP.short 'T' <> OP.long "template" <> OP.metavar "<Input Template File>" <> OP.value "/dev/null"
+parseTemplateFilePath = OP.strOption $ OP.short 'T' <> OP.long "template" <> OP.metavar "<Input Template File>" <> OP.value "/dev/null"
                                                               <> OP.help "Specify that the model should be read from a template file"
 
-parseParams :: OP.Parser [Double]
-parseParams = OP.option OP.auto $ OP.short 'x' <> OP.long "params"
-                                               <> OP.metavar "[p1,p2,...]"
-                                               <> OP.value [] <> OP.showDefault
-                                               <> OP.help "initial parameters for the template"
+parseParams :: OP.Parser InitialParams
+parseParams = (InitialParamsList <$> parseInitialParamsList) <|> (InitialParamsFile <$> parseInitialParamsFile)
+
+parseInitialParamsList :: OP.Parser [Double]
+parseInitialParamsList = OP.option OP.auto $ OP.short 'x' <> OP.long "params" <>
+                         OP.metavar "[p1,p2,...]" <>
+                         OP.help "initial parameters for the template"
+
+parseInitialParamsFile :: OP.Parser FilePath
+parseInitialParamsFile = OP.strOption $ OP.long "paramsFile" <>
+                         OP.metavar "<FILE>" <>
+                         OP.help "file with initial parameters, can be maxl- or mcmc-output"
 
 parseModelEvents :: OP.Parser [ModelEvent]
 parseModelEvents = many parseEvent
@@ -177,7 +184,7 @@ parseLoglOpt = LoglOpt <$> parseSpectrumPath <*> parseTheta <*> parseTemplateFil
                                  <*> parseNrCalledSites <*> parseIndices <*> parseHistPath
 
 parseSpectrumPath :: OP.Parser FilePath
-parseSpectrumPath = OP.option OP.str $ OP.short 's' <> OP.long "spectrumFile"
+parseSpectrumPath = OP.strOption $ OP.short 's' <> OP.long "spectrumFile"
                                                 <> OP.metavar "<Output Spectrum File>"
                                                 <> OP.value "/dev/null" <> OP.showDefault
                                                 <> OP.help "Output the allele frequencies to file"
@@ -187,7 +194,7 @@ parseMaxl :: OP.Parser Command
 parseMaxl = CmdMaxl <$> parseMaxlOpt
 
 parseMaxlOpt :: OP.Parser MaxlOpt
-parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams <*> parseMaxCycles
+parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams <*> parseMaxCycles <*> parseNrRestarts
                        <*> parseTraceFilePath  <*> parseMinAf <*> parseMaxAf <*> parseConditioning
                        <*> parseNrCalledSites <*> parseLinGen <*> parseIndices <*> parseHistPath
   where
@@ -195,9 +202,13 @@ parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams 
                                                       <> OP.metavar "<NR_MAX_CYCLES>"
                                                       <> OP.value 10000 <> OP.showDefault
                                                       <> OP.help "Specifies the maximum number of cycles in the minimization routine"
+    parseNrRestarts = OP.option OP.auto $ OP.long "nrRestarts"
+                                                      <> OP.metavar "<NR_Restarts>"
+                                                      <> OP.value 5 <> OP.showDefault
+                                                      <> OP.help "Specifies the number of restarts of the minimization routine"
 
 parseTraceFilePath :: OP.Parser FilePath
-parseTraceFilePath = OP.option OP.str $ OP.short 'f' <> OP.long "traceFile" <> OP.metavar "<FILE>"
+parseTraceFilePath = OP.strOption $ OP.short 'f' <> OP.long "traceFile" <> OP.metavar "<FILE>"
                                                             <> OP.value "/dev/null" <> OP.showDefault
                                                             <> OP.help "The file to write the trace"
 
@@ -211,7 +222,9 @@ parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams
                        <*> parseIndices
                        <*> parseHistPath <*> parseRandomSeed <*> parseBranchAges
   where
-    parseRandomSeed = OP.option OP.auto $ OP.short 'S' <> OP.long "seed" <> OP.metavar "<INT>" <> OP.help "Random Seed"
+    parseRandomSeed = OP.option OP.auto $ OP.short 'S' <> OP.long "seed" <> OP.metavar "<INT>" <> OP.value 0 <> 
+                      OP.showDefault <>
+                      OP.help "Random Seed, set to zero to determine the seed from the machine clock"
     parseNrCycles = OP.option OP.auto $ OP.long "cycles" <> OP.short 'c' <> OP.value 1000 <> OP.metavar "<INT>"
                                                                <> OP.help "nr of MCMC cycles" <> OP.showDefault
     parseBranchAges = OP.option OP.auto $ OP.long "branchAges" <> OP.short 'b' <> OP.metavar "<LIST>"
@@ -226,12 +239,16 @@ parseConditioning = OP.option OP.auto $ OP.long "conditionOn" <> OP.metavar "<Li
 parseFind :: OP.Parser Command
 parseFind = CmdFind <$> parseFindOpt
 
-parseFindOpt = FindOpt <$> parseQueryIndex <*> parseBranchAge <*> parseDeltaTime <*> parseMaxTime <*> parseTheta
+parseFindOpt = FindOpt <$> parseQueryIndex <*> parseEvalFile <*> parseBranchAge <*> parseDeltaTime <*> parseMaxTime
+                       <*> parseTheta
                        <*> parseTemplateFilePath <*> parseParams <*> parseModelEvents <*> parseMinAf <*> parseMaxAf
-                       <*> parseConditioning <*> parseNrCalledSites <*> parseLinGen <*> parseIndices <*> parseIgnoreList <*> parseHistPath
+                       <*> parseConditioning <*> parseNrCalledSites <*> parseLinGen <*> parseIndices
+                       <*> parseIgnoreList <*> parseHistPath <*> parseNoShortcut
   where
     parseQueryIndex = OP.option OP.auto $ OP.short 'q' <> OP.long "queryIndex" <> OP.metavar "<INT>"
                                                        <> OP.help "index of query branch"
+    parseEvalFile = OP.strOption $ OP.short 'f' <> OP.long "evalFile" <> OP.metavar "<FILE>" <>
+                                   OP.help "file to write the trace to"
     parseBranchAge = OP.option OP.auto $ OP.short 'b' <> OP.long "branchAge" <> OP.metavar "<Double>"
                                                        <> OP.help "sampling age of query branch"
     parseDeltaTime = OP.option OP.auto $ OP.long "deltaTime" <> OP.metavar "<Double>" <> OP.showDefault
@@ -241,6 +258,8 @@ parseFindOpt = FindOpt <$> parseQueryIndex <*> parseBranchAge <*> parseDeltaTime
     parseIgnoreList = OP.option (OP.str >>= readIgnoreList) $ OP.long "exclude" <> OP.metavar "<list of lists>"
                                                             <> OP.help "ignore patterns" <> OP.value []
                                                             <> OP.showDefault
+    parseNoShortcut = OP.switch $ OP.long "noShortcut" <>
+                                  OP.help "do not use shortcut if all lineages are in one population"
     readIgnoreList s = do
         let ll = read s :: [[Int]]
         return $ map Pattern ll
