@@ -1,13 +1,14 @@
 module Prob (runProb, ProbOpt(..)) where
 
-import ModelTemplate (getModelSpec, InitialParams(..))
+import ModelTemplate (getModelSpec)
 import Core (getProb, ModelEvent(..))
 import Control.Error (Script, scriptIO, tryRight)
 
 data ProbOpt = ProbOpt {
     prTheta :: Double,
     prTemplatePath :: FilePath,
-    prParams :: InitialParams,
+    prParamsFile :: FilePath,
+    prParams :: [Double],
     prModelEvents :: [ModelEvent],
     prLinGen :: Int,
     prNvec :: [Int],
@@ -16,6 +17,6 @@ data ProbOpt = ProbOpt {
 
 runProb :: ProbOpt -> Script ()
 runProb opts = do
-    modelSpec <- getModelSpec (prTemplatePath opts) (prTheta opts) (prParams opts) (prModelEvents opts) (prLinGen opts)
+    modelSpec <- getModelSpec (prTemplatePath opts) (prTheta opts) (prParamsFile opts) (prParams opts) (prModelEvents opts) (prLinGen opts)
     val <- tryRight $ getProb modelSpec (prNvec opts) False (prKvec opts)
     scriptIO $ print val     

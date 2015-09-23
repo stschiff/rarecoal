@@ -1,6 +1,6 @@
 module Mcmc (runMcmc, McmcOpt(..)) where
 
-import ModelTemplate (ModelTemplate(..), readModelTemplate, InitialParams(..), getInitialParams)
+import ModelTemplate (ModelTemplate(..), readModelTemplate, getInitialParams)
 import Core (getTimeSteps, ModelEvent(..), EventType(..)) 
 import qualified Data.Vector.Unboxed as V
 import qualified System.Random as R
@@ -24,7 +24,8 @@ import Control.Monad.Loops (whileM)
 data McmcOpt = McmcOpt {
    mcTheta :: Double,
    mcTemplatePath :: FilePath,
-   mcInitialParams :: InitialParams,
+   mcInitialParamsFile :: FilePath,
+   mcInitialParams :: [Double],
    mcNrCycles :: Int,
    mcTracePath :: FilePath,
    mcMinAf :: Int,
@@ -55,7 +56,7 @@ runMcmc opts = do
     modelTemplate <- readModelTemplate (mcTemplatePath opts) (mcTheta opts) times
     hist <- loadHistogram (mcIndices opts) (mcMinAf opts) (mcMaxAf opts) (mcConditionOn opts) (mcNrCalledSites opts) (mcHistPath opts)
     let extraEvents = concat [[ModelEvent 0.0 (SetFreeze k True), ModelEvent t (SetFreeze k False)] | (t, k) <- zip (mcBranchAges opts) [0..], t > 0]
-    x <- getInitialParams modelTemplate $ mcInitialParams opts
+    x <- getInitialParams modelTemplate (mcInitialParamsFile opts) (mcInitialParams opts)
     _ <- tryRight $ minFunc modelTemplate extraEvents hist x
     let minFunc' = either (const penalty) id . minFunc modelTemplate extraEvents hist
         initV = minFunc' x

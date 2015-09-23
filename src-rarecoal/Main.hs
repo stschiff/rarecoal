@@ -15,7 +15,6 @@ import Control.Error.Script (runScript, scriptIO)
 import Data.Int (Int64)
 -- import Debug.Trace (trace)
 import Rarecoal.RareAlleleHistogram (SitePattern(..))
-import ModelTemplate (InitialParams(..))
 
 data Options = Options Command
 
@@ -101,7 +100,8 @@ parseProb :: OP.Parser Command
 parseProb = CmdProb <$> parseProbOpt
 
 parseProbOpt :: OP.Parser ProbOpt
-parseProbOpt = ProbOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams <*> parseModelEvents <*> parseLinGen
+parseProbOpt = ProbOpt <$> parseTheta <*> parseTemplateFilePath <*> parseInitialParamsFile
+                       <*> parseInitialParamsList <*> parseModelEvents <*> parseLinGen
                        <*> OP.argument OP.auto (OP.metavar "NVec")
                        <*> OP.argument OP.auto (OP.metavar "MVec")
 
@@ -112,20 +112,18 @@ parseTheta = OP.option OP.auto $ OP.short 't' <> OP.long "theta"
                                               <> OP.help "set the scaled mutation rate"
 
 parseTemplateFilePath :: OP.Parser FilePath
-parseTemplateFilePath = OP.strOption $ OP.short 'T' <> OP.long "template" <> OP.metavar "<Input Template File>" <> OP.value "/dev/null"
-                                                              <> OP.help "Specify that the model should be read from a template file"
-
-parseParams :: OP.Parser InitialParams
-parseParams = (InitialParamsList <$> parseInitialParamsList) <|> (InitialParamsFile <$> parseInitialParamsFile)
+parseTemplateFilePath = OP.strOption $ OP.short 'T' <> OP.long "template" <>
+                                       OP.metavar "<Input Template File>" <> OP.value "/dev/null" <> OP.showDefault <>
+                                       OP.help "Specify that the model should be read from a template file"
 
 parseInitialParamsList :: OP.Parser [Double]
 parseInitialParamsList = OP.option OP.auto $ OP.short 'x' <> OP.long "params" <>
-                         OP.metavar "[p1,p2,...]" <>
+                         OP.metavar "[p1,p2,...]" <> OP.value [] <> OP.showDefault <>
                          OP.help "initial parameters for the template"
 
 parseInitialParamsFile :: OP.Parser FilePath
 parseInitialParamsFile = OP.strOption $ OP.long "paramsFile" <>
-                         OP.metavar "<FILE>" <>
+                         OP.metavar "<FILE>" <> OP.value "/dev/null" <> OP.showDefault <>
                          OP.help "file with initial parameters, can be maxl- or mcmc-output"
 
 parseModelEvents :: OP.Parser [ModelEvent]
@@ -179,9 +177,9 @@ parseLogl :: OP.Parser Command
 parseLogl = CmdLogl <$> parseLoglOpt
 
 parseLoglOpt :: OP.Parser LoglOpt
-parseLoglOpt = LoglOpt <$> parseSpectrumPath <*> parseTheta <*> parseTemplateFilePath <*> parseParams
-                                 <*> parseModelEvents <*> parseLinGen <*> parseMinAf <*> parseMaxAf <*> parseConditioning
-                                 <*> parseNrCalledSites <*> parseIndices <*> parseHistPath
+parseLoglOpt = LoglOpt <$> parseSpectrumPath <*> parseTheta <*> parseTemplateFilePath <*> parseInitialParamsFile
+                       <*> parseInitialParamsList <*> parseModelEvents <*> parseLinGen <*> parseMinAf
+                       <*> parseMaxAf <*> parseConditioning <*> parseNrCalledSites <*> parseIndices <*> parseHistPath
 
 parseSpectrumPath :: OP.Parser FilePath
 parseSpectrumPath = OP.strOption $ OP.short 's' <> OP.long "spectrumFile"
@@ -194,7 +192,8 @@ parseMaxl :: OP.Parser Command
 parseMaxl = CmdMaxl <$> parseMaxlOpt
 
 parseMaxlOpt :: OP.Parser MaxlOpt
-parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams <*> parseMaxCycles <*> parseNrRestarts
+parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*> parseInitialParamsFile
+                       <*> parseInitialParamsList <*> parseMaxCycles <*> parseNrRestarts
                        <*> parseTraceFilePath  <*> parseMinAf <*> parseMaxAf <*> parseConditioning
                        <*> parseNrCalledSites <*> parseLinGen <*> parseIndices <*> parseHistPath
   where
@@ -216,7 +215,7 @@ parseMcmc :: OP.Parser Command
 parseMcmc = CmdMcmc <$> parseMcmcOpt
 
 parseMcmcOpt :: OP.Parser McmcOpt
-parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParams
+parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*> parseInitialParamsFile <*> parseInitialParamsList
                        <*> parseNrCycles <*> parseTraceFilePath <*> parseMinAf
                        <*> parseMaxAf <*> parseConditioning <*> parseNrCalledSites <*> parseLinGen
                        <*> parseIndices
@@ -241,7 +240,8 @@ parseFind = CmdFind <$> parseFindOpt
 
 parseFindOpt = FindOpt <$> parseQueryIndex <*> parseEvalFile <*> parseBranchAge <*> parseDeltaTime <*> parseMaxTime
                        <*> parseTheta
-                       <*> parseTemplateFilePath <*> parseParams <*> parseModelEvents <*> parseMinAf <*> parseMaxAf
+                       <*> parseTemplateFilePath <*> parseInitialParamsFile <*> parseInitialParamsList
+                       <*> parseModelEvents <*> parseMinAf <*> parseMaxAf
                        <*> parseConditioning <*> parseNrCalledSites <*> parseLinGen <*> parseIndices
                        <*> parseIgnoreList <*> parseHistPath <*> parseNoShortcut
   where

@@ -1,4 +1,4 @@
-module ModelTemplate (InitialParams(..), getInitialParams, ModelTemplate(..), readModelTemplate, instantiateModel,      
+module ModelTemplate (getInitialParams, ModelTemplate(..), readModelTemplate, instantiateModel,      
                       getModelSpec) where
 
 import Data.String.Utils (replace)
@@ -24,20 +24,16 @@ data EventTemplate = EventTemplate Char String
 
 data ConstraintTemplate = ConstraintTemplate String Char String
 
-data InitialParams = InitialParamsList [Double] | InitialParamsFile FilePath
-
-getInitialParams :: ModelTemplate -> InitialParams -> Script (V.Vector Double)
-getInitialParams modelTemplate params = do
-    case params of
-        InitialParamsList x -> return . V.fromList $ x
-        InitialParamsFile path -> do
-            l <- lines <$> (scriptIO . readFile $ path)
-            ret <- if (head . head $ l) == '#' then
-                    loadFromDict [(k, read $ v !! 2) | (k : v) <- map words . drop 3 $ l]
-                else
-                    loadFromDict [(k, read v) | [k, v] <- map words $ l]
-            scriptIO . infoM "rarecoal" $ "initial parameters loaded: " ++ show ret
-            return ret
+getInitialParams :: ModelTemplate -> FilePath -> [Double] -> Script (V.Vector Double)
+getInitialParams modelTemplate paramsFile x = do
+    if paramsFile == "/dev/null" then return . V.fromList $ x else do
+        l <- lines <$> (scriptIO . readFile $ paramsFile)
+        ret <- if (head . head $ l) == '#' then
+                loadFromDict [(k, read $ v !! 2) | (k : v) <- map words . drop 3 $ l]
+            else
+                loadFromDict [(k, read v) | [k, v] <- map words $ l]
+        scriptIO . infoM "rarecoal" $ "initial parameters loaded: " ++ show ret
+        return ret
   where
     loadFromDict dict = do
         let err = "parameters in the initialParams-file do not match the parameters in the modelTemplate"
@@ -137,12 +133,12 @@ substituteParams (name:names) (p:ps) s =
     in  substituteParams names ps newS
 substituteParams _ _ _ = Left "wrong number of params for modelTemplate"
 
-getModelSpec :: FilePath -> Double -> InitialParams -> [ModelEvent] -> Int -> Script ModelSpec
-getModelSpec path theta params events lingen =
+getModelSpec :: FilePath -> Double -> FilePath -> [Double] -> [ModelEvent] -> Int -> Script ModelSpec
+getModelSpec path theta paramsFile x events lingen =
     let times = getTimeSteps 20000 lingen 20.0
     in  if path /= "/dev/null" then do
             template <- readModelTemplate path theta times
-            x <- getInitialParams template params
-            tryRight $ instantiateModel template x
+            x' <- getInitialParams template paramsFile x
+            tryRight $ instantiateModel template x'
         else
             return $ ModelSpec times theta events

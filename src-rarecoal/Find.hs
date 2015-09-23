@@ -1,6 +1,6 @@
 module Find (runFind, FindOpt(..)) where
 
-import ModelTemplate (getModelSpec, InitialParams(..))
+import ModelTemplate (getModelSpec)
 import Rarecoal.RareAlleleHistogram (loadHistogram, RareAlleleHistogram(..), SitePattern(..))
 import Control.Error (Script, scriptIO, tryAssert, tryRight)
 import Logl (computeLikelihood)
@@ -17,7 +17,8 @@ data FindOpt = FindOpt {
     fiMaxTime :: Double,
     fiTheta :: Double,
     fiTemplatePath :: FilePath,
-    fiParams :: InitialParams,
+    fiParamsFile :: FilePath,
+    fiParams :: [Double],
     fiModelEvents :: [ModelEvent],
     fiMinAf :: Int,
     fiMaxAf :: Int,
@@ -32,7 +33,7 @@ data FindOpt = FindOpt {
 
 runFind :: FindOpt -> Script ()
 runFind opts = do
-    modelSpec' <- getModelSpec (fiTemplatePath opts) (fiTheta opts) (fiParams opts) (fiModelEvents opts) (fiLinGen opts)
+    modelSpec' <- getModelSpec (fiTemplatePath opts) (fiTheta opts) (fiParamsFile opts) (fiParams opts) (fiModelEvents opts) (fiLinGen opts)
     let l = fiQueryIndex opts
         modelSpec = if fiBranchAge opts > 0.0 then
                 let events' = mEvents modelSpec'

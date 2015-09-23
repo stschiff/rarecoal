@@ -1,10 +1,10 @@
-module Logl (computeLikelihood, runLogl, LoglOpt(..), InitialParams(..)) where
+module Logl (computeLikelihood, runLogl, LoglOpt(..)) where
 
 import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..), loadHistogram)
 import Utils (computeAllConfigs)
 import Core (getProb, ModelSpec(..), ModelEvent(..))
 import Data.Int (Int64)
-import ModelTemplate (getModelSpec, InitialParams(..))
+import ModelTemplate (getModelSpec)
 import Control.Error (Script, scriptIO, assertErr, tryRight)
 import qualified Data.Map.Strict as Map
 import Control.Parallel.Strategies (rdeepseq, parMap)
@@ -15,7 +15,8 @@ data LoglOpt = LoglOpt {
    loSpectrumPath :: FilePath,
    loTheta :: Double,
    loTemplatePath :: FilePath,
-   loParams :: InitialParams,
+   loParamsFile :: FilePath,
+   loParams :: [Double],
    loModelEvents :: [ModelEvent],
    loLinGen :: Int,
    loMinAf :: Int,
@@ -28,7 +29,7 @@ data LoglOpt = LoglOpt {
 
 runLogl :: LoglOpt -> Script ()
 runLogl opts = do
-    modelSpec <- getModelSpec (loTemplatePath opts) (loTheta opts) (loParams opts) (loModelEvents opts) (loLinGen opts)
+    modelSpec <- getModelSpec (loTemplatePath opts) (loTheta opts) (loParamsFile opts) (loParams opts) (loModelEvents opts) (loLinGen opts)
     hist <- loadHistogram (loIndices opts) (loMinAf opts) (loMaxAf opts) (loConditionOn opts) (loNrCalledSites opts) (loHistPath opts)
     val <- tryRight $ computeLikelihood modelSpec hist False
     scriptIO $ print val
