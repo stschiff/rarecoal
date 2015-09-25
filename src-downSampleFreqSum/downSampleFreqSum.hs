@@ -35,14 +35,14 @@ downSample pos nBefore nAfter fs = do
     let newCounts = take pos (fsCounts fs) ++ [newK] ++ drop (pos + 1) (fsCounts fs)
     return fs {fsCounts = newCounts}
 
-sampleWithoutReplacement :: Int -> Int -> Int -> IO Int 
+sampleWithoutReplacement :: Int -> Int -> Int -> IO Int
 sampleWithoutReplacement n k howMany = go n k howMany 0
   where
     go _ _ 0 ret = return ret
     go _ 0 _ ret = return ret
-    go n k howMany ret = do
-        val <- bernoulli $ fromIntegral k / fromIntegral n
-        if val then go (n - 1) (k - 1) (howMany - 1) (ret + 1) else go (n - 1) k (howMany - 1) ret
-    
+    go n' k' howMany' ret = do
+        val <- bernoulli $ fromIntegral k' / fromIntegral n'
+        if val then go (n' - 1) (k' - 1) (howMany' - 1) (ret + 1) else go (n' - 1) k' (howMany' - 1) ret
+
 bernoulli :: Double -> IO Bool
 bernoulli p = (<p) <$> randomIO

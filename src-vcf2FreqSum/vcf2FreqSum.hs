@@ -33,15 +33,15 @@ processVCFline line = do
 parseVCFentry :: Parser VCFentry
 parseVCFentry = do
     chrom <- word
-    char '\t'
+    _ <- char '\t'
     pos <- decimal
-    char '\t'
+    _ <- char '\t'
     _ <- word
-    char '\t'
+    _ <- char '\t'
     ref <- letter
-    char '\t'
+    _ <- char '\t'
     alt <- letter
-    char '\t'
+    _ <- char '\t'
     replicateM_ 4 (word >> char '\t')
     genotypes <- genotype `sepBy1` (char '\t')
     return $ VCFentry chrom pos ref alt genotypes
@@ -52,8 +52,7 @@ word = takeWhile (notInClass "\r\t\n ")
 genotype :: Parser (Char, Char)
 genotype = do
     gen1 <- (char '0' <|> char '1')
-    (char '/' <|> char '|')
+    _ <- (char '/' <|> char '|')
     gen2 <- (char '0' <|> char '1')
-    word
+    _ <- word
     return (gen1, gen2)
-

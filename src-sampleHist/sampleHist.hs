@@ -3,7 +3,7 @@
 import qualified Options.Applicative as OP
 import Control.Monad.Trans.State.Strict (evalState, State, get, put)
 import Control.Error (runScript, scriptIO, tryRight, throwE)
-import Control.Lens ((&), (%~), ix) 
+import Control.Lens ((&), (%~), ix)
 import Rarecoal.RareAlleleHistogram (readHistogramFromHandle, showHistogram, RareAlleleHistogram(..), SitePattern(..))
 import Data.Monoid ((<>))
 import qualified Data.Map.Strict as Map
@@ -58,7 +58,7 @@ sampleFromPatterns query howMany nVec pattern@(Pattern p) count =
         patterns <- replicateM (fromIntegral count) $ sampleFromPattern query howMany nVec pattern
         return $ foldl' insertPattern Map.empty patterns
   where
-    insertPattern m p = Map.insertWith (\_ v -> v + 1) p 1 m
+    insertPattern m p' = Map.insertWith (\_ v -> v + 1) p' 1 m
 
 sampleFromPattern :: Int -> Int -> [Int] -> SitePattern -> State StdGen SitePattern
 sampleFromPattern _ _ _ Higher = return Higher
@@ -67,20 +67,19 @@ sampleFromPattern query howMany nVec (Pattern pattern) = do
         k = pattern !! query
     newK <- sampleWithoutReplacement n k howMany
     return $ Pattern ((pattern & ix query %~ (\v -> v - newK)) ++ [newK])
-    
-sampleWithoutReplacement :: Int -> Int -> Int -> State StdGen Int 
+
+sampleWithoutReplacement :: Int -> Int -> Int -> State StdGen Int
 sampleWithoutReplacement n k howMany = go n k howMany 0
   where
     go _ _ 0 ret = return ret
     go _ 0 _ ret = return ret
-    go n k howMany ret = do
-        val <- bernoulli $ fromIntegral k / fromIntegral n
-        if val then go (n - 1) (k - 1) (howMany - 1) (ret + 1) else go (n - 1) k (howMany - 1) ret
-    
+    go n' k' howMany' ret = do
+        val <- bernoulli $ fromIntegral k' / fromIntegral n'
+        if val then go (n' - 1) (k' - 1) (howMany' - 1) (ret + 1) else go (n' - 1) k' (howMany' - 1) ret
+
 bernoulli :: Double -> State StdGen Bool
 bernoulli p = do
     rng <- get
     let (ran, rng') = random rng
     put rng'
     return $ ran < p
-    

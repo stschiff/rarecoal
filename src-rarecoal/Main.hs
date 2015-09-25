@@ -221,7 +221,7 @@ parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*> parseInitial
                        <*> parseIndices
                        <*> parseHistPath <*> parseRandomSeed <*> parseBranchAges
   where
-    parseRandomSeed = OP.option OP.auto $ OP.short 'S' <> OP.long "seed" <> OP.metavar "<INT>" <> OP.value 0 <> 
+    parseRandomSeed = OP.option OP.auto $ OP.short 'S' <> OP.long "seed" <> OP.metavar "<INT>" <> OP.value 0 <>
                       OP.showDefault <>
                       OP.help "Random Seed, set to zero to determine the seed from the machine clock"
     parseNrCycles = OP.option OP.auto $ OP.long "cycles" <> OP.short 'c' <> OP.value 1000 <> OP.metavar "<INT>"
@@ -238,6 +238,7 @@ parseConditioning = OP.option OP.auto $ OP.long "conditionOn" <> OP.metavar "<Li
 parseFind :: OP.Parser Command
 parseFind = CmdFind <$> parseFindOpt
 
+parseFindOpt :: OP.Parser FindOpt
 parseFindOpt = FindOpt <$> parseQueryIndex <*> parseEvalFile <*> parseBranchAge <*> parseDeltaTime <*> parseMaxTime
                        <*> parseTheta
                        <*> parseTemplateFilePath <*> parseInitialParamsFile <*> parseInitialParamsList
@@ -263,4 +264,3 @@ parseFindOpt = FindOpt <$> parseQueryIndex <*> parseEvalFile <*> parseBranchAge 
     readIgnoreList s = do
         let ll = read s :: [[Int]]
         return $ map Pattern ll
-

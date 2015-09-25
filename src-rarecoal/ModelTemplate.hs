@@ -1,4 +1,4 @@
-module ModelTemplate (getInitialParams, ModelTemplate(..), readModelTemplate, instantiateModel,      
+module ModelTemplate (getInitialParams, ModelTemplate(..), readModelTemplate, instantiateModel,
                       getModelSpec) where
 
 import Data.String.Utils (replace)
@@ -37,9 +37,9 @@ getInitialParams modelTemplate paramsFile x = do
   where
     loadFromDict dict = do
         let err = "parameters in the initialParams-file do not match the parameters in the modelTemplate"
-        x <- tryJust err . mapM (`lookup` dict) $ mtParams modelTemplate
-        return . V.fromList $ x
-        
+        x' <- tryJust err . mapM (`lookup` dict) $ mtParams modelTemplate
+        return . V.fromList $ x'
+
 readModelTemplate :: FilePath -> Double -> [Double] -> Script ModelTemplate
 readModelTemplate path theta timeSteps = do
     parseResult <- scriptIO $ parseFromFile parseModelTemplate path
@@ -58,7 +58,7 @@ parseModelTemplate = do
 parseParams :: Parser [String]
 parseParams = do
     names <- sepBy parseParamName (char ',')
-    newline
+    _ <- newline
     return names
 
 parseParamName :: Parser String
@@ -67,17 +67,18 @@ parseParamName = (:) <$> letter <*> many alphaNum
 parseEvents :: Parser [EventTemplate]
 parseEvents = many $ do
     eChar <- oneOf "PJRM"
-    space
+    _ <- space
     eBody <- parseLine
-    newline
+    _ <- newline
     return $ EventTemplate eChar eBody
 
+parseLine :: Parser String
 parseLine = many $ noneOf "\n"
 
 parseConstraints :: Parser [ConstraintTemplate]
 parseConstraints = many $ do
-    char 'C'
-    space
+    _ <- char 'C'
+    _ <- space
     name1 <- parseParamName
     comp <- oneOf "<>"
     name2 <- parseParamName

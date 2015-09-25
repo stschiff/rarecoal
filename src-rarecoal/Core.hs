@@ -249,7 +249,7 @@ performEvent = do
             let migList = [i | ((k', l', _), i) <- zip migrations [0..], k' == k, l' == l]
             when (null migList && m > 0) $ _1 . msMigrationRates %= (++[(k, l, m)])
             when (not (null migList)) $ _1 . msMigrationRates . ix (head migList) . _3 .= m
-            _1 . msMigrationRates %= filter (\(_,_,m) -> m > 0.0)
+            _1 . msMigrationRates %= filter (\(_,_,m') -> m' > 0.0)
     _1 . msEventQueue .= tail events
 
 popJoin :: Int -> Int -> State (ModelState, CoalState) ()
@@ -261,7 +261,7 @@ popJoin k l = do
     _2 . csB %= M.mapKeysWith (+) (joinCounts stateSpace k l)
     _2 . csB %= fillStateSpace stateSpace
     let idToState = stateSpace ^. jsIdToState
-    _2 . csB %= M.filterWithKey (\k _ -> (idToState k)!l == 0)
+    _2 . csB %= M.filterWithKey (\k' _ -> (idToState k')!l == 0)
     _1 . msMigrationRates %= deleteMigrations l
   where
     deleteMigrations pop list = [mig | mig@(k', l', _) <- list, k' /= pop, l' /= pop]

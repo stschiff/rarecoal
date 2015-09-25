@@ -62,11 +62,11 @@ runFind opts = do
 
 getJoinTimes :: ModelSpec -> Double -> Double -> Double -> Int -> [Double]
 getJoinTimes modelSpec deltaT maxT branchAge k =
-    let allTimes = takeWhile (<=maxT) $ map ((+branchAge) . (*deltaT) . fromIntegral) [1..]
+    let allTimes = takeWhile (<=maxT) $ map ((+branchAge) . (*deltaT)) [1.0,2.0..]
         leaveTimes = [t | ModelEvent t (Join _ l) <- mEvents modelSpec, k == l]
     in  if null leaveTimes then allTimes else filter (<head leaveTimes) allTimes
 
-computeLikelihoodIO :: RareAlleleHistogram -> ModelSpec -> Int -> Int -> Double -> Bool -> Script Double 
+computeLikelihoodIO :: RareAlleleHistogram -> ModelSpec -> Int -> Int -> Double -> Bool -> Script Double
 computeLikelihoodIO hist modelSpec k l t noShortcut = do
     let e = mEvents modelSpec
         newE = ModelEvent t (Join k l)
