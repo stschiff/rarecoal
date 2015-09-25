@@ -2,10 +2,11 @@
 
 module Core (defaultTimes, getTimeSteps, getProb, validateModel, ModelEvent(..), EventType(..), ModelSpec(..)) where
 
+import Control.Monad (when, foldM, forM_)
 import Control.Monad.Trans.State.Lazy (State, get, put, execState)
 import Data.List (sortBy)
+import Data.Foldable (foldl')
 -- import Debug.Trace (trace)
-import Control.Monad (when, foldM, forM_)
 import qualified Data.Vector.Unboxed as V
 import Data.Vector.Unboxed.Base (Unbox)
 import qualified Data.IntMap as M
@@ -50,7 +51,7 @@ data ModelEvent = ModelEvent {
 
 data EventType = Join Int Int
                | SetPopSize Int Double
-               | SetGrowthRate Int Double 
+               | SetGrowthRate Int Double
                | SetFreeze Int Bool
                | SetMigration Int Int Double
                deriving (Show, Read)
@@ -131,7 +132,7 @@ makeJointStateSpace config =
         x1upMemo = arrayRange (0, maxId - 1) x1up
         x1Memo = arrayRange (0, maxId - 1) x1
     in  JointStateSpace stateToId idToStateMemo x1upMemo x1Memo nrPop maxAf
-    
+
 genericStateToId :: Int -> JointState -> Int
 genericStateToId base state = if V.any (>=base) state then -1 else V.ifoldl (\v i x -> v + x * base ^ i) 0 state
 
@@ -158,14 +159,14 @@ fillStateSpace jointStateSpace b =
         allStates = filter (\v -> V.sum v > 0 && V.sum v <= maxAf) $ expandPattern maxMVec
         allStateIds = map (jointStateSpace ^. jsStateToId) allStates
         safeInsert m k = M.insertWith (\_ oldVal -> oldVal) k 0.0 m
-    in  foldl safeInsert b allStateIds
+    in  foldl' safeInsert b allStateIds
   where
     expandPattern :: JointState -> [JointState]
     expandPattern maxMVec =
         let k = V.length maxMVec
         in  foldM go maxMVec [0..k-1]
       where
-        go vec_ i = 
+        go vec_ i =
             let maxVal = vec_ ! i
             in if maxVal == 0 then [vec_] else [vec_ // [(i, val)] | val <- [0..maxVal]]
 
@@ -203,7 +204,7 @@ propagateStateShortcut = do
     goState nrA x =
         let nrDerived = assert ((V.length . V.filter (>0)) x == 1) $ V.sum x
         in  singlePopMutBranchLength nrA nrDerived
-        
+
 singlePopMutBranchLength :: Double -> Int -> Double
 singlePopMutBranchLength nrA nrDerived =
     let withCombinatorics = 2.0 / fromIntegral nrDerived
@@ -266,7 +267,7 @@ popJoin k l = do
     deleteMigrations pop list = [mig | mig@(k', l', _) <- list, k' /= pop, l' /= pop]
 
 joinCounts :: JointStateSpace -> Int -> Int -> Int -> Int
-joinCounts stateSpace k l id_ = 
+joinCounts stateSpace k l id_ =
     let s = (stateSpace ^. jsIdToState) id_
         newK = s!k + s!l
         newS = s // [(k, newK), (l, 0)]
@@ -284,7 +285,7 @@ updateCoalStateMig deltaT (k, l, m) = do
     if freeze!k || freeze!l then return () else do
         b <- use $ _2 . csB
         stateSpace <- use $ _2 . csStateSpace
-        _2 . csB .= foldl (updateState stateSpace) b (M.keys b)
+        _2 . csB .= foldl' (updateState stateSpace) b (M.keys b)
         a <- use $ _2 . csA
         _2 . csA . ix l *= exp (-deltaT * m)
         _2 . csA . ix k += a!l * (1.0 - exp (-deltaT * m))
@@ -303,7 +304,7 @@ updateCoalStateMig deltaT (k, l, m) = do
                     else
                         fillStateSpace stateSpace . M.insert targetId (bProb * (1.0 - reduceFactor)) $ b'
             else b
-            
+
 
 updateA :: Double -> State (ModelState, CoalState) ()
 updateA deltaT = do
@@ -320,7 +321,7 @@ updateB :: Double -> State (ModelState, CoalState) ()
 updateB deltaT = do
     popSize <- use $ _1 . msPopSize
     freezeState <- use $ _1 . msFreezeState
-    allIds <- uses (_2 . csB) M.keys 
+    allIds <- uses (_2 . csB) M.keys
     a <- use $ _2 . csA
     -- let midPointA = V.zipWith (propagateA (deltaT / 2.0)) popSize a
     stateSpace <- use $ _2 . csStateSpace
@@ -332,7 +333,7 @@ updateB deltaT = do
             x' = V.map fromIntegral x
             -- t1s = V.zipWith4 t1func x' popSize midPointA freezeState
             t1s = V.zipWith4 t1func x' popSize a freezeState
-            t2s = V.zipWith4 t2func b1ups x' popSize freezeState 
+            t2s = V.zipWith4 t2func b1ups x' popSize freezeState
             val = b M.! xId
             newVal = val * exp (-(V.sum t1s) * deltaT) + V.sum t2s
         _2 . csB %= M.insert xId newVal
@@ -386,4 +387,3 @@ choose n k = product [fromIntegral (n + 1 - j) / fromIntegral j | j <- [1..k]]
 chooseCont :: Double -> Int -> Double
 chooseCont _ 0 = 1
 chooseCont n k = product [(n + 1.0 - fromIntegral j) / fromIntegral j | j <- [1..k]]
-
