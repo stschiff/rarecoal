@@ -12,7 +12,7 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Rarecoal.RareAlleleHistogram, Rarecoal.FreqSumEntry
+  exposed-modules:     Rarecoal.RareAlleleHistogram, Rarecoal.FreqSumEntry, Rarecoal.Core
   hs-source-dirs:      src
   build-depends:       base, containers, errors, text, attoparsec, pipes-text, transformers,
                        pipes-attoparsec
@@ -47,7 +47,7 @@ executable rarecoal
                        parsec,
                        hslogger,
                        text
-  other-modules:       Core, Find, Logl, Maxl, Mcmc, ModelTemplate, Prob, Utils, View
+  other-modules:       Find, Logl, Maxl, Mcmc, ModelTemplate, Prob, Utils, View
   default-language:    Haskell2010
   extra-lib-dirs:      /usr/lib
   ghc-options:         -fno-ignore-asserts -rtsopts -threaded "-with-rtsopts=-A200m -K100m"

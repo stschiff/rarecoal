@@ -1,16 +1,17 @@
 module Mcmc (runMcmc, McmcOpt(..)) where
 
+import Maxl (minFunc, penalty)
 import ModelTemplate (ModelTemplate(..), readModelTemplate, getInitialParams)
-import Core (getTimeSteps, ModelEvent(..), EventType(..)) 
+import Rarecoal.Core (getTimeSteps, ModelEvent(..), EventType(..)) 
+import Rarecoal.RareAlleleHistogram (loadHistogram)
+
 import qualified Data.Vector.Unboxed as V
 import qualified System.Random as R
-import Maxl (minFunc, penalty)
 import Control.Monad.Trans.State.Lazy (StateT, get, gets, put, evalStateT, modify)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad (when, forM_)
 import Data.List (intercalate, sort, minimumBy)
 import Control.Error (Script, scriptIO, tryRight)
-import Rarecoal.RareAlleleHistogram (loadHistogram)
 import Data.Int (Int64)
 import Data.Ord (comparing)
 import System.Log.Logger (infoM)

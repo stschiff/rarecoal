@@ -1,15 +1,16 @@
 module Maxl (minFunc, penalty, runMaxl, MaxlOpt(..)) where
 
-import Rarecoal.RareAlleleHistogram (RareAlleleHistogram, loadHistogram)
 import Logl (computeLikelihood)
+import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..))
+import Rarecoal.RareAlleleHistogram (RareAlleleHistogram, loadHistogram)
+
+import Control.Error (Script, scriptIO, assertErr, tryRight)
+import Data.Int (Int64)
+import Data.List (intercalate)
+import qualified Data.Vector.Unboxed as V
 import Numeric.LinearAlgebra.Data (toRows, toList)
 import Numeric.GSL.Minimization (minimize, MinimizeMethod(..))
 import ModelTemplate (ModelTemplate(..), instantiateModel, readModelTemplate, getInitialParams)
-import Data.List (intercalate)
-import Data.Int (Int64)
-import Core (getTimeSteps, ModelSpec(..), ModelEvent(..))
-import qualified Data.Vector.Unboxed as V
-import Control.Error (Script, scriptIO, assertErr, tryRight)
 import System.Log.Logger (infoM)
 
 data MaxlOpt = MaxlOpt {

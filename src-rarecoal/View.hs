@@ -1,9 +1,10 @@
 module View (runView, ViewOpt(..)) where
 
-import Data.Int (Int64)
-import Control.Error (Script, scriptIO, tryRight)
 import Rarecoal.RareAlleleHistogram (reduceIndices, combineIndices, setNrCalledSites,
                             filterMaxAf, readHistogramFromHandle, showHistogram)
+
+import Data.Int (Int64)
+import Control.Error (Script, scriptIO, tryRight)
 import Control.Monad ((<=<))
 import System.IO (stdin, openFile, IOMode(..))
 import qualified Data.Text.IO as T

@@ -1,20 +1,20 @@
-import Data.List.Split (splitOn)
-import Control.Applicative (many, (<|>))
-import qualified Options.Applicative as OP
-import Data.Monoid ((<>))
+import Find (FindOpt(..), runFind)
 import Logl (runLogl, LoglOpt(..))
 import Maxl (MaxlOpt(..), runMaxl)
 import Mcmc (McmcOpt(..), runMcmc)
-import View (ViewOpt(..), runView)
 import Prob (ProbOpt(..), runProb)
-import Find (FindOpt(..), runFind)
-import System.Log.Logger (updateGlobalLogger, setLevel, Priority(..), infoM)
-import Data.Time.Clock (getCurrentTime)
-import Core (ModelEvent(..), EventType(..))
+import Rarecoal.Core (ModelEvent(..), EventType(..))
+import Rarecoal.RareAlleleHistogram (SitePattern(..))
+import View (ViewOpt(..), runView)
+
+import Control.Applicative (many, (<|>))
 import Control.Error.Script (runScript, scriptIO)
 import Data.Int (Int64)
--- import Debug.Trace (trace)
-import Rarecoal.RareAlleleHistogram (SitePattern(..))
+import Data.List.Split (splitOn)
+import Data.Monoid ((<>))
+import Data.Time.Clock (getCurrentTime)
+import qualified Options.Applicative as OP
+import System.Log.Logger (updateGlobalLogger, setLevel, Priority(..), infoM)
 
 data Options = Options Command
 

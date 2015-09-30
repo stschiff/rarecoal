@@ -1,11 +1,12 @@
 module ModelTemplate (getInitialParams, ModelTemplate(..), readModelTemplate, instantiateModel,
                       getModelSpec) where
 
+import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..), EventType(..))
+
 import Data.String.Utils (replace)
 import Data.List.Split (splitOn)
 import Control.Monad (unless)
 import Control.Error (Script, scriptIO, tryRight, readErr, justErr, tryJust, throwE)
-import Core (getTimeSteps, ModelSpec(..), ModelEvent(..), EventType(..))
 import qualified Data.Vector.Unboxed as V
 import Text.Parsec.String (parseFromFile, Parser)
 import Text.Parsec.Char (char, newline, letter, oneOf, noneOf, space, alphaNum)
