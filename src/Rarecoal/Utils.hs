@@ -1,4 +1,4 @@
-module Utils (computeAllConfigs) where
+module Rarecoal.Utils (computeAllConfigs) where
 
 computeAllConfigs :: Int -> Int -> [Int] -> [[Int]]
 computeAllConfigs nrPop maxFreq nVec = 

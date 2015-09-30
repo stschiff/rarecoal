@@ -1,6 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 
-module Rarecoal.Core (defaultTimes, getTimeSteps, getProb, validateModel, ModelEvent(..), EventType(..), ModelSpec(..)) where
+module Rarecoal.Core (defaultTimes, getTimeSteps, getProb, validateModel,
+                      ModelEvent(..), EventType(..), ModelSpec(..)) where
 
 import Control.Monad (when, foldM, forM_)
 import Control.Monad.Trans.State.Lazy (State, get, put, execState)
