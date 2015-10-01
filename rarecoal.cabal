@@ -33,7 +33,7 @@ Benchmark coreBench
   hs-source-dirs:      src-bench
   build-depends:       base, rarecoal, criterion
   default-language:    Haskell2010
-  ghc-options:         -O
+  ghc-options:         -O -with-rtsopts=-A200m
 
 executable rarecoal
   main-is:             Main.hs
@@ -63,7 +63,7 @@ executable rarecoal
   default-language:    Haskell2010
   extra-lib-dirs:      /usr/lib
   -- ghc-options:         -rtsopts -threaded "-with-rtsopts=-A200m -K100m" -O
-  ghc-options:         -rtsopts -threaded -O "-with-rtsopts=-A200m"
+  ghc-options:         -rtsopts -threaded -O -with-rtsopts=-A200m
  
 executable vcf2FreqSum
   main-is:             vcf2FreqSum.hs
