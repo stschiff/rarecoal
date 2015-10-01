@@ -209,15 +209,14 @@ popJoinB :: VM.MVector s Double -> VM.MVector s Double -> STRef s [Int] -> Joint
 popJoinB bVec bVecTemp nonZeroStateRef stateSpace k l = do
     VM.set bVecTemp 0.0
     nonZeroStateIds <- readSTRef nonZeroStateRef
-    forM_ nonZeroStateIds $ \xId -> do
+    newNonZeroStateIds <- forM nonZeroStateIds $ \xId -> do
         oldProb <- VM.read bVec xId
         let newId = joinCounts stateSpace k l xId
         val <- VM.read bVecTemp newId
         VM.write bVecTemp newId (val + oldProb)
+        if val == 0.0 then return newId else return (-1)
     VM.copy bVec bVecTemp
-    bFreeze <- V.freeze bVec
-    let newNonZeroStateIds = [i | (i, val) <- zip [0..] (V.toList bFreeze), val > 0.0]
-    writeSTRef nonZeroStateRef newNonZeroStateIds
+    writeSTRef nonZeroStateRef (filter (>=0) newNonZeroStateIds)
 
 popJoinA :: VM.MVector s Double -> Int -> Int -> ST s ()
 popJoinA aVec k l = do
@@ -301,7 +300,9 @@ updateB ms cs deltaT = do
         val <- VM.read (_csB cs) xId
         let newVal = val * exp (-(V.sum t1s) * deltaT) + V.sum t2s
         VM.write (_csBtemp cs) xId newVal
-    VM.copy (_csB cs) (_csBtemp cs)
+    forM_ nonZeroStateIds $ \xId -> do
+        valTemp <- VM.read (_csBtemp cs) xId
+        VM.write (_csB cs) xId valTemp
   where
     t1func xx pp aa ff = if ff then 0.0 else xx * (xx - 1.0) / 2.0 * (1.0 / pp) + xx * aa * (1.0 / pp)
     t2func bb xx pp ff = if ff then 0.0 else bb * (1.0 - exp (-xx * (xx + 1.0) / 2.0 * (1.0 / pp) * deltaT))

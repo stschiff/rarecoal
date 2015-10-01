@@ -4,3 +4,5 @@ cabal.sandbox.config
 *~
 .*.swp
 .stack-work
+*.html
+*.prof
