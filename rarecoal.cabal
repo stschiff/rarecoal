@@ -13,12 +13,18 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:     Rarecoal.RareAlleleHistogram, Rarecoal.FreqSumEntry, Rarecoal.Core,
-                       Rarecoal.Utils
+                       Rarecoal.Utils, Rarecoal.StateSpace
   hs-source-dirs:      src
   build-depends:       base, containers, errors, text, attoparsec, pipes-text, transformers,
-                       pipes-attoparsec, vector, lens, data-memocombinators
+                       pipes-attoparsec, vector, data-memocombinators
   default-language:    Haskell2010
   ghc-options:         -O
+
+Test-Suite rarecoalTest
+  type:                exitcode-stdio-1.0
+  main-is:             testMain.hs
+  hs-source-dirs:      src-tests
+  build-depends:       base, rarecoal, QuickCheck, vector
 
 Benchmark coreBench
   type:                exitcode-stdio-1.0
@@ -26,7 +32,6 @@ Benchmark coreBench
   hs-source-dirs:      src-bench
   build-depends:       base, rarecoal, criterion
   default-language:    Haskell2010
-  ghc-options:         -O
 
 executable rarecoal
   main-is:             Main.hs
@@ -55,7 +60,7 @@ executable rarecoal
   other-modules:       Find, Logl, Maxl, Mcmc, ModelTemplate, Prob, View
   default-language:    Haskell2010
   extra-lib-dirs:      /usr/lib
-  ghc-options:         -fno-ignore-asserts -rtsopts -threaded "-with-rtsopts=-A200m -K100m" -O
+  ghc-options:         -rtsopts -threaded "-with-rtsopts=-A200m -K100m" -O
  
 executable vcf2FreqSum
   main-is:             vcf2FreqSum.hs
