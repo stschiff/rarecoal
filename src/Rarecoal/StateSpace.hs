@@ -1,6 +1,8 @@
-module Rarecoal.StateSpace (JointState, JointStateSpace(..), makeJointStateSpace, genericStateToId, genericNrStates, genericIdToState, genericX1Up, genericX1) where
+module Rarecoal.StateSpace (JointState, JointStateSpace(..), makeJointStateSpace, genericStateToId, genericNrStates, genericIdToState, genericX1Up, genericX1, getNonZeroStates) where
 
 import Control.Exception.Base (assert)
+import Control.Monad (foldM)
+import Data.List (nub)
 import Data.MemoCombinators (arrayRange)
 import Debug.Trace (trace)
 import qualified Data.Vector.Unboxed as V
@@ -52,3 +54,21 @@ genericX1Up x = [x V.// [(k, x V.! k + 1)] | k <- [0..V.length x - 1]]
 genericX1 :: Int -> Int -> JointState
 genericX1 n k = V.replicate n 0 V.// [(k, 1)]
 
+getNonZeroStates :: JointStateSpace -> [Int] -> [Int]
+getNonZeroStates jointStateSpace nonZeroStates =
+    let states = map (_jsIdToState jointStateSpace) nonZeroStates
+        nrPop = _jsNrPop jointStateSpace
+        maxAf = _jsMaxAf jointStateSpace
+        maxMVec = V.fromList . map maximum $ [map (V.!i) states | i <- [0 .. nrPop - 1]]
+        allStates = filter (\v -> V.sum v > 0 && V.sum v <= maxAf) $ expandPattern maxMVec
+        allStateIds = map (_jsStateToId jointStateSpace) allStates
+    in  nub allStateIds
+  where
+    expandPattern :: JointState -> [JointState]
+    expandPattern maxMVec =
+        let k = V.length maxMVec
+        in  foldM go maxMVec [0..k-1]
+      where
+        go vec_ i =
+            let maxVal = vec_ V.! i
+            in if maxVal == 0 then [vec_] else [vec_ V.// [(i, val)] | val <- [0..maxVal]]

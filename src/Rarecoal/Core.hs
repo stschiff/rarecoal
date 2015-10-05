@@ -1,7 +1,7 @@
 module Rarecoal.Core (defaultTimes, getTimeSteps, getProb, validateModel,
                       ModelEvent(..), EventType(..), ModelSpec(..), joinCounts, popJoinA, popJoinB) where
 
-import Rarecoal.StateSpace (JointStateSpace(..), makeJointStateSpace)
+import Rarecoal.StateSpace (JointStateSpace(..), makeJointStateSpace, getNonZeroStates)
 
 import Control.Error.Safe (assertErr)
 import Control.Exception.Base (assert)
@@ -99,7 +99,7 @@ makeInitCoalState nVec config = do
     b <- VM.replicate (_jsNrStates jointStateSpace) 0.0
     -- trace (show ("makeInitCoalState", _jsNrStates jointStateSpace, initialState, initialId)) $ return ()
     VM.write b initialId 1.0
-    nonZeroStates <- newSTRef [initialId]
+    nonZeroStates <- newSTRef (getNonZeroStates jointStateSpace [initialId])
     bTemp <- VM.new (_jsNrStates jointStateSpace)
     d <- newSTRef 0.0
     return $ CoalState a b bTemp nonZeroStates d jointStateSpace
@@ -136,6 +136,7 @@ propagateStateShortcut ms cs = do
     probs <- mapM (VM.read (_csB cs)) nonZeroIds
     let additionalBranchLength =
             sum [prob * goState popSize nrA state | (state, prob) <- zip nonZeroStates probs]
+    trace ("shortcut: " ++ show additionalBranchLength ++ "; " ++ show nrA ++ "; " ++ show (zip nonZeroStates probs)) (return ())
     VM.set (_csB cs) 0.0
     modifySTRef (_csD cs) (+additionalBranchLength)
     VM.write (_csA cs) popIndex 1.0
@@ -152,7 +153,7 @@ singlePopMutBranchLength popSize nrA nrDerived =
 
 singleStep :: ModelState s -> CoalState s -> Double -> ST s ()
 singleStep ms cs nextTime = do
-    -- trace (show nextTime ++ " " ++ show (_msT ms) ++ " " ++ show (_csA cs) ++ " " ++ show (_csB cs)) (return ())
+    debugOutput ms cs nextTime
     events <- readSTRef (_msEventQueue ms)
     let ModelEvent t _ = if null events then ModelEvent (1.0/0.0) undefined else head events
     if  t < nextTime then do
@@ -167,6 +168,15 @@ singleStep ms cs nextTime = do
             migrations <- readSTRef (_msMigrationRates ms)
             mapM_ (updateCoalStateMig ms cs deltaT) migrations
             updateModelState ms cs deltaT
+
+debugOutput :: ModelState s -> CoalState s -> Double -> ST s ()
+debugOutput ms cs nextTime = do
+    currentTime <- readSTRef (_msT ms)
+    aVec <- V.freeze (_csA cs)
+    nonZeroStates <- readSTRef (_csNonZeroStates cs)
+    bList <- mapM (VM.read (_csB cs)) nonZeroStates
+    d <- readSTRef (_csD cs)
+    trace (show nextTime ++ " " ++ show currentTime ++ " " ++ show aVec ++ " " ++ show (zip nonZeroStates bList) ++ " " ++ show d) (return ())
 
 performEvent :: ModelState s -> CoalState s -> ST s ()
 performEvent ms cs = do
@@ -216,7 +226,7 @@ popJoinB bVec bVecTemp nonZeroStateRef stateSpace k l = do
         VM.write bVecTemp newId (val + oldProb)
         if val == 0.0 then return newId else return (-1)
     VM.copy bVec bVecTemp
-    writeSTRef nonZeroStateRef (filter (>=0) newNonZeroStateIds)
+    writeSTRef nonZeroStateRef $ getNonZeroStates stateSpace (filter (>=0) newNonZeroStateIds)
 
 popJoinA :: VM.MVector s Double -> Int -> Int -> ST s ()
 popJoinA aVec k l = do
@@ -234,9 +244,9 @@ joinCounts stateSpace k l id_ =
 
 updateCoalState :: ModelState s -> CoalState s -> Double -> ST s ()
 updateCoalState ms cs deltaT = do
+    updateA ms cs deltaT
     updateB ms cs deltaT
     updateD cs deltaT
-    updateA ms cs deltaT
 
 updateCoalStateMig :: ModelState s -> CoalState s -> Double -> (Int, Int, Double) -> ST s ()
 updateCoalStateMig _ _ _ _ = undefined
