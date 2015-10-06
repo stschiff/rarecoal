@@ -5,7 +5,7 @@ import Rarecoal.StateSpace (JointStateSpace(..), makeJointStateSpace, getNonZero
 
 import Control.Error.Safe (assertErr)
 import Control.Exception.Base (assert)
-import Control.Monad (when, forM_, forM)
+import Control.Monad (when, forM_, forM, foldM)
 import Control.Monad.ST (runST, ST)
 import Data.List (sortBy)
 import Data.STRef (STRef, readSTRef, newSTRef, modifySTRef, writeSTRef)
@@ -136,7 +136,7 @@ propagateStateShortcut ms cs = do
     probs <- mapM (VM.read (_csB cs)) nonZeroIds
     let additionalBranchLength =
             sum [prob * goState popSize nrA state | (state, prob) <- zip nonZeroStates probs]
-    trace ("shortcut: " ++ show additionalBranchLength ++ "; " ++ show nrA ++ "; " ++ show (zip nonZeroStates probs)) (return ())
+    -- trace ("shortcut: " ++ show additionalBranchLength ++ "; " ++ show nrA ++ "; " ++ show (zip nonZeroStates probs)) (return ())
     VM.set (_csB cs) 0.0
     modifySTRef (_csD cs) (+additionalBranchLength)
     VM.write (_csA cs) popIndex 1.0
@@ -153,7 +153,7 @@ singlePopMutBranchLength popSize nrA nrDerived =
 
 singleStep :: ModelState s -> CoalState s -> Double -> ST s ()
 singleStep ms cs nextTime = do
-    debugOutput ms cs nextTime
+    -- debugOutput ms cs nextTime
     events <- readSTRef (_msEventQueue ms)
     let ModelEvent t _ = if null events then ModelEvent (1.0/0.0) undefined else head events
     if  t < nextTime then do
@@ -293,29 +293,39 @@ updateB :: ModelState s -> CoalState s -> Double -> ST s ()
 updateB ms cs deltaT = do
     nonZeroStateIds <- readSTRef (_csNonZeroStates cs)
     let stateSpace = _csStateSpace cs
-    popSize <- V.freeze (_msPopSize ms)
-    freezeState <- V.freeze (_msFreezeState ms)
-    a <- V.freeze (_csA cs)
+        nrPop = _jsNrPop stateSpace
     VM.set (_csBtemp cs) 0.0
     forM_ nonZeroStateIds $ \xId -> do
         let x1ups = (_jsX1up stateSpace) xId
-        b1ups <- V.fromList <$> forM x1ups (\x1up -> do
-            case x1up of
-                Nothing -> return 0.0
-                Just index -> VM.read (_csB cs) index)
-        let x = (_jsIdToState stateSpace) xId
-            x' = V.map fromIntegral x
-            t1s = V.zipWith4 t1func x' popSize a freezeState
-            t2s = V.zipWith4 t2func b1ups x' popSize freezeState
+            x = (_jsIdToState stateSpace) xId
+            -- explicit definitions to introduce automatic CAFs for profiling
+            f1 = foldM (t1TermHelper x (_msPopSize ms) (_csA cs) (_msFreezeState ms)) 0 [0..(nrPop - 1)]
+            f2 = foldM (t2TermHelper (_csB cs) x1ups x (_msPopSize ms) (_msFreezeState ms)) 0 [0..(nrPop - 1)]
+        t1 <- f1
+        t2 <- f2
         val <- VM.read (_csB cs) xId
-        let newVal = val * exp (-(V.sum t1s) * deltaT) + V.sum t2s
+        let newVal = val * exp (-t1 * deltaT) + t2
         VM.write (_csBtemp cs) xId newVal
     forM_ nonZeroStateIds $ \xId -> do
         valTemp <- VM.read (_csBtemp cs) xId
         VM.write (_csB cs) xId valTemp
   where
-    t1func xx pp aa ff = if ff then 0.0 else xx * (xx - 1.0) / 2.0 * (1.0 / pp) + xx * aa * (1.0 / pp)
-    t2func bb xx pp ff = if ff then 0.0 else bb * (1.0 - exp (-xx * (xx + 1.0) / 2.0 * (1.0 / pp) * deltaT))
+    t1TermHelper state popSize aVec freezeState val i = do
+        let xx = fromIntegral (state V.! i)
+        pp <- VM.read popSize i
+        aa <- VM.read aVec i
+        ff <- VM.read freezeState i
+        let add = if ff then 0.0 else xx * (xx - 1.0) / 2.0 * (1.0 / pp) + xx * aa * (1.0 / pp)
+        return $ val + add
+    t2TermHelper bVec x1ups state popSize freezeState val i = do
+        let index = x1ups V.! i
+        bb <- if index == -1 then return 0.0 else VM.read bVec index
+        let xx = fromIntegral (state V.! i)
+        pp <- VM.read popSize i
+        ff <- VM.read freezeState i
+        let add = if ff then 0.0 else bb * (1.0 - exp (-xx * (xx + 1.0) / 2.0 * (1.0 / pp) * deltaT))
+        return $ val + add
+
 
 updateD :: CoalState s -> Double -> ST s ()
 updateD cs deltaT = do

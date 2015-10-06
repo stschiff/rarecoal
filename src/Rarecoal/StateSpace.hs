@@ -12,7 +12,7 @@ type JointState = V.Vector Int
 data JointStateSpace = JointStateSpace  {
     _jsStateToId :: JointState -> Int,
     _jsIdToState :: Int -> JointState,
-    _jsX1up :: Int -> [Maybe Int],
+    _jsX1up :: Int -> V.Vector Int,
     _jsX1 :: Int -> Int,
     _jsNrPop :: Int,
     _jsMaxAf :: Int,
@@ -25,7 +25,7 @@ makeJointStateSpace nrPop maxAf =
         idToState = genericIdToState maxAf nrPop
         x1up xId = 
             let states = (genericX1Up . idToState) xId
-            in  [if V.all (<=maxAf) s then Just (stateToId s) else Nothing | s <- states]
+            in  V.fromList [if V.all (<=maxAf) s then (stateToId s) else -1 | s <- states]
         x1 = stateToId . genericX1 nrPop
         nrStates = genericNrStates maxAf nrPop
         idToStateMemo = arrayRange (0, nrStates - 1) idToState
