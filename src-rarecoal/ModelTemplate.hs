@@ -67,7 +67,7 @@ parseParamName = (:) <$> letter <*> many alphaNum
 
 parseEvents :: Parser [EventTemplate]
 parseEvents = many $ do
-    eChar <- oneOf "PJRM"
+    eChar <- oneOf "PJKRM"
     _ <- space
     eBody <- parseLine
     _ <- newline
@@ -90,9 +90,9 @@ instantiateModel (ModelTemplate pNames theta timeSteps ets cts) params = do
     let params' = V.toList params
     events <- mapM (instantiateEvent pNames params') ets
     mapM_ (validateConstraint pNames params') cts
-    return $ ModelSpec timeSteps theta events
+    return $ ModelSpec timeSteps theta (concat events)
 
-instantiateEvent :: [String] -> [Double] -> EventTemplate -> Either String ModelEvent
+instantiateEvent :: [String] -> [Double] -> EventTemplate -> Either String [ModelEvent]
 instantiateEvent pnames params (EventTemplate et body) = do
     newB <- substituteParams pnames params body
     let fields = splitOn "," newB
@@ -102,20 +102,25 @@ instantiateEvent pnames params (EventTemplate et body) = do
         'P' -> do
             k <- readErr err $ fields!!1
             p <- readErr err $ fields!!2
-            return $ ModelEvent t (SetPopSize k p)
+            return [ModelEvent t (SetPopSize k p)]
         'R' -> do
             k <- readErr err $ fields!!1
             r <- readErr err $ fields!!2
-            return $ ModelEvent t (SetGrowthRate k r)
+            return [ModelEvent t (SetGrowthRate k r)]
         'J' -> do
             k <- readErr err $ fields!!1
             l <- readErr err $ fields!!2
-            return $ ModelEvent t (Join k l)
+            return [ModelEvent t (Join k l)]
+        'K' -> do
+            k <- readErr err $ fields!!1
+            l <- readErr err $ fields!!2
+            p <- readErr err $ fields!!3
+            return [ModelEvent t (Join k l), ModelEvent t (SetPopSize k p)]
         'M' -> do
             k <- readErr err $ fields!!1
             l <- readErr err $ fields!!2
             r <- readErr err $ fields!!3
-            return $ ModelEvent t (SetMigration k l r)
+            return $ [ModelEvent t (SetMigration k l r)]
         _   -> Left "cannot parse modelTemplate Event"
 
 validateConstraint :: [String] -> [Double] -> ConstraintTemplate -> Either String ()
