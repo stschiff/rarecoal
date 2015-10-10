@@ -3,15 +3,15 @@ module ModelTemplate (getInitialParams, ModelTemplate(..), readModelTemplate, in
 
 import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..), EventType(..))
 
-import Data.String.Utils (replace)
-import Data.List.Split (splitOn)
+import Control.Applicative ((<|>))
+import Control.Error (Script, scriptIO, tryRight, readErr, justErr, tryJust, throwE, assertErr)
 import Control.Monad (unless)
-import Control.Error (Script, scriptIO, tryRight, readErr, justErr, tryJust, throwE)
-import qualified Data.Vector.Unboxed as V
-import Text.Parsec.String (parseFromFile, Parser)
-import Text.Parsec.Char (char, newline, letter, oneOf, noneOf, space, alphaNum)
-import Text.Parsec (sepBy, many)
+import qualified Data.Attoparsec.Text as A
 import System.Log.Logger (infoM)
+import Data.List.Split (splitOn)
+import Data.String.Utils (replace)
+import qualified Data.Text.IO as T
+import qualified Data.Vector.Unboxed as V
 
 data ModelTemplate = ModelTemplate {
     mtParams :: [String],
@@ -21,9 +21,14 @@ data ModelTemplate = ModelTemplate {
     mtConstraintTemplates :: [ConstraintTemplate]
 }
 
-data EventTemplate = EventTemplate Char String
+data EventTemplate = JoinEventTemplate (Either Double String) Int Int
+                   | PopSizeEventTemplate (Either Double String) Int (Either Double String)
+                   | JoinPopSizeEventTemplate (Either Double String) Int Int (Either Double String)
+                   | GrowthRateEventTemplate (Either Double String) Int (Either Double String)
+                   | MigrationRateEventTemplate (Either Double String) Int Int (Either Double String)
 
-data ConstraintTemplate = ConstraintTemplate String Char String
+data ConstraintTemplate = SmallerConstraintTemplate String String
+                        | GreaterConstraintTemplate String String
 
 getInitialParams :: ModelTemplate -> FilePath -> [Double] -> Script (V.Vector Double)
 getInitialParams modelTemplate paramsFile x = do
@@ -43,47 +48,120 @@ getInitialParams modelTemplate paramsFile x = do
 
 readModelTemplate :: FilePath -> Double -> [Double] -> Script ModelTemplate
 readModelTemplate path theta timeSteps = do
-    parseResult <- scriptIO $ parseFromFile parseModelTemplate path
-    (names, events, constraints) <- case parseResult of
-        Left p -> throwE $ show p
-        Right p -> return p
+    c <- scriptIO $ T.readFile path
+    (names, events, constraints) <- tryRight $ A.parseOnly parseModelTemplate c
     return $ ModelTemplate names theta timeSteps events constraints
 
-parseModelTemplate :: Parser ([String], [EventTemplate], [ConstraintTemplate])
+parseModelTemplate :: A.Parser ([String], [EventTemplate], [ConstraintTemplate])
 parseModelTemplate = do
     params <- parseParams
     events <- parseEvents
     constrains <- parseConstraints
     return (params, events, constrains)
 
-parseParams :: Parser [String]
+parseParams :: A.Parser [String]
 parseParams = do
-    names <- sepBy parseParamName (char ',')
-    _ <- newline
+    names <- A.sepBy parseParamName (A.char ',')
+    A.endOfLine
     return names
 
-parseParamName :: Parser String
-parseParamName = (:) <$> letter <*> many alphaNum
+parseParamName :: A.Parser String
+parseParamName = (:) <$> A.letter <*> A.many' (A.letter <|> A.digit)
 
-parseEvents :: Parser [EventTemplate]
-parseEvents = many $ do
-    eChar <- oneOf "PJKRM"
-    _ <- space
-    eBody <- parseLine
-    _ <- newline
-    return $ EventTemplate eChar eBody
+parseEvents :: A.Parser [EventTemplate]
+parseEvents = A.many' (parsePopSizeEvent <|> parseJoinEvent <|> parseJoinPopSizeEvent <|> parseGrowthRateEvent <|> parseMigrationRateEvent)
 
-parseLine :: Parser String
-parseLine = many $ noneOf "\n"
+parsePopSizeEvent :: A.Parser EventTemplate
+parsePopSizeEvent = do
+    _ <- A.char 'P'
+    _ <- A.space
+    t <- parseMaybeParam
+    _ <- A.char ','
+    k <- A.decimal
+    _ <- A.char ','
+    n <- parseMaybeParam
+    A.endOfLine
+    return $ PopSizeEventTemplate t k n
 
-parseConstraints :: Parser [ConstraintTemplate]
-parseConstraints = many $ do
-    _ <- char 'C'
-    _ <- space
-    name1 <- parseParamName
-    comp <- oneOf "<>"
-    name2 <- parseParamName
-    return $ ConstraintTemplate name1 comp name2
+parseMaybeParam :: A.Parser (Either Double String)
+parseMaybeParam = do
+    c <- A.peekChar'
+    if A.inClass "1234567890-+" c then do
+        val <- A.double
+        return $ Left val
+    else do
+        p <- parseParamName
+        return $ Right p
+
+parseJoinEvent :: A.Parser EventTemplate
+parseJoinEvent = do
+    _ <- A.char 'J'
+    _ <- A.space
+    t <- parseMaybeParam
+    _ <- A.char ','
+    k <- A.decimal
+    _ <- A.char ','
+    l <- A.decimal
+    A.endOfLine
+    return $ JoinEventTemplate t k l
+
+parseJoinPopSizeEvent :: A.Parser EventTemplate
+parseJoinPopSizeEvent = do
+    _ <- A.char 'K'
+    _ <- A.space
+    t <- parseMaybeParam
+    _ <- A.char ','
+    k <- A.decimal
+    _ <- A.char ','
+    l <- A.decimal
+    _ <- A.char ','
+    n <- parseMaybeParam
+    A.endOfLine
+    return $ JoinPopSizeEventTemplate t k l n
+
+parseGrowthRateEvent :: A.Parser EventTemplate
+parseGrowthRateEvent = do
+    _ <- A.char 'R'
+    _ <- A.space
+    t <- parseMaybeParam
+    _ <- A.char ','
+    k <- A.decimal
+    _ <- A.char ','
+    n <- parseMaybeParam
+    A.endOfLine
+    return $ GrowthRateEventTemplate t k n
+
+parseMigrationRateEvent :: A.Parser EventTemplate
+parseMigrationRateEvent = do
+    _ <- A.char 'M'
+    _ <- A.space
+    t <- parseMaybeParam
+    _ <- A.char ','
+    k <- A.decimal
+    _ <- A.char ','
+    l <- A.decimal
+    _ <- A.char ','
+    n <- parseMaybeParam
+    A.endOfLine
+    return $ MigrationRateEventTemplate t k l n
+
+parseConstraints :: A.Parser [ConstraintTemplate]
+parseConstraints = A.many' $ (A.try parseSmallerConstraint <|> parseGreaterConstraint)
+  where
+    parseSmallerConstraint = do
+        _ <- A.char 'C'
+        _ <- A.space
+        name1 <- parseParamName
+        _ <- A.char '<'
+        name2 <- parseParamName
+        return $ SmallerConstraintTemplate name1 name2
+    parseGreaterConstraint = do
+        _ <- A.char 'C'
+        _ <- A.space
+        name1 <- parseParamName
+        _ <- A.char '>'
+        name2 <- parseParamName
+        return $ GreaterConstraintTemplate name1 name2
 
 instantiateModel :: ModelTemplate -> V.Vector Double -> Either String ModelSpec
 instantiateModel (ModelTemplate pNames theta timeSteps ets cts) params = do
@@ -93,52 +171,50 @@ instantiateModel (ModelTemplate pNames theta timeSteps ets cts) params = do
     return $ ModelSpec timeSteps theta (concat events)
 
 instantiateEvent :: [String] -> [Double] -> EventTemplate -> Either String [ModelEvent]
-instantiateEvent pnames params (EventTemplate et body) = do
-    newB <- substituteParams pnames params body
-    let fields = splitOn "," newB
-        t = read . head $ fields
-        err = "Illegal Modeltemplate statement, or undefined parameter in \"" ++ body ++ "\""
+instantiateEvent pnames params et = do
     case et of
-        'P' -> do
-            k <- readErr err $ fields!!1
-            p <- readErr err $ fields!!2
-            return [ModelEvent t (SetPopSize k p)]
-        'R' -> do
-            k <- readErr err $ fields!!1
-            r <- readErr err $ fields!!2
-            return [ModelEvent t (SetGrowthRate k r)]
-        'J' -> do
-            k <- readErr err $ fields!!1
-            l <- readErr err $ fields!!2
-            return [ModelEvent t (Join k l)]
-        'K' -> do
-            k <- readErr err $ fields!!1
-            l <- readErr err $ fields!!2
-            p <- readErr err $ fields!!3
-            return [ModelEvent t (Join k l), ModelEvent t (SetPopSize k p)]
-        'M' -> do
-            k <- readErr err $ fields!!1
-            l <- readErr err $ fields!!2
-            r <- readErr err $ fields!!3
-            return $ [ModelEvent t (SetMigration k l r)]
-        _   -> Left "cannot parse modelTemplate Event"
+        PopSizeEventTemplate t k n -> do
+            t' <- getMaybeParam t
+            n' <- getMaybeParam n
+            return [ModelEvent t' (SetPopSize k n')]
+        JoinEventTemplate t k l -> do
+            t' <- getMaybeParam t
+            return [ModelEvent t' (Join k l)]
+        JoinPopSizeEventTemplate t k l n -> do
+            t' <- getMaybeParam t
+            n' <- getMaybeParam n
+            return [ModelEvent t' (Join k l), ModelEvent t' (SetPopSize k n')]
+        GrowthRateEventTemplate t k r -> do
+            t' <- getMaybeParam t
+            r' <- getMaybeParam r
+            return [ModelEvent t' (SetGrowthRate k r')]
+        MigrationRateEventTemplate t k l r -> do
+            t' <- getMaybeParam t
+            r' <- getMaybeParam r
+            return [ModelEvent t' (SetMigration k l r')]
+  where
+    getMaybeParam = substituteParam pnames params
+
+substituteParam :: [String] -> [Double] -> Either Double String -> Either String Double
+substituteParam _ _ (Left val) = Right val
+substituteParam pnames params (Right param) =
+    case foundParam of
+        Nothing -> Left $ "Error in Template: could not find parameter named " ++ param
+        Just val -> Right val
+  where
+    foundParam = lookup param (zip pnames params)
 
 validateConstraint :: [String] -> [Double] -> ConstraintTemplate -> Either String ()
-validateConstraint pNames params (ConstraintTemplate name1 comp name2) = do
-    let l = zip pNames params
-    p1 <- justErr ("Undefined parameter in constraint: \"" ++ name1 ++ "\"") $ lookup name1 l
-    p2 <- justErr ("Undefined parameter in constraint: \"" ++ name2 ++ "\"") $ lookup name2 l
-    if comp == '<' then
-        unless (p1 < p2) $ Left $ "Constrained failed: " ++ show p1 ++ " < " ++ show p2
-    else
-        unless (p1 > p2) $ Left $ "Constrained failed: " ++ show p1 ++ " > " ++ show p2
-
-substituteParams :: [String] -> [Double] -> String -> Either String String
-substituteParams [] [] s = Right s
-substituteParams (name:names) (p:ps) s =
-    let newS = replace ("<" ++ name ++ ">") (show p) s
-    in  substituteParams names ps newS
-substituteParams _ _ _ = Left "wrong number of params for modelTemplate"
+validateConstraint pNames params ct =
+    case ct of
+        SmallerConstraintTemplate name1 name2 -> do
+            p1 <- substituteParam pNames params (Right name1)
+            p2 <- substituteParam pNames params (Right name2)
+            assertErr ("Constrained failed: " ++ show p1 ++ " < " ++ show p2) (p1 < p2)
+        GreaterConstraintTemplate name1 name2 -> do
+            p1 <- substituteParam pNames params (Right name1)
+            p2 <- substituteParam pNames params (Right name2)
+            assertErr ("Constrained failed: " ++ show p1 ++ " > " ++ show p2) (p1 > p2)
 
 getModelSpec :: FilePath -> Double -> FilePath -> [Double] -> [ModelEvent] -> Int -> Script ModelSpec
 getModelSpec path theta paramsFile x events lingen =
