@@ -6,3 +6,8 @@ cabal.sandbox.config
 .stack-work
 *.html
 *.prof
+.DS_Store
+*.synctex.gz
+*.log
+*.aux
+*.lb
