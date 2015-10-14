@@ -1,5 +1,5 @@
-module ModelTemplate (getInitialParams, ModelTemplate(..), readModelTemplate, instantiateModel,
-                      getModelSpec) where
+module Rarecoal.ModelTemplate (getInitialParams, ModelTemplate(..), readModelTemplate, instantiateModel,
+                               getModelSpec, EventTemplate(..)) where
 
 import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..), EventType(..))
 
@@ -8,6 +8,7 @@ import Control.Error (Script, scriptIO, tryRight, readErr, justErr, tryJust, thr
 import Control.Monad (unless)
 import qualified Data.Attoparsec.Text as A
 import System.Log.Logger (infoM)
+import Data.List (maximumBy)
 import Data.List.Split (splitOn)
 import Data.String.Utils (replace)
 import qualified Data.Text.IO as T
@@ -19,16 +20,16 @@ data ModelTemplate = ModelTemplate {
     mtTimeSteps :: [Double],
     mtEventTemplates :: [EventTemplate],
     mtConstraintTemplates :: [ConstraintTemplate]
-}
+} deriving (Eq, Show)
 
 data EventTemplate = JoinEventTemplate (Either Double String) Int Int
                    | PopSizeEventTemplate (Either Double String) Int (Either Double String)
                    | JoinPopSizeEventTemplate (Either Double String) Int Int (Either Double String)
                    | GrowthRateEventTemplate (Either Double String) Int (Either Double String)
-                   | MigrationRateEventTemplate (Either Double String) Int Int (Either Double String)
+                   | MigrationRateEventTemplate (Either Double String) Int Int (Either Double String) deriving (Eq, Show)
 
 data ConstraintTemplate = SmallerConstraintTemplate String String
-                        | GreaterConstraintTemplate String String
+                        | GreaterConstraintTemplate String String deriving (Eq, Show)
 
 getInitialParams :: ModelTemplate -> FilePath -> [Double] -> Script (V.Vector Double)
 getInitialParams modelTemplate paramsFile x = do
@@ -86,12 +87,14 @@ parsePopSizeEvent = do
 parseMaybeParam :: A.Parser (Either Double String)
 parseMaybeParam = do
     c <- A.peekChar'
-    if A.inClass "1234567890-+" c then do
+    if c == '<' then do
+        _ <- A.char '<'
+        p <- parseParamName
+        _ <- A.char '>'
+        return $ Right p
+    else do
         val <- A.double
         return $ Left val
-    else do
-        p <- parseParamName
-        return $ Right p
 
 parseJoinEvent :: A.Parser EventTemplate
 parseJoinEvent = do
@@ -225,3 +228,46 @@ getModelSpec path theta paramsFile x events lingen =
             tryRight $ instantiateModel template x'
         else
             return $ ModelSpec times theta events
+
+-- getNewParams :: ModelTemplate -> V.Vector Double -> Int -> Double -> V.Vector Double
+-- getNewParams mt params i change =
+--     if null relevantEvents then simpleChange else
+--         let relevantEvent = head relevantEvents
+--             crossingJoins = getCrossingJoins relevantEvent
+--         in  hasCrossingJoins then simpleChange else
+--             if
+--     let pNames = mtParams mt
+--         paramMap = zip pNames (V.toList params)
+--         paramIndexMap = zip pNames [0..]
+--         pName = pNames !! i
+--         allJoinPopSizeEventTemplates = [e | e@(JoinPopSizeEventTemplate _ _ _ _) <- (mtEventTemplates mt)]
+--         allJoinPopSizeTimes = do
+--             JoinPopSizeEventTemplate t k l n <- allJoinPopSizeEventTemplates
+--             case t of
+--                 Left val -> return val
+--                 Right name -> do
+--                     let (Just val) = lookup name paramMap
+--                     return val
+--         eventLibrary = zip allJoinPopSizeTimes allJoinPopSizeEventTemplates
+--         eventsForParam = [p | p@(_, JoinPopSizeEventTemplate (Right n) _ _ (Right _)) <- eventLibrary, n == pName]
+--     in  if null eventsForParam then
+--             simpleModifyParams
+--         else
+--             let (t, JoinPopSizeEventTemplate _ k _ (Right p))  = head eventsForParam
+--                 overlappingJoins =
+--                     [p' | p'@(t', JoinPopSizeEventTemplate _ k' _ (Right n)) <- eventLibrary, t' > t, t' < t + change, k' == k]
+--             in  if null overlappingJoins then
+--                     simpleModifyParams
+--                 else
+--                     let (_, JoinPopSizeEventTemplate _ _ _ (Right n)) = maximumBy (\(t1, _) (t2, _) -> t1 `compare` t2) overlappingJoins
+--                         Just j = lookup p paramIndexMap
+--                         Just j' = lookup n paramIndexMap
+--                     in  let newParams = simpleModifyParams
+--                         in  newParams V.// [(j, newParams V.! j')]
+--   where
+--     simpleModifyParams =
+--         let oldVal = params V.! i
+--             newVal = oldVal + change
+--         in  params V.// [(i, newVal)]
+            
+    
