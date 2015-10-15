@@ -1,7 +1,7 @@
 module Prob (runProb, ProbOpt(..)) where
 
 import Rarecoal.Core (getProb, ModelEvent(..))
-import ModelTemplate (getModelSpec)
+import Rarecoal.ModelTemplate (getModelSpec)
 
 import Control.Error (Script, scriptIO, tryRight)
 

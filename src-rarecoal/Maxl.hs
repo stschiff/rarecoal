@@ -2,6 +2,7 @@ module Maxl (minFunc, penalty, runMaxl, MaxlOpt(..)) where
 
 import Logl (computeLikelihood)
 import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..))
+import Rarecoal.ModelTemplate (ModelTemplate(..), instantiateModel, readModelTemplate, getInitialParams)
 import Rarecoal.RareAlleleHistogram (RareAlleleHistogram, loadHistogram)
 
 import Control.Error (Script, scriptIO, assertErr, tryRight)
@@ -10,7 +11,6 @@ import Data.List (intercalate)
 import qualified Data.Vector.Unboxed as V
 import Numeric.LinearAlgebra.Data (toRows, toList)
 import Numeric.GSL.Minimization (minimize, MinimizeMethod(..))
-import ModelTemplate (ModelTemplate(..), instantiateModel, readModelTemplate, getInitialParams)
 import System.Log.Logger (infoM)
 
 data MaxlOpt = MaxlOpt {

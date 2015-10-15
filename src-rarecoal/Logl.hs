@@ -3,13 +3,13 @@ module Logl (computeLikelihood, runLogl, LoglOpt(..)) where
 import Rarecoal.Core (getProb, ModelSpec(..), ModelEvent(..))
 import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..), loadHistogram)
 import Rarecoal.Utils (computeAllConfigs)
+import Rarecoal.ModelTemplate (getModelSpec)
 
 import Control.Error (Script, scriptIO, assertErr, tryRight)
 import Control.Monad (when)
 import Control.Parallel.Strategies (rdeepseq, parMap)
 import Data.Int (Int64)
 import qualified Data.Map.Strict as Map
-import ModelTemplate (getModelSpec)
 
 data LoglOpt = LoglOpt {
    loSpectrumPath :: FilePath,

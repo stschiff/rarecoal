@@ -2,12 +2,12 @@ module Find (runFind, FindOpt(..)) where
 
 import Rarecoal.Core (ModelSpec(..), ModelEvent(..), EventType(..))
 import Rarecoal.RareAlleleHistogram (loadHistogram, RareAlleleHistogram(..), SitePattern(..))
+import Rarecoal.ModelTemplate (getModelSpec)
 
 import Control.Error (Script, scriptIO, tryAssert, tryRight)
 import Data.Int (Int64)
 import Data.List (sortBy)
 import Logl (computeLikelihood)
-import ModelTemplate (getModelSpec)
 import System.IO (stderr, hPutStrLn, openFile, IOMode(..), hClose)
 
 data FindOpt = FindOpt {
