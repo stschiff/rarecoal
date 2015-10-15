@@ -26,7 +26,6 @@ data FindOpt = FindOpt {
     fiConditionOn :: [Int],
     fiNrCalledSites :: Int64,
     fiLinGen :: Int,
-    fiIndices :: [Int],
     fiIgnoreList :: [SitePattern],
     fiHistPath :: FilePath,
     fiNoShortcut :: Bool
@@ -44,7 +43,7 @@ runFind opts = do
             else
                 modelSpec'
     tryAssert ("model must have free branch " ++ show (fiQueryIndex opts)) $ hasFreeBranch l modelSpec
-    hist <- loadHistogram (fiIndices opts) (fiMinAf opts) (fiMaxAf opts) (fiConditionOn opts) (fiNrCalledSites opts) (fiHistPath opts)
+    hist <- loadHistogram (fiMinAf opts) (fiMaxAf opts) (fiConditionOn opts) (fiNrCalledSites opts) (fiHistPath opts)
     let nrPops = length $ raNVec hist
         targetBranches = [branch | branch <- [0..nrPops-1], branch /= l]
         allJoinTimes = [getJoinTimes modelSpec (fiDeltaTime opts) (fiMaxTime opts) (fiBranchAge opts) k | k <- targetBranches]

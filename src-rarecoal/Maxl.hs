@@ -26,7 +26,6 @@ data MaxlOpt = MaxlOpt {
    maConditionOn :: [Int],
    maNrCalledSites :: Int64,
    maLinGen :: Int,
-   maIndices :: [Int],
    maHistPath :: FilePath
 }
 
@@ -34,7 +33,7 @@ runMaxl :: MaxlOpt -> Script ()
 runMaxl opts = do
     let times = getTimeSteps 20000 (maLinGen opts) 20.0
     modelTemplate <- readModelTemplate (maTemplatePath opts) (maTheta opts) times
-    hist <- loadHistogram (maIndices opts) (maMinAf opts) (maMaxAf opts) (maConditionOn opts) (maNrCalledSites opts) (maHistPath opts)
+    hist <- loadHistogram (maMinAf opts) (maMaxAf opts) (maConditionOn opts) (maNrCalledSites opts) (maHistPath opts)
     x <- getInitialParams modelTemplate (maInitialParamsFile opts) (maInitialParams opts)
     _ <- tryRight $ minFunc modelTemplate [] hist x
     let minFunc' = either (const penalty) id . minFunc modelTemplate [] hist

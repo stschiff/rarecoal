@@ -54,20 +54,7 @@ parseView :: OP.Parser Command
 parseView = CmdView <$> parseViewOpt
 
 parseViewOpt :: OP.Parser ViewOpt
-parseViewOpt = ViewOpt <$> parseIndices <*> parseCombineIndices <*> parseMaxAf <*> parseNrCalledSites
-                       <*> parseGlobal <*> parseHistPath
-
-parseIndices :: OP.Parser [Int]
-parseIndices = OP.option OP.auto $ OP.short 'I' <> OP.long "indices"
-                                                <> OP.metavar "[i1,i2,...]"
-                                                <> OP.value [] <> OP.showDefault
-                                                <> OP.help "Read only these indices from the input file"
-
-parseCombineIndices :: OP.Parser [Int]
-parseCombineIndices = OP.option OP.auto $ OP.long "combine"
-                                                <> OP.metavar "[i1,i2,...]"
-                                                <> OP.value [] <> OP.showDefault
-                                                <> OP.help "combine these indices into one"
+parseViewOpt = ViewOpt <$> parseMaxAf <*> parseNrCalledSites <*> parseHistPath
 
 parseMinAf :: OP.Parser Int
 parseMinAf = OP.option OP.auto $ OP.long "minAf" <> OP.metavar "<INT>"
@@ -85,9 +72,6 @@ parseNrCalledSites = OP.option OP.auto $ OP.short 'N' <> OP.long "nr_called_site
                                                       <> OP.metavar "INT"
                                                       <> OP.value 0 <> OP.showDefault
                                                       <> OP.help "set the nr of called sites"
-
-parseGlobal :: OP.Parser Bool
-parseGlobal = OP.switch (OP.long "globalMax" <> OP.short 'g' <> OP.help "constrain global allele frequency")
 
 parseHistPath :: OP.Parser FilePath
 parseHistPath = OP.strOption $ OP.short 'i' <> OP.long "input"
@@ -179,7 +163,7 @@ parseLogl = CmdLogl <$> parseLoglOpt
 parseLoglOpt :: OP.Parser LoglOpt
 parseLoglOpt = LoglOpt <$> parseSpectrumPath <*> parseTheta <*> parseTemplateFilePath <*> parseInitialParamsFile
                        <*> parseInitialParamsList <*> parseModelEvents <*> parseLinGen <*> parseMinAf
-                       <*> parseMaxAf <*> parseConditioning <*> parseNrCalledSites <*> parseIndices <*> parseHistPath
+                       <*> parseMaxAf <*> parseConditioning <*> parseNrCalledSites <*> parseHistPath
 
 parseSpectrumPath :: OP.Parser FilePath
 parseSpectrumPath = OP.strOption $ OP.short 's' <> OP.long "spectrumFile"
@@ -195,7 +179,7 @@ parseMaxlOpt :: OP.Parser MaxlOpt
 parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*> parseInitialParamsFile
                        <*> parseInitialParamsList <*> parseMaxCycles <*> parseNrRestarts
                        <*> parseTraceFilePath  <*> parseMinAf <*> parseMaxAf <*> parseConditioning
-                       <*> parseNrCalledSites <*> parseLinGen <*> parseIndices <*> parseHistPath
+                       <*> parseNrCalledSites <*> parseLinGen <*> parseHistPath
   where
     parseMaxCycles = OP.option OP.auto $ OP.short 'c' <> OP.long "maxCycles"
                                                       <> OP.metavar "<NR_MAX_CYCLES>"
@@ -218,7 +202,6 @@ parseMcmcOpt :: OP.Parser McmcOpt
 parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*> parseInitialParamsFile <*> parseInitialParamsList
                        <*> parseNrCycles <*> parseTraceFilePath <*> parseMinAf
                        <*> parseMaxAf <*> parseConditioning <*> parseNrCalledSites <*> parseLinGen
-                       <*> parseIndices
                        <*> parseHistPath <*> parseRandomSeed <*> parseBranchAges
   where
     parseRandomSeed = OP.option OP.auto $ OP.short 'S' <> OP.long "seed" <> OP.metavar "<INT>" <> OP.value 0 <>
@@ -243,7 +226,7 @@ parseFindOpt = FindOpt <$> parseQueryIndex <*> parseEvalFile <*> parseBranchAge 
                        <*> parseTheta
                        <*> parseTemplateFilePath <*> parseInitialParamsFile <*> parseInitialParamsList
                        <*> parseModelEvents <*> parseMinAf <*> parseMaxAf
-                       <*> parseConditioning <*> parseNrCalledSites <*> parseLinGen <*> parseIndices
+                       <*> parseConditioning <*> parseNrCalledSites <*> parseLinGen
                        <*> parseIgnoreList <*> parseHistPath <*> parseNoShortcut
   where
     parseQueryIndex = OP.option OP.auto $ OP.short 'q' <> OP.long "queryIndex" <> OP.metavar "<INT>"

@@ -11,7 +11,7 @@ import Data.Int (Int64)
 import qualified Data.ByteString.Lazy.Char8 as B
 import qualified Data.Text.IO as T
 
-data MyOpts = MyOpts [Int] Int Int64 Bool
+data MyOpts = MyOpts [Int] Int Int64
 
 makeLenses ''MyOpts
 
@@ -21,24 +21,23 @@ main = OP.execParser opts >>= mainWithOptions
     parser = MyOpts <$> OP.option OP.auto (OP.short 'n' <> OP.long "nVec" <> OP.metavar "<LIST>")
                     <*> OP.option OP.auto (OP.short 'm' <> OP.long "maxM" <> OP.metavar "<INT>")
                     <*> OP.option OP.auto (OP.short 'N' <> OP.long "nrCalledSites" <> OP.metavar "INT")
-                    <*> OP.switch (OP.short 'g' <> OP.long "globalMax")
     opts = OP.info parser mempty
 
 mainWithOptions :: MyOpts -> IO ()
-mainWithOptions (MyOpts nVec maxAf nrCalledSites globalMax) = runScript $
-    scriptIO B.getContents >>= tryRight . makeHist nVec maxAf globalMax
+mainWithOptions (MyOpts nVec maxAf nrCalledSites) = runScript $
+    scriptIO B.getContents >>= tryRight . makeHist nVec maxAf
                            >>= tryRight . setNrCalledSites nrCalledSites
                            >>= tryRight . showHistogram
                            >>= scriptIO . T.putStr
 
-makeHist :: [Int] -> Int -> Bool -> B.ByteString -> Either String RareAlleleHistogram
-makeHist nVec maxAf global s = do
+makeHist :: [Int] -> Int -> B.ByteString -> Either String RareAlleleHistogram
+makeHist nVec maxAf s = do
     let loci = B.transpose . B.lines $ s
     assertErr "nVec doesn't sum up to correct number of samples" $ B.length (head loci) == sum (map fromIntegral nVec)
     let getFreqSum = map (length . filter (=='1')) . splitPlaces nVec . B.unpack
         freqSums = map getFreqSum loci
-        pred_ = if global then (<=maxAf) . sum else any (<=maxAf)
+        pred_ = (<=maxAf) . sum
         toPattern p = if pred_ p then Pattern p else Higher
         insert m k = M.insertWith (+) k 1 m
         counts = foldl insert M.empty $ map toPattern freqSums
-    return $ RareAlleleHistogram nVec 0 maxAf global [] counts
+    return $ RareAlleleHistogram nVec 0 maxAf [] counts

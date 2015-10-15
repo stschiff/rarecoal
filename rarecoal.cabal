@@ -151,20 +151,6 @@ executable combineHistograms
                        pipes-attoparsec, errors, random
   default-language:    Haskell2010
 
-executable sampleHist
-  main-is:             sampleHist.hs
-  hs-source-dirs:      src-sampleHist
-  build-depends:       base, rarecoal,
-                       optparse-applicative,
-                       transformers,
-                       errors,
-                       lens,
-                       containers,
-                       random,
-                       text
-  default-language:    Haskell2010
-  ghc-options:         -rtsopts "-with-rtsopts=-A10m -K100m"
-
 executable ms2hist
   main-is:              ms2hist.hs
   hs-source-dirs:       src-ms2hist
