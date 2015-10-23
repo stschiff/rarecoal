@@ -1,58 +1,60 @@
-import Pipes (runEffect, (>->), Producer)
-import qualified Pipes.Prelude as P
-import qualified Pipes.Text as PT
-import qualified Pipes.Text.IO as PT
-import qualified Data.Text as T
-import Pipes.Group (folds)
-import Control.Foldl (purely, mconcat)
-import Control.Applicative ((<|>))
-import Control.Error (runScript, tryRight, Script)
-import Control.Lens (view)
-import Data.Attoparsec.Text (Parser, char, decimal, letter, notInClass, parseOnly, sepBy1, takeWhile)
-import Prelude hiding (takeWhile, mconcat)
-import Control.Monad (replicateM_)
+{-# LANGUAGE OverloadedStrings #-}
+
 import Rarecoal.FreqSumEntry (FreqSumEntry(..))
 
-data VCFentry = VCFentry T.Text Int Char Char [(Char,Char)]
+import Turtle
+import Control.Error (runScript, tryAssert)
+import qualified Data.Text as T
+
+data VCFentry = VCFentry Text Int Text Text [(Char,Char)]
 
 main :: IO ()
-main = runScript . runEffect $ lineProducer >-> P.filter (\l -> T.head l /= '#') >->
-                               P.mapM (tryRight . processVCFline) >-> PT.stdout
+main = foldIO (grep (prefix (noneOf "#")) stdin) foldLines
 
-lineProducer :: Producer T.Text Script ()
-lineProducer = purely folds mconcat $ view PT.lines PT.stdin
+foldLines :: FoldM IO Text ()
+foldLines = FoldM processLine initial extract
+  where
+    initial = return 0
+    extract = const (return ())
 
-processVCFline :: T.Text -> Either String T.Text
-processVCFline line = do
-    VCFentry chrom pos ref alt genotypes <- parseOnly parseVCFentry line
-    let gens = [[g1, g2] | (g1, g2) <- genotypes]
-    let counts = [length $ filter (=='1') c | c <- gens]
-        fs = FreqSumEntry (T.unpack chrom) pos ref alt counts
-    return . flip T.snoc '\n' . T.pack . show $ fs
+processLine :: Int -> Text -> IO Int
+processLine lastPos line = runScript $ do
+    let parseResult = match vcfPattern line
+        msg = format ("vcf parse error for line "%s) line
+    tryAssert (T.unpack msg) $ length parseResult == 1
+    let [VCFentry chrom pos ref alt genotypes] = parseResult
+    if lastPos == pos || T.length ref > 1 || T.length alt > 1 then
+        return pos
+    else do
+        let gens = [[g1, g2] | (g1, g2) <- genotypes]
+        let counts = [length $ filter (=='1') c | c <- gens]
+            fs = FreqSumEntry (T.unpack chrom) pos (T.head ref) (T.head alt) counts
+        echo . T.pack . show $ fs
+        return pos
 
-parseVCFentry :: Parser VCFentry
-parseVCFentry = do
+vcfPattern :: Pattern VCFentry
+vcfPattern = do
     chrom <- word
-    _ <- char '\t'
+    skip tab
     pos <- decimal
-    _ <- char '\t'
-    _ <- word
-    _ <- char '\t'
-    ref <- letter
-    _ <- char '\t'
-    alt <- letter
-    _ <- char '\t'
-    replicateM_ 4 (word >> char '\t')
-    genotypes <- genotype `sepBy1` (char '\t')
+    skip tab
+    skip word
+    skip tab
+    ref <- word
+    skip tab
+    alt <- word
+    skip tab
+    skip $ count 4 (word >> tab)
+    genotypes <- genotype `sepBy1` tab
     return $ VCFentry chrom pos ref alt genotypes
 
-word :: Parser T.Text
-word = takeWhile (notInClass "\r\t\n ")
+word :: Pattern Text
+word = plus $ noneOf "\r\t\n "
 
-genotype :: Parser (Char, Char)
+genotype :: Pattern (Char, Char)
 genotype = do
     gen1 <- (char '0' <|> char '1')
-    _ <- (char '/' <|> char '|')
+    skip (char '/' <|> char '|')
     gen2 <- (char '0' <|> char '1')
-    _ <- word
+    skip $ star (noneOf "\r\t\n ")
     return (gen1, gen2)

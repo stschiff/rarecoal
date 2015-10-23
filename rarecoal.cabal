@@ -72,14 +72,9 @@ executable vcf2FreqSum
   main-is:             vcf2FreqSum.hs
   hs-source-dirs:      src-vcf2FreqSum
   build-depends:       base, rarecoal,
-                       pipes,
-                       pipes-text,
                        text,
-                       pipes-group,
-                       foldl,
                        errors,
-                       lens,
-                       attoparsec
+                       turtle
   default-language:    Haskell2010
 
 executable groupFreqSum
