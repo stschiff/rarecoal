@@ -34,7 +34,6 @@ runWithOptions :: MyOpts -> IO ()
 runWithOptions opts = runScript $ do
     handle <- if _optHistPath opts == "-" then return stdin else scriptIO $ openFile (_optHistPath opts) ReadMode
     hist <- readHistogramFromHandle handle
-    when (raGlobalMax hist) $ throwE "histogram cannot have global max for this operation"
     rng <- scriptIO newStdGen
     let hist' = evalState (addSamplePop (_optQueryPop opts) (_optHowMany opts) hist) rng
     outs <- tryRight $ showHistogram hist'

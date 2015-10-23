@@ -53,8 +53,8 @@ word = plus $ noneOf "\r\t\n "
 
 genotype :: Pattern (Char, Char)
 genotype = do
-    gen1 <- (char '0' <|> char '1')
+    gen1 <- (char '0' <|> char '1' <|> char '.')
     skip (char '/' <|> char '|')
-    gen2 <- (char '0' <|> char '1')
+    gen2 <- (char '0' <|> char '1' <|> char '.')
     skip $ star (noneOf "\r\t\n ")
     return (gen1, gen2)
