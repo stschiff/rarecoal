@@ -59,8 +59,12 @@ There are three event types:
 
 An example using the last event type is given in `testData/5popSimTemplate.txt`. The model in these templates described the tree ((0,1),((2,3),4)) in Newick Format, which is also the tree used to simulate the data in `testData/5popSplit_combined.txt`.
 
+The `rarecoal maxl` program takes a number of command line options, you can list them using `rarecoal maxl -h`.
+A usage example using the example data is:
 
+    rarecoal maxl -T testData/5popSimTemplateFixedPop.txt -x [0.001,0.002,0.003,0.004,1] -m 4 -i testData/5popSplit_combined.txt
 
+This starts the maximization with the parameters given by `-x`, which correspond to the parameters listed in the first line of the template file. It is important to set the option `-m` to something not too high (`-m 4` was used throughout the publication), otherwise the run time will be very long. 
 
 ## Utilities for processing
 
