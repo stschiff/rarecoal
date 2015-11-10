@@ -5,10 +5,11 @@ import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..))
 import Rarecoal.ModelTemplate (ModelTemplate(..), instantiateModel, readModelTemplate, getInitialParams)
 import Rarecoal.RareAlleleHistogram (RareAlleleHistogram, loadHistogram)
 
-import Control.Error (Script, scriptIO, assertErr, tryRight)
+import Control.Error (Script, scriptIO, assertErr, tryRight, err)
 import Data.Int (Int64)
 import Data.List (intercalate)
 import qualified Data.Vector.Unboxed as V
+import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
 import Numeric.LinearAlgebra.Data (toRows, toList)
 import Numeric.GSL.Minimization (minimize, MinimizeMethod(..))
 import System.Log.Logger (infoM)
@@ -26,11 +27,16 @@ data MaxlOpt = MaxlOpt {
    maConditionOn :: [Int],
    maNrCalledSites :: Int64,
    maLinGen :: Int,
-   maHistPath :: FilePath
+   maHistPath :: FilePath,
+   maNrThreads :: Int
 }
 
 runMaxl :: MaxlOpt -> Script ()
 runMaxl opts = do
+    nrProc <- scriptIO getNumProcessors
+    if (maNrThreads opts == 0) then scriptIO $ setNumCapabilities nrProc else scriptIO $ setNumCapabilities (maNrThreads opts)
+    nrThreads <- scriptIO getNumCapabilities
+    scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
     let times = getTimeSteps 20000 (maLinGen opts) 20.0
     modelTemplate <- readModelTemplate (maTemplatePath opts) (maTheta opts) times
     hist <- loadHistogram (maMinAf opts) (maMaxAf opts) (maConditionOn opts) (maNrCalledSites opts) (maHistPath opts)

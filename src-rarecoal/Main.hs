@@ -164,12 +164,16 @@ parseLoglOpt :: OP.Parser LoglOpt
 parseLoglOpt = LoglOpt <$> parseSpectrumPath <*> parseTheta <*> parseTemplateFilePath <*> parseInitialParamsFile
                        <*> parseInitialParamsList <*> parseModelEvents <*> parseLinGen <*> parseMinAf
                        <*> parseMaxAf <*> parseConditioning <*> parseNrCalledSites <*> parseHistPath
+                       <*> parseNrThreads
 
 parseSpectrumPath :: OP.Parser FilePath
 parseSpectrumPath = OP.strOption $ OP.short 's' <> OP.long "spectrumFile"
                                                 <> OP.metavar "<Output Spectrum File>"
                                                 <> OP.value "/dev/null"
                                                 <> OP.help "Write the model probabilities for each pattern in the Histogram to a file."
+
+parseNrThreads :: OP.Parser Int
+parseNrThreads = OP.option OP.auto $ OP.long "nrThreads" <> OP.metavar "<INT>" <> OP.value 0 <> OP.help "set number of threads to use. By default this is set to the number of processors on your system."
 
 
 parseMaxl :: OP.Parser Command
@@ -179,7 +183,7 @@ parseMaxlOpt :: OP.Parser MaxlOpt
 parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*> parseInitialParamsFile
                        <*> parseInitialParamsList <*> parseMaxCycles <*> parseNrRestarts
                        <*> parseTraceFilePath  <*> parseMinAf <*> parseMaxAf <*> parseConditioning
-                       <*> parseNrCalledSites <*> parseLinGen <*> parseHistPath
+                       <*> parseNrCalledSites <*> parseLinGen <*> parseHistPath <*> parseNrThreads
   where
     parseMaxCycles = OP.option OP.auto $ OP.short 'c' <> OP.long "maxCycles"
                                                       <> OP.metavar "<NR_MAX_CYCLES>"
@@ -202,7 +206,7 @@ parseMcmcOpt :: OP.Parser McmcOpt
 parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*> parseInitialParamsFile <*> parseInitialParamsList
                        <*> parseNrCycles <*> parseTraceFilePath <*> parseMinAf
                        <*> parseMaxAf <*> parseConditioning <*> parseNrCalledSites <*> parseLinGen
-                       <*> parseHistPath <*> parseRandomSeed <*> parseBranchAges
+                       <*> parseHistPath <*> parseRandomSeed <*> parseBranchAges <*> parseNrThreads
   where
     parseRandomSeed = OP.option OP.auto $ OP.short 'S' <> OP.long "seed" <> OP.metavar "<INT>" <> OP.value 0 <>
                       OP.showDefault <>
@@ -225,7 +229,7 @@ parseFindOpt = FindOpt <$> parseQueryIndex <*> parseEvalFile <*> parseBranchAge 
                        <*> parseTemplateFilePath <*> parseInitialParamsFile <*> parseInitialParamsList
                        <*> parseModelEvents <*> parseMinAf <*> parseMaxAf
                        <*> parseConditioning <*> parseNrCalledSites <*> parseLinGen
-                       <*> parseIgnoreList <*> parseHistPath <*> parseNoShortcut
+                       <*> parseIgnoreList <*> parseHistPath <*> parseNoShortcut <*> parseNrThreads
   where
     parseQueryIndex = OP.option OP.auto $ OP.short 'q' <> OP.long "queryIndex" <> OP.metavar "<INT>"
                                                        <> OP.help "0-based index of query branch"

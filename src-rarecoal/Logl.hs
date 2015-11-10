@@ -5,11 +5,12 @@ import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..), l
 import Rarecoal.Utils (computeAllConfigs)
 import Rarecoal.ModelTemplate (getModelSpec)
 
-import Control.Error (Script, scriptIO, assertErr, tryRight)
+import Control.Error (Script, scriptIO, assertErr, tryRight, err)
 import Control.Monad (when)
 import Control.Parallel.Strategies (rdeepseq, parMap)
 import Data.Int (Int64)
 import qualified Data.Map.Strict as Map
+import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
 
 data LoglOpt = LoglOpt {
    loSpectrumPath :: FilePath,
@@ -23,11 +24,16 @@ data LoglOpt = LoglOpt {
    loMaxAf :: Int,
    loConditionOn :: [Int],
    loNrCalledSites :: Int64,
-   loHistPath :: FilePath
+   loHistPath :: FilePath,
+   loNrThreads :: Int
 }
 
 runLogl :: LoglOpt -> Script ()
 runLogl opts = do
+    nrProc <- scriptIO getNumProcessors
+    if (loNrThreads opts == 0) then scriptIO $ setNumCapabilities nrProc else scriptIO $ setNumCapabilities (loNrThreads opts)
+    nrThreads <- scriptIO getNumCapabilities
+    scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
     modelSpec <- getModelSpec (loTemplatePath opts) (loTheta opts) (loParamsFile opts) (loParams opts) (loModelEvents opts) (loLinGen opts)
     hist <- loadHistogram (loMinAf opts) (loMaxAf opts) (loConditionOn opts) (loNrCalledSites opts) (loHistPath opts)
     val <- tryRight $ computeLikelihood modelSpec hist False

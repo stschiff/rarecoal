@@ -11,9 +11,10 @@ import Control.Monad.Trans.State.Lazy (StateT, get, gets, put, evalStateT, modif
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad (when, forM_)
 import Data.List (intercalate, sort, minimumBy)
-import Control.Error (Script, scriptIO, tryRight)
+import Control.Error (Script, scriptIO, tryRight, err)
 import Data.Int (Int64)
 import Data.Ord (comparing)
+import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
 import System.Log.Logger (infoM)
 import Control.Monad.Loops (whileM)
 
@@ -36,7 +37,8 @@ data McmcOpt = McmcOpt {
    mcLinGen :: Int,
    mcHistPath :: FilePath,
    mcRandomSeed :: Int,
-   mcBranchAges :: [Double]
+   mcBranchAges :: [Double],
+   mcNrThreads :: Int
 }
 
 data MCMCstate = MCMCstate {
@@ -52,6 +54,11 @@ data MCMCstate = MCMCstate {
 
 runMcmc :: McmcOpt -> Script ()
 runMcmc opts = do
+    nrProc <- scriptIO getNumProcessors
+    if (mcNrThreads opts == 0) then scriptIO $ setNumCapabilities nrProc else scriptIO $ setNumCapabilities (mcNrThreads opts)
+    nrThreads <- scriptIO getNumCapabilities
+    scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
+
     let times = getTimeSteps 20000 (mcLinGen opts) 20.0
     modelTemplate <- readModelTemplate (mcTemplatePath opts) (mcTheta opts) times
     hist <- loadHistogram (mcMinAf opts) (mcMaxAf opts) (mcConditionOn opts) (mcNrCalledSites opts) (mcHistPath opts)

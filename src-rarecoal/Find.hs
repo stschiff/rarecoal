@@ -4,9 +4,10 @@ import Rarecoal.Core (ModelSpec(..), ModelEvent(..), EventType(..))
 import Rarecoal.RareAlleleHistogram (loadHistogram, RareAlleleHistogram(..), SitePattern(..))
 import Rarecoal.ModelTemplate (getModelSpec)
 
-import Control.Error (Script, scriptIO, tryAssert, tryRight)
+import Control.Error (Script, scriptIO, tryAssert, tryRight, err)
 import Data.Int (Int64)
 import Data.List (sortBy)
+import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
 import Logl (computeLikelihood)
 import System.IO (stderr, hPutStrLn, openFile, IOMode(..), hClose)
 
@@ -28,11 +29,17 @@ data FindOpt = FindOpt {
     fiLinGen :: Int,
     fiIgnoreList :: [SitePattern],
     fiHistPath :: FilePath,
-    fiNoShortcut :: Bool
+    fiNoShortcut :: Bool,
+    fiNrThreads :: Int
 }
 
 runFind :: FindOpt -> Script ()
 runFind opts = do
+    nrProc <- scriptIO getNumProcessors
+    if (fiNrThreads opts == 0) then scriptIO $ setNumCapabilities nrProc else scriptIO $ setNumCapabilities (fiNrThreads opts)
+    nrThreads <- scriptIO getNumCapabilities
+    scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
+
     modelSpec' <- getModelSpec (fiTemplatePath opts) (fiTheta opts) (fiParamsFile opts) (fiParams opts) (fiModelEvents opts) (fiLinGen opts)
     let l = fiQueryIndex opts
         modelSpec = if fiBranchAge opts > 0.0 then
