@@ -28,6 +28,13 @@ A typical workflow of how to generate this format from VCF files is described be
 
 You can list the command line options for `rarecoal` by typing `rarecoal -h`, and for a specific subcommand, say `view` by typing `rarecoal view -h`.
 
+All time inputs and outputs in rarecoal are measured in units of 2N<sub>0</sub> generations, and all population sizes are measured
+in units of N<sub>0</sub>. Here, N<sub>0</sub> is indirectly set using the `--theta` option in any rarecoal command. Here, `--theta`
+is defined as 2N<sub>0</sub>µ, where µ is the per-generation mutation rate. (Sorry for this factor 2 difference to the standard
+definition of theta in population genetics. It was a historical mistake which I am reluctant to fix because I defined it this way in all my mathematical derivations). By default, theta is set to 0.0005, which corresponds to N<sub>0</sub>=20,000 assuming a per-generation mutation rate of µ=1.25e-8.
+
+A note on multithreading: Without specifying the number of threads via `--nrThreads`, rarecoal will run on parallel using all the processors on your system. In my experience, the speed increases fairly linearly up to around 8 processors. Up to around 16 processors, there is still some improvement, but much slower than linear. So I would usually recommend running on 8 processors at most, although you can try to go higher if you can afford it.
+
 ### rarecoal view
 You can use this subcommand to read in a histogram file and view it up to a specific allele count, using the `-m` option. For example, you can view the number of all singletons and doubletons in the example data set via:
 
@@ -65,6 +72,43 @@ A usage example using the example data is:
     rarecoal maxl -T testData/5popSimTemplateFixedPop.txt -x [0.001,0.002,0.003,0.004,1] -m 4 -i testData/5popSplit_combined.txt
 
 This starts the maximization with the parameters given by `-x`, which correspond to the parameters listed in the first line of the template file. It is important to set the option `-m` to something not too high (`-m 4` was used throughout the publication), otherwise the run time will be very long since rarecoal needs to compute the likelihood of all possible patterns up to higher allele counts.
+
+
+
+
+### rarecoal mcmc
+This works very similarly to the `maxl` command. However, instead of a heuristic optimization, we perform a full MCMC, refines maximum likelihood estimates obtained by `maxl`, and also gives the median and 95% range of the posterior distribution for each parameter. Again, type `rarecoal mcmc -h` to get an overview about all the command line options. An example usage is
+
+    rarecoal mcmc -T testData/5popSimTemplateFixedPop.txt -x [0.001,0.002,0.003,0.004,1] -m 4 -i testData/5popSplit_combined.txt 
+
+A particularly useful parameter for this command is the `--paramsFile` option, which lets you specify the output of a previous maxl or mcmc run as the starting point for MCMC. A typical work flow is to first run `maxl` on a particular model to get close to the maximum, and then use `mcmc` with `--paramsFile` to begin at the point found by `maxl`.
+
+### rarecoal logl
+The command simply takes a model and a histogram and spits out the log likelihood for that particular model. In addition, you can specify an output file for the complete joint allele frequency spectrum, which is useful if you want to compare empirical with theoretical spectra (fits). A typical command line is:
+
+    rarecoal logl -T testData/5popSimTemplateFixedPop.txt -x [0.001,0.002,0.003,0.004,1] -m 4 -i testData/5popSplit_combined.txt -s model_spectrum.txt
+
+which gives the likelihood and writes the probability for each allele frequency pattern into the filed specified by `-s`. Note that you can again use `--paramsFile` to input the output of a previous `mcmc` or `maxl` run.
+
+In contrast to `maxl` and `mcmc`, which need a model template, `logl` also accepts model specifications via the command line, given by the options `-j` and `-p`, as explained in the help text. Note that for setting events of type "K" (see model template syntax above) on the command line, you need to be give both of `-j` and `-p`.
+
+### rarecoal prob
+A little program which lets you compute the probability for a particular pattern using rarecoal. Similarly to `logl`, it accepts models via a template and via command line options. An example is:
+
+    rarecoal prob -j 0.02,0,1 [100,100] [1,1]
+
+which computes the probability to observe a shared doubleton in two populations, each with 100 sampled haplotypes.
+
+### rarecoal find
+Rarecoal find performs a brute force search for the branch point of a subpopulation branch, given a partial model. There are two use cases for this program. First, you can use `rarecoal find` to iteratively find the optimal model topology for a number of populations. For example, let's say I already know how the first four populations in my five-population example data set are related, and let's say their so-far best four-population model is given by a series of joins, specified on the command line by `-j 0.0025,0,1 -j 0.005,2,3 -j 0.01,0,2`. We can then use `rarecoal find` to find the maximum likelihood merge-point for the fifth population onto that model, via:
+
+    rarecoal find -j 0.0025,0,1 -j 0.005,2,3 -j 0.01,0,2 -m 4 -q 4 -f out_eval.txt -b 0 -i testData/testData/5popSplit_combined.txt
+
+Here, the parameter `-q 4` specifies that we are trying to find the merge-point of branch 4 (which is 0-based indexed, so the fifth population), `-f` gives the file where to write the likelihood of each tried point to, and `-b` gives the (scaled) sampling age of the branch at question, which should be 0 for modern data, and a positive number for ancient samples.
+
+The second use case is for placing individual samples onto a tree. Let's say you have optimized a full model including population sizes in each branch for your five populations, with the final MCMC output stored in `mcmc_out.txt`. You have generated a new histogram for these five populations plus one individual of unknown ancestry. Let's say your individual is an ancient sample, with a sampling age 2,000 years before present. Scaling with 2N<sub>0</sub>=20,000 (see scaling note above), and a generation time of 29 years, the scaled age is then 0.00172.Then for mapping the individual, you would run:
+
+    rarecoal find -T testData/5popSimTemplate.txt --paramsFile mcmc_out.txt -m 4 -q 4 -f mapping_out.txt -b 0.00172 -i testData/testData/5popSplit_combined.txt
 
 ## Utilities for processing
 
