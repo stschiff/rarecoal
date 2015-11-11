@@ -13,10 +13,10 @@ data MyOpts = MyOpts [Int]
 main :: IO ()
 main = OP.execParser opts >>= runWithOptions
   where
-    opts = OP.info (OP.helper <*> parser) mempty
+    opts = OP.info (OP.helper <*> parser) (OP.progDesc "This tool merges samples or groups into larger groups, adding up the allele counts")
 
 parser :: OP.Parser MyOpts
-parser = MyOpts <$> OP.option OP.auto (OP.short 'n' <> OP.long "nVec" <> OP.metavar "nVec")
+parser = MyOpts <$> OP.option OP.auto (OP.short 'n' <> OP.long "nVec" <> OP.metavar "nVec" <> OP.help "comma-separated list of numbers that specify how to join sample or groups, surrounded by square brackets. Example: -n [20,20,1] specifies that you want to merge the first twenty samples/groups into one, and sample 21 through 40, and then have the last group separate. See README for instructions.")
 
 runWithOptions :: MyOpts -> IO ()
 runWithOptions (MyOpts nVec) = runScript $ do

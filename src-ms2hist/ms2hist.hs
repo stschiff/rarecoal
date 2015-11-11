@@ -18,10 +18,10 @@ makeLenses ''MyOpts
 main :: IO ()
 main = OP.execParser opts >>= mainWithOptions
   where
-    parser = MyOpts <$> OP.option OP.auto (OP.short 'n' <> OP.long "nVec" <> OP.metavar "<LIST>")
-                    <*> OP.option OP.auto (OP.short 'm' <> OP.long "maxM" <> OP.metavar "<INT>")
-                    <*> OP.option OP.auto (OP.short 'N' <> OP.long "nrCalledSites" <> OP.metavar "INT")
-    opts = OP.info parser mempty
+    parser = MyOpts <$> OP.option OP.auto (OP.short 'n' <> OP.long "nVec" <> OP.metavar "<LIST>" <> OP.help "comma-separated list of the number in each subgroup")
+                    <*> OP.option OP.auto (OP.short 'm' <> OP.long "maxM" <> OP.metavar "<INT>" <> OP.help "maximum allele count")
+                    <*> OP.option OP.auto (OP.short 'N' <> OP.long "nrCalledSites" <> OP.metavar "INT" <> OP.help "total length of the genome simulated (not just the number of segregating sites)")
+    opts = OP.info parser (OP.progDesc "converts ms-format output from simulations into a histogram as used for Rarecoal.")
 
 mainWithOptions :: MyOpts -> IO ()
 mainWithOptions (MyOpts nVec maxAf nrCalledSites) = runScript $

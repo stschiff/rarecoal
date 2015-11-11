@@ -17,9 +17,9 @@ main = OP.execParser opts >>= runWithOptions
   where
     parser = MyOpts <$> OP.argument OP.str (OP.metavar "freqSumFile1" <> OP.help "file 1, put - for stdin")
                     <*> OP.argument OP.str (OP.metavar "freqSumFile2" <> OP.help "file 2")
-                    <*> OP.argument OP.auto (OP.metavar "<n1>" <> OP.help "number of populations in file 1")
-                    <*> OP.argument OP.auto (OP.metavar "<n2>" <> OP.help "number of populations in file 2")
-    opts = OP.info (OP.helper <*> parser) mempty
+                    <*> OP.argument OP.auto (OP.metavar "<n1>" <> OP.help "number of samples/groups in file 1")
+                    <*> OP.argument OP.auto (OP.metavar "<n2>" <> OP.help "number of samples/groups in file 2")
+    opts = OP.info (OP.helper <*> parser) (OP.progDesc "merge two freqSumFiles into one.")
 
 runWithOptions :: MyOpts -> IO ()
 runWithOptions (MyOpts f1 f2 n1 n2) = runScript $ do

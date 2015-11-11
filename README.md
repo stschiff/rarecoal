@@ -40,7 +40,7 @@ You can use this subcommand to read in a histogram file and view it up to a spec
 
     rarecoal view -m2 -i testData/5popSplit_combined.txt
 
-You can also use the `-N` option to to adjust the total number of called sites, which will affect the number of non-variant sites (the special pattern `0,0,0,0,0` in the case for five populations).
+You can also use the `-N` option to to adjust the total number of called sites, which will affect the number of non-variant sites (the special pattern `0,0,0,0,0` in the case for five populations) such that the total number of sites matches the number given.
 
 ### rarecoal maxl
 This command instructs rarecoal to perform a numerical optimization of the parameters of a model given the data. You first need to specify a model for your data, which is done by writing a template. As an example, consider the template in `testData/5popSimTemplateFixedPop.txt `:
@@ -128,6 +128,13 @@ Here, the first four columns are chromosome, position, reference allele, alterna
 
     bcftools view -m2 -M2 -c1 -v snps -S <sample_list.txt> <vcf_file> | vcf2FreqSum > output.txt
 
+### groupFreqSum
+This tools groups freqSum columns (read from stdin) into sample groups, giving the total allele count of all samples in that group. It expects a comma-separated list, surrounded by square-brackets, of how to merge samples. For example, if you have a freqSum file for 500 individuals, as generated from vcf2freqSum, and you would like to merge them into 5 groups of 100 samples each, you would use 
+
+    groupFreqSum -n [100,100,100,100,100] < freqSumFile.txt > groupedFreqSumFile.txt
+
+The output from this command line will still be a freqSum file, but with groups instead of individuals given in the columns. The advantage of this data format is that it is very general with respect to individuals vs. groups. In the first example above (at vcf2FreqSum), the output contained a single column for each individual, with allele counts not exceeding 2 (for homozygous non-ref genotype), naturally. However, once you used `groupFreqSum`, you end up with columns describing the allele counts in a whole group. The format is still the same.
+
 ### mergeFreqSum
 This tools merges two freqSum files. It takes four arguments, as shown by typing `mergeFreqSum -h`:
 
@@ -139,25 +146,23 @@ This tools merges two freqSum files. It takes four arguments, as shown by typing
       <n1>                     number of populations in file 1
       <n2>                     number of populations in file 2
 
-Here, n1 and n2 are the number of sample columns, which can also denote populations or groups if `groupFreqSum` has been used.
+Here, n1 and n2 are the number of sample/group columns (which can also denote populations or groups if `groupFreqSum` has been used).
 If a site is present in one file but not the other, all missing genotypes are assumed to be homozygous reference.
 
-### groupFreqSum
-This tools groups freqSum columns (read from stdin) into sample groups, giving the total allele count of all samples in that group. It expects a comma-separated list, surrounded by square-brackets, of how to merge samples. For example, if you have a freqSum file for 500 individuals, as generated from vcf2freqSum, and you would like to merge them into 5 groups of 100 samples each, you would use 
-
-    groupFreqSum -n [100,100,100,100,100] < freqSumFile.txt > groupedFreqSumFile.txt
-
 ### downSampleFreqSum
-This can be used to downsample the number of samples in a particular column in the input file, read from stdin. The three arguments are the 0-based index of the column to downsample, the number of haplotypes in that column, and the (lower) new number of haplotypes in that column.
+This can be used to downsample the number of samples in a particular sample or group in the input file, read from stdin. The three arguments are the 0-based index of the column to downsample, the number of haplotypes in that column, and the (lower) new number of haplotypes in that column.
 
 ### freqSum2Histogram
 This is the key tool to convert a freqSumFile to an allele sharing histogram, as used by rarecoal. Type `-h` for getting help.
+
+One key ingredient in this tool is the total number of sites, specified via `-N`. This is an important input, as it will set the number of non-variant counts in your histogram, specified by the pattern consisting of zeros only, e.g. 0,0,0,0,0 in five populations. This number is important for estimating population sizes, which relies on knowing the ratio of variants and non-variants. If you are processing modern sequencing data (say from the 1000 Genomes Project), you can more or less assume that the entire mappable and callable genome is covered in all individuals. For humans, the number in all autosomes is close to 2,500,000,000, but the details depend on your specific data set and processing. For the 1000 Genomes Project, you can have a look at the `/vol1/ftp/release/20130502/supporting/accessible_genome_masks` directory on the FTP site and count all accessible sites if you don't apply further filtering.
 
 ### extractInFreqSum
 This tool can be used to move a column in a freqSumFile behind the last column. Useful for extracting individual samples before grouping multiple samples with `groupFreqSum`.
 
 ### ms2hist
 This converts the output from the `ms` and `scrm` simulation tools to a histogram. The input is read from stdin and should only contain the line starting with "POSITIONS:" and the following lines specifying the genotypes. You should use the `tail` command in UNIX to select the respective lines of the `ms` or `scrm` outputs. It cannot be used to process multiple chromosomes simultaneously.
+This tools expects the total number of sites simulated as a parameter `-N`. Note that this parameter should give the entire length of the chromosome that you simulated, not just the number of segregating sites!
 
 ### sampleHist
 This extracts samples from a subpopulation in the histogram, by sampling without replacement independently at every site underlying the histogram. The extracted samples therefore do not represent real individuals, but "average" individuals with genotypes sampled independently at every site from a full population. This can be useful if you need to extract individuals from histograms which were generated from data for which only allele frequencies but not genotypes are given. 

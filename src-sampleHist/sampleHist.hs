@@ -23,12 +23,12 @@ data MyOpts = MyOpts {
 main :: IO ()
 main = OP.execParser opts >>= runWithOptions
   where
-    opts = OP.info (OP.helper <*> parser) mempty
+    opts = OP.info (OP.helper <*> parser) (OP.progDesc "sample a number of haplotypes (independently at each site) from a population in a histogram")
 
 parser :: OP.Parser MyOpts
-parser = MyOpts <$> OP.option OP.auto (OP.short 'q' <> OP.long "queryBranch" <> OP.metavar "<INT>")
-                <*> OP.option OP.auto (OP.short 'n' <> OP.long "howMany" <> OP.metavar "<INT>")
-                <*> OP.option OP.str (OP.short 'i' <> OP.long "hist" <> OP.metavar "<path-to-histogram>")
+parser = MyOpts <$> OP.option OP.auto (OP.short 'q' <> OP.long "queryBranch" <> OP.metavar "<INT>" <> OP.help "the population index (0-based) from which to sample")
+                <*> OP.option OP.auto (OP.short 'n' <> OP.long "howMany" <> OP.metavar "<INT>" <> OP.help "how many samples should be drawn at each site")
+                <*> OP.option OP.str (OP.short 'i' <> OP.long "hist" <> OP.metavar "<path-to-histogram>" <> OP.help "the input histogram file, set - for stdin")
 
 runWithOptions :: MyOpts -> IO ()
 runWithOptions opts = runScript $ do

@@ -2,14 +2,19 @@
 
 import Rarecoal.FreqSumEntry (FreqSumEntry(..))
 
-import Turtle
 import Control.Error (runScript, tryAssert)
 import qualified Data.Text as T
+import qualified Options.Applicative as OP
+import Turtle
 
 data VCFentry = VCFentry Text Int Text Text [(Char,Char)]
 
 main :: IO ()
-main = foldIO (grep (prefix (noneOf "#")) stdin) foldLines
+main = OP.execParser opts >> run
+  where
+    opts = OP.info (OP.helper <*> pure ()) (OP.progDesc "convert a multi-sample VCF into a freqSum file")
+
+run = foldIO (grep (prefix (noneOf "#")) stdin) foldLines
 
 foldLines :: FoldM IO Text ()
 foldLines = FoldM processLine initial extract

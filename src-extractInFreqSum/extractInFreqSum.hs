@@ -12,10 +12,10 @@ data MyOpts = MyOpts Int
 main :: IO ()
 main = OP.execParser opts >>= runWithOptions
   where
-    opts = OP.info (OP.helper <*> parser) mempty
+    opts = OP.info (OP.helper <*> parser) (OP.progDesc "Takes a column from a freqSum file and moves it to the end")
 
 parser :: OP.Parser MyOpts
-parser = MyOpts <$> OP.option OP.auto (OP.short 'i' <> OP.long "position" <> OP.metavar "<POSITION>")
+parser = MyOpts <$> OP.option OP.auto (OP.short 'i' <> OP.long "position" <> OP.metavar "<POSITION>" <> OP.help "0-based index of the sample/group to move")
 
 runWithOptions :: MyOpts -> IO ()
 runWithOptions (MyOpts position) = runScript $ do

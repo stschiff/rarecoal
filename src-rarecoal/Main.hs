@@ -21,7 +21,7 @@ data Options = Options Command
 data Command = CmdView ViewOpt | CmdProb ProbOpt | CmdLogl LoglOpt | CmdMaxl MaxlOpt | CmdMcmc McmcOpt | CmdFind FindOpt
 
 main :: IO ()
-main = run =<< OP.execParser (parseOptions `withInfo` "Rarecoal: Implementation of the Rarecoal algorithm")
+main = run =<< OP.execParser (parseOptions `withInfo` "This software implementats the Rarecoal algorithm, as described in doc/rarecoal.pdf. Type -h for getting help")
 
 run :: Options -> IO ()
 run (Options cmdOpts) = runScript $ do
