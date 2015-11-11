@@ -2,7 +2,7 @@
 This software implements tools to process and analyse genome sequencing data. The key program is called rarecoal, other programs in this package help with the data processing necessary to use rarecoal. A preprint on a project using this software can be found [here](http://biorxiv.org/content/early/2015/07/17/022723), and the mathematical derivations can be found under `doc/rarecoal.pdf`.
 
 ## Installation instructions
-* Download the Haskell install tool stack, available [here](https://github.com/commercialhaskell/stack).
+* Install the Haskell tool stack, available [here](https://github.com/commercialhaskell/stack).
 * Download this repository and unpack it.
 * Change directory into this repository
 * (Optional) run `stack setup` to install the correct compiler. If you are not sure whether you have the compiler already, you can directly go to the next step. It will tell you to run `stack setup` if you need to.
@@ -117,11 +117,11 @@ All tools described here have an online help, as shown by typing the command nam
 ### vcf2FreqSum
 This tool converts a multi-sample VCF file, read from stdin, to a simpler file which I call "freqSum". The first lines of an example are:
 
-1	10539	C	A	0	0	0	0	0	0	0	0	0	0	0	0	0	0
-1	11008	C	G	0	0	0	0	1	0	1	0	0	0	0	0	0	0
-1	11012	C	G	0	0	0	0	1	0	1	0	0	0	0	0	0	0
-1	13110	G	A	1	1	0	0	0	0	0	0	0	0	0	0	0	0
-1	13116	T	G	0	0	0	0	0	1	0	1	0	0	0	1	0	0
+    1	10539	C	A	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+    1	11008	C	G	0	0	0	0	1	0	1	0	0	0	0	0	0	0
+    1	11012	C	G	0	0	0	0	1	0	1	0	0	0	0	0	0	0
+    1	13110	G	A	1	1	0	0	0	0	0	0	0	0	0	0	0	0
+    1	13116	T	G	0	0	0	0	0	1	0	1	0	0	0	1	0	0
 
 
 Here, the first four columns are chromosome, position, reference allele, alternative allele. The following columns give the alternative allele count in each individual. Note that this tool fails if you pass indels or multi-allelic SNPs. You should therefore combine this script with a filtering step, for example using bcftools (v1.2):
