@@ -24,7 +24,7 @@ Rarecoal reads data in the form of a joint allele frequency histogram for rare a
 
 The first line denotes the number of haploid samples in each subpopulations. In this case there are five subpopulations, each with a hundred diploid individuals, so 200 haplotypes each, and 1000 haplotypes in total. The second line denotes the maximum total allele count of variants, here 10, so up to allele freuqency 1%. The following lines are pairs of patterns and numbers. The patterns describe how a mutation is distributed across the five populations. For example, for a variant of allele frequency 6, there could be a pattern of the form `0,2,2,1,1`, which means that of there are zero mutations in the first, two individuals in the second and third population, one in the fourth and one in the fifth population carrying that mutation. The special pattern `HIGHER` summarizes all variants with allele frequency higher than denoted in the second line of the file. The number after each pattern is the number of sites in the data set that exhibit this particular pattern.
 
-A typical workflow of how to generate this format from VCF files is described below using `vcf2FreqSum` and `freqSum2Histogram`.
+I provide tools for generating this format from VCF files within this package, notably `vcf2FreqSum` and `freqSum2Histogram`.
 
 You can list the command line options for `rarecoal` by typing `rarecoal -h`, and for a specific subcommand, say `view` by typing `rarecoal view -h`.
 
@@ -112,20 +112,55 @@ The second use case is for placing individual samples onto a tree. Let's say you
 
 ## Utilities for processing
 
+All tools described here have an online help, as shown by typing the command name and then `-h`.
+
 ### vcf2FreqSum
+This tool converts a multi-sample VCF file, read from stdin, to a simpler file which I call "freqSum". The first lines of an example are:
+
+1	10539	C	A	0	0	0	0	0	0	0	0	0	0	0	0	0	0
+1	11008	C	G	0	0	0	0	1	0	1	0	0	0	0	0	0	0
+1	11012	C	G	0	0	0	0	1	0	1	0	0	0	0	0	0	0
+1	13110	G	A	1	1	0	0	0	0	0	0	0	0	0	0	0	0
+1	13116	T	G	0	0	0	0	0	1	0	1	0	0	0	1	0	0
+
+
+Here, the first four columns are chromosome, position, reference allele, alternative allele. The following columns give the alternative allele count in each individual. Note that this tool fails if you pass indels or multi-allelic SNPs. You should therefore combine this script with a filtering step, for example using bcftools (v1.2):
+
+    bcftools view -m2 -M2 -c1 -v snps -S <sample_list.txt> <vcf_file> | vcf2FreqSum > output.txt
 
 ### mergeFreqSum
+This tools merges two freqSum files. It takes four arguments, as shown by typing `mergeFreqSum -h`:
+
+    Usage: mergeFreqSum freqSumFile1 freqSumFile2 <n1> <n2>
+    Available options:
+      -h,--help                Show this help text
+      freqSumFile1             file 1, put - for stdin
+      freqSumFile2             file 2
+      <n1>                     number of populations in file 1
+      <n2>                     number of populations in file 2
+
+Here, n1 and n2 are the number of sample columns, which can also denote populations or groups if `groupFreqSum` has been used.
+If a site is present in one file but not the other, all missing genotypes are assumed to be homozygous reference.
 
 ### groupFreqSum
+This tools groups freqSum columns (read from stdin) into sample groups, giving the total allele count of all samples in that group. It expects a comma-separated list, surrounded by square-brackets, of how to merge samples. For example, if you have a freqSum file for 500 individuals, as generated from vcf2freqSum, and you would like to merge them into 5 groups of 100 samples each, you would use 
 
-### extractInFreqSum
+    groupFreqSum -n [100,100,100,100,100] < freqSumFile.txt > groupedFreqSumFile.txt
 
 ### downSampleFreqSum
+This can be used to downsample the number of samples in a particular column in the input file, read from stdin. The three arguments are the 0-based index of the column to downsample, the number of haplotypes in that column, and the (lower) new number of haplotypes in that column.
 
 ### freqSum2Histogram
+This is the key tool to convert a freqSumFile to an allele sharing histogram, as used by rarecoal. Type `-h` for getting help.
+
+### extractInFreqSum
+This tool can be used to move a column in a freqSumFile behind the last column. Useful for extracting individual samples before grouping multiple samples with `groupFreqSum`.
 
 ### ms2hist
+This converts the output from the `ms` and `scrm` simulation tools to a histogram. The input is read from stdin and should only contain the line starting with "POSITIONS:" and the following lines specifying the genotypes. You should use the `tail` command in UNIX to select the respective lines of the `ms` or `scrm` outputs. It cannot be used to process multiple chromosomes simultaneously.
 
 ### sampleHist
+This extracts samples from a subpopulation in the histogram, by sampling without replacement independently at every site underlying the histogram. The extracted samples therefore do not represent real individuals, but "average" individuals with genotypes sampled independently at every site from a full population. This can be useful if you need to extract individuals from histograms which were generated from data for which only allele frequencies but not genotypes are given. 
 
 ### combineHistograms
+This simply adds up multiple histograms.
