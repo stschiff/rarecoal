@@ -2,64 +2,78 @@
 
 import Rarecoal.FreqSumEntry (FreqSumEntry(..))
 
-import Control.Error (runScript, tryAssert)
+import Control.Applicative ((<|>))
+import Control.Error (runScript, tryAssert, errLn)
+import Control.Monad (void)
+import qualified Data.Attoparsec.Text as A
 import qualified Data.Text as T
+import qualified Data.Text.IO as T
 import qualified Options.Applicative as OP
-import Turtle
+import Pipes (runEffect, (>->), lift, Effect, for, next)
+import Pipes.Attoparsec (parsed)
+import Pipes.Prelude (foldM')
+import Pipes.Text.IO as PT
 
-data VCFentry = VCFentry Text Int Text Text [(Char,Char)]
+data VCFentry = VCFheader T.Text | VCFentry T.Text Int T.Text T.Text [(Char,Char)] deriving (Show)
 
 main :: IO ()
 main = OP.execParser opts >> run
   where
     opts = OP.info (OP.helper <*> pure ()) (OP.progDesc "convert a multi-sample VCF into a freqSum file")
 
-run = foldIO (grep (prefix (noneOf "#")) stdin) foldLines
+run :: IO () 
+run = do
+    let vcfProd = parsed vcfParser PT.stdin
+    ((), res) <- foldM' processVCFentry (return 0) (const (return ())) vcfProd
+    case res of
+        Left (e, restProd) -> do
+            (errLn . show) e
+            Right (l, _) <- next restProd
+            T.putStrLn l
+        Right () -> return ()
 
-foldLines :: FoldM IO Text ()
-foldLines = FoldM processLine initial extract
-  where
-    initial = return 0
-    extract = const (return ())
-
-processLine :: Int -> Text -> IO Int
-processLine lastPos line = runScript $ do
-    let parseResult = match vcfPattern line
-        msg = format ("vcf parse error for line "%s) line
-    tryAssert (T.unpack msg) $ length parseResult == 1
-    let [VCFentry chrom pos ref alt genotypes] = parseResult
+processVCFentry :: Int -> VCFentry -> IO Int
+processVCFentry lastPos (VCFheader s) = return 0
+processVCFentry lastPos (VCFentry chrom pos ref alt genotypes) = do
     if lastPos == pos || T.length ref > 1 || T.length alt > 1 then
         return pos
     else do
         let gens = [[g1, g2] | (g1, g2) <- genotypes]
         let counts = [length $ filter (=='1') c | c <- gens]
             fs = FreqSumEntry (T.unpack chrom) pos (T.head ref) (T.head alt) counts
-        echo . T.pack . show $ fs
+        print fs
         return pos
 
-vcfPattern :: Pattern VCFentry
-vcfPattern = do
-    chrom <- word
-    skip tab
-    pos <- decimal
-    skip tab
-    skip word
-    skip tab
-    ref <- word
-    skip tab
-    alt <- word
-    skip tab
-    skip $ count 4 (word >> tab)
-    genotypes <- genotype `sepBy1` tab
-    return $ VCFentry chrom pos ref alt genotypes
+vcfParser :: A.Parser VCFentry
+vcfParser = parseHeader <|> parseVCFentry
+  where
+    parseHeader = do
+        void (A.char '#')
+        s <- A.takeTill A.isEndOfLine
+        void A.endOfLine
+        return (VCFheader s)
+    parseVCFentry = do
+        chrom <- word
+        void tab
+        pos <- A.decimal
+        void tab
+        void word
+        void tab
+        ref <- word
+        void tab
+        alt <- word
+        void tab
+        void $ A.count 4 (word >> tab)
+        genotypes <- genotype `A.sepBy1` tab
+        void A.endOfLine
+        return $ VCFentry chrom pos ref alt genotypes
+    word = A.takeTill (\a -> a `elem` ['\r', '\t', '\n', ' '])
+    tab = A.char '\t'
 
-word :: Pattern Text
-word = plus $ noneOf "\r\t\n "
-
-genotype :: Pattern (Char, Char)
+genotype :: A.Parser (Char, Char)
 genotype = do
-    gen1 <- (char '0' <|> char '1' <|> char '.')
-    skip (char '/' <|> char '|')
-    gen2 <- (char '0' <|> char '1' <|> char '.')
-    skip $ star (noneOf "\r\t\n ")
+    gen1 <- (A.char '0' <|> A.char '1' <|> A.char '.')
+    void (A.char '/' <|> A.char '|')
+    gen2 <- (A.char '0' <|> A.char '1' <|> A.char '.')
+    _ <- A.takeTill (\a -> (a `elem` ['\r', '\t', '\n', ' ']))
     return (gen1, gen2)

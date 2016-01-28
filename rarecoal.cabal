@@ -73,7 +73,10 @@ executable vcf2FreqSum
   build-depends:       base, rarecoal,
                        text,
                        errors,
-                       turtle,
+                       attoparsec,
+                       pipes,
+                       pipes-attoparsec,
+                       pipes-text,
                        optparse-applicative
   default-language:    Haskell2010
 
