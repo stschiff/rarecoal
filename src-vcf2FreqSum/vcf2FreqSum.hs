@@ -39,7 +39,7 @@ processVCFentry lastPos (VCFentry chrom pos ref alt genotypes) = do
         return pos
     else do
         let gens = [[g1, g2] | (g1, g2) <- genotypes]
-        let counts = [length $ filter (=='1') c | c <- gens]
+        let counts = [if any (=='.') c then -1 else length $ filter (=='1') c | c <- gens]
             fs = FreqSumEntry (T.unpack chrom) pos (T.head ref) (T.head alt) counts
         print fs
         return pos
