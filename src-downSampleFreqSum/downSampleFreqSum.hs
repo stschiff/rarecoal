@@ -13,7 +13,7 @@ data MyOpts = MyOpts Int Int Int
 main :: IO ()
 main = OP.execParser opts >>= runWithOptions
   where
-    opts = OP.info (OP.helper <*> parser) (OP.progDesc "Tool for downsampling a freqSum file.")
+    opts = OP.info (OP.helper <*> parser) (OP.progDesc "Tool for downsampling a freqSum file. If a column is -1, the downsampled column will also have -1.")
 
 parser :: OP.Parser MyOpts
 parser = MyOpts <$> OP.argument OP.auto (OP.metavar "<POSITION>" <> OP.help "the 0-based index of the population to sample from")
@@ -32,9 +32,12 @@ runWithOptions (MyOpts position nBefore nAfter) = runScript $ do
 downSample :: Int -> Int -> Int -> FreqSumEntry -> Script FreqSumEntry
 downSample pos nBefore nAfter fs = do
     tryAssert "position outside bounds" $ pos < length (fsCounts fs)
-    newK <- scriptIO $ sampleWithoutReplacement nBefore (fsCounts fs !! pos) nAfter
-    let newCounts = take pos (fsCounts fs) ++ [newK] ++ drop (pos + 1) (fsCounts fs)
-    return fs {fsCounts = newCounts}
+    let counts = fsCounts fs !! pos
+    newFS <- if (counts <= 0) then return fs else do
+        newK <- scriptIO $ sampleWithoutReplacement nBefore counts nAfter
+        let newCounts = take pos (fsCounts fs) ++ [newK] ++ drop (pos + 1) (fsCounts fs)
+        return fs {fsCounts = newCounts}
+    return newFS
 
 sampleWithoutReplacement :: Int -> Int -> Int -> IO Int
 sampleWithoutReplacement n k howMany = go n k howMany 0

@@ -13,7 +13,7 @@ data MyOpts = MyOpts [Int]
 main :: IO ()
 main = OP.execParser opts >>= runWithOptions
   where
-    opts = OP.info (OP.helper <*> parser) (OP.progDesc "This tool merges samples or groups into larger groups, adding up the allele counts")
+    opts = OP.info (OP.helper <*> parser) (OP.progDesc "This tool merges samples or groups into larger groups, adding up the allele counts. Note: If any column of a group is -1, then the group containing that column is set to -1.")
 
 parser :: OP.Parser MyOpts
 parser = MyOpts <$> OP.option OP.auto (OP.short 'n' <> OP.long "nVec" <> OP.metavar "nVec" <> OP.help "comma-separated list of numbers that specify how to join sample or groups, surrounded by square brackets. Example: -n [20,20,1] specifies that you want to merge the first twenty samples/groups into one, and sample 21 through 40, and then have the last group separate. See README for instructions.")
@@ -29,5 +29,7 @@ runWithOptions (MyOpts nVec) = runScript $ do
 groupFreqSum :: [Int] -> FreqSumEntry -> Either String FreqSumEntry
 groupFreqSum nVec fs = do
     assertErr "number of samples doesn't match nVec" $ sum nVec == length (fsCounts fs)
-    let groups = map sum . splitPlaces nVec $ fsCounts fs
+    let groups = map sum' . splitPlaces nVec $ fsCounts fs
     return fs {fsCounts = groups}
+  where
+    sum' values = if any (<0) values then -1 else sum values
