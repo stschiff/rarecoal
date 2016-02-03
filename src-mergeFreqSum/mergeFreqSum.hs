@@ -4,6 +4,7 @@ import OrderedZip (orderedZip)
 import qualified Pipes.Prelude as P
 import Pipes ((>->), runEffect, for)
 import Data.Monoid ((<>))
+import Debug.Trace (trace)
 import Control.Monad.Trans.Class (lift)
 import Rarecoal.FreqSumEntry (FreqSumEntry(..), parseFreqSumEntry)
 import Pipes.Attoparsec (parsed)
@@ -40,7 +41,7 @@ runWithOptions (MyOpts f1 f2 n1 n2) = runScript $ do
 freqSumCombine :: Int -> Int -> (Maybe FreqSumEntry, Maybe FreqSumEntry) -> FreqSumEntry
 freqSumCombine _ n2 (Just fs1, Nothing) = fs1 {fsCounts = fsCounts fs1 ++ replicate n2 0}
 freqSumCombine n1 _ (Nothing, Just fs2) = fs2 {fsCounts = replicate n1 0 ++ fsCounts fs2}
-freqSumCombine _ n2 (Just fs1, Just fs2) =
+freqSumCombine _ n2 (Just fs1, Just fs2) = 
     if fsChrom fs1 == fsChrom fs2 && fsRef fs1 == fsRef fs2 && fsAlt fs1 == fsAlt fs2
         then fs1 {fsCounts = fsCounts fs1 ++ fsCounts fs2}
         else fs1 {fsCounts = fsCounts fs1 ++ replicate n2 0}

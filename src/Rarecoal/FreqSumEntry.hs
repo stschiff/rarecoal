@@ -22,4 +22,4 @@ parseFreqSumEntry = FreqSumEntry <$> word <* A.skipSpace <*> A.decimal <* A.skip
                                      counts <* A.endOfLine
   where
     word = unpack <$> A.takeWhile1 (A.notInClass "\n\t\r")
-    counts = A.decimal `A.sepBy` A.char '\t'
+    counts = (A.signed A.decimal) `A.sepBy` A.char '\t'
