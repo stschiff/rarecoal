@@ -40,4 +40,4 @@ groupFreqSum nVec missing fs = do
         if missing then
             if any (<0) values then -1 else sum values
         else
-            sum values
+            sum $ filter (>=0) values
