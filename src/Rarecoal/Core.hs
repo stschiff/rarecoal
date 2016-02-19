@@ -1,4 +1,4 @@
-module Rarecoal.Core (defaultTimes, getTimeSteps, getProb, validateModel,
+module Rarecoal.Core (defaultTimes, getTimeSteps, getProb, validateModel, choose,
                       ModelEvent(..), EventType(..), ModelSpec(..), joinCounts, popJoinA, popJoinB) where
 
 import Rarecoal.StateSpace (JointStateSpace(..), makeJointStateSpace, getNonZeroStates)

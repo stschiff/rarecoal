@@ -108,14 +108,16 @@ executable sampleHist
   hs-source-dirs:      src-sampleHist
   build-depends:       base, rarecoal,
                        optparse-applicative,
-                       transformers,
                        errors,
                        lens,
+                       foldl,
+                       pipes,
+                       transformers,
                        containers,
                        random,
                        text
   default-language:    Haskell2010
-  ghc-options:         "-with-rtsopts=-K100m"
+ -- ghc-options:         "-with-rtsopts=-A10m -K100m"
 
 executable downSampleFreqSum
   main-is:             downSampleFreqSum.hs
