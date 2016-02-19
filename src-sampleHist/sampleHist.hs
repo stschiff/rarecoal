@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE BangPatterns #-}
 
 import qualified Options.Applicative as OP
 import Control.Monad.Trans.State.Strict (evalState, State, get, put)
@@ -49,19 +49,19 @@ addSamplePop query howMany hist = do
     return hist {raNVec = newNVec, raCounts = newBody}
 
 sampleFromPatterns :: Int -> Int -> [Int] -> SitePattern -> Int64 -> State StdGen (Map.Map SitePattern Int64)
-sampleFromPatterns _ _ _ Higher count = return $ Map.singleton Higher count
-sampleFromPatterns query howMany nVec pattern@(Pattern p) count =
+sampleFromPatterns !_ !_ !_ Higher !count = return $ Map.singleton Higher count
+sampleFromPatterns !query !howMany !nVec !pattern@(Pattern p) !count =
     if p !! query == 0 then
         return $ Map.singleton (Pattern $ p ++ [0]) count
     else do
         patterns <- replicateM (fromIntegral count) $ sampleFromPattern query howMany nVec pattern
         return $ foldl' insertPattern Map.empty patterns
   where
-    insertPattern m p' = Map.insertWith (\_ v -> v + 1) p' 1 m
+    insertPattern !m !p' = Map.insertWith (\_ v -> v + 1) p' 1 m
 
 sampleFromPattern :: Int -> Int -> [Int] -> SitePattern -> State StdGen SitePattern
-sampleFromPattern _ _ _ Higher = return Higher
-sampleFromPattern query howMany nVec (Pattern pattern) = do
+sampleFromPattern !_ !_ !_ Higher = return Higher
+sampleFromPattern !query !howMany !nVec !(Pattern pattern) = do
     let n = nVec !! query
         k = pattern !! query
     newK <- sampleWithoutReplacement n k howMany
@@ -70,9 +70,9 @@ sampleFromPattern query howMany nVec (Pattern pattern) = do
 sampleWithoutReplacement :: Int -> Int -> Int -> State StdGen Int
 sampleWithoutReplacement n k howMany = go n k howMany 0
   where
-    go _ _ 0 ret = return ret
-    go _ 0 _ ret = return ret
-    go n' k' howMany' ret = do
+    go !_ !_ 0 !ret = return ret
+    go !_ 0 !_ !ret = return ret
+    go !n' !k' !howMany' !ret = do
         val <- bernoulli $ fromIntegral k' / fromIntegral n'
         if val then go (n' - 1) (k' - 1) (howMany' - 1) (ret + 1) else go (n' - 1) k' (howMany' - 1) ret
 
