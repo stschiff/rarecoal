@@ -9,7 +9,7 @@ import qualified Data.Map.Strict as Map
 import Data.List (intercalate, sortBy)
 import Control.Monad (when, (<=<))
 import Data.Int (Int64)
-import Control.Error (Script, scriptIO, assertErr, tryRight, throwE)
+import Control.Error (Script, scriptIO, assertErr, tryRight, throwE, justErr)
 import Control.Applicative ((<|>))
 import qualified Data.Text as T
 import qualified Data.Attoparsec.Text as A
@@ -90,7 +90,7 @@ loadHistogram :: Int -> Int -> [Int] -> Int64 -> FilePath -> Script RareAlleleHi
 loadHistogram minAf maxAf conditionOn nrCalledSites path = do
     hist <- readHistogram path
     let f = if nrCalledSites > 0 then setNrCalledSites nrCalledSites else return
-    tryRight $ (f <=< filterConditionOn conditionOn <=< filterGlobalMinAf minAf <=< filterMaxAf maxAf <=< return) hist
+    tryRight $ (filterConditionOn conditionOn <=< filterGlobalMinAf minAf <=< filterMaxAf maxAf <=< f) hist
 
 filterConditionOn :: [Int] -> RareAlleleHistogram -> Either String RareAlleleHistogram
 filterConditionOn indices hist =
@@ -102,12 +102,14 @@ filterConditionOn indices hist =
     conditionPatternOn (Pattern pat) _ = all (\i -> pat !! i > 0) indices
 
 setNrCalledSites :: Int64 -> RareAlleleHistogram -> Either String RareAlleleHistogram
-setNrCalledSites nrCalledSites hist = do
+setNrCalledSites newNrCalledSites hist = do
     let zeroKey = Pattern $ replicate (length $ raNVec hist) 0
-        sum_ = Map.foldr (+) 0 $ raCounts hist
-        add_ = nrCalledSites - sum_
-    when (add_ < 0) $ Left "Illegal nrCalledSites" 
-    let newHistBody = Map.insertWith (+) zeroKey add_ (raCounts hist)
+    nrZeroCalls <- justErr ("did not find key " ++ show zeroKey) $ zeroKey `Map.lookup` (raCounts hist)
+    let nrCalledSites = Map.foldr (+) 0 $ raCounts hist
+        nrNonZeroCalls = nrCalledSites - nrZeroCalls
+        newZeroCalls = newNrCalledSites - nrNonZeroCalls
+    when (newZeroCalls < 0) $ Left "Illegal nrCalledSites" 
+    let newHistBody = Map.insert zeroKey newZeroCalls (raCounts hist)
     return $ hist {raCounts = newHistBody}
 
 filterMaxAf :: Int -> RareAlleleHistogram -> Either String RareAlleleHistogram
