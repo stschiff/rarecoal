@@ -69,16 +69,41 @@ where the primed variable marks the variable after the event, which will then be
 
 For the derived lineages, we need to sum probabilities in the correct way. We first define a transition function that changes a state before the join to new states after the join:
 \begin{equation}
-    \mathbf{x}' = J(\mathbf{x}),
+    \mathbf{x}' = J_{k,l}(\mathbf{x}),
 \end{equation} 
 where
 \begin{equation}
-    J((\ldots x_k \ldots x_l \dots)) = (\ldots (x_k + x_l) \ldots 0 \ldots)
+    J_{k,l}((\ldots x_k \ldots x_l \ldots)) = (\ldots (x_k + x_l) \ldots 0 \ldots)
 \end{equation}
 We can then define the join itself as a sum over all states before the join that give rise to the same state after the join:
 \begin{equation}
-    b'(\mathbf{x}',t) = \sum_{\mathbf{x},J(\mathbf{x})=\mathbf{x}'} b(\mathbf{x},t)
+    b'(\mathbf{x}',t) = \sum_{\mathbf{x}} b(\mathbf{x},t) I(J_{k,l}(\mathbf{x})=\mathbf{x}')
 \end{equation}
+where $I(X=Y)$ is an indicator function that is $1$ if $X=Y$ and $0$ otherwise.
+ 
+\section{Migration/Admixture}
+To model migration and admixture, we have to add a separate update step. We first discuss pulse-like migration, so a point event which moves lineages from one branch to another in a probabilistic way. We consider an event in which lineages get transferred from population $l$ into population $k$ with probability $m$. Note that - forward in time - this corresponds to admixture of population $k$ into population $l$. First, for the ancestral alleles, the update equation under admixture are simple: 
+\begin{align}
+    a'_k(t) &= a_k(t) + m a_l(t)\\
+    a'_l(t) &= (1.0 - m)a_l(t)
+\end{align}
+Note that this operation leaves the total number of ancestral alleles invariant, i.e.
+\begin{equation}
+    a'_k(t) + a'_l(t) = a_k(t) + a_l(t)
+\end{equation}
+
+For the derived lineages, we define an operator $M_{k,l}^s(\mathbf{x})$, which moves $s$ derived lineages from population $l$ to population $k$:
+\begin{equation}
+    M_{k,l}^s((\ldots x_k \ldots x_l \ldots)) = (\ldots (x_k + s) \ldots (x_l - s) \ldots)
+\end{equation}
+which is undefined if $s>x_l$. We can now write for $b'(\mathbf{x})$ after admixture:
+\begin{equation}
+    b'(\mathbf{x},t) = \sum_{\mathbf{x'}}\sum_{s=0}^{\mathrm{min}(x_k,x_l)} I(M_{k,l}^s(\mathbf{x'})=\mathbf{x})
+    b(\mathbf{x'},t) \binom{x_l}{s} m^s(1-m)^{x_l-s} 
+\end{equation}
+where the term on the right is the binomial probability that $s$ out of $x_l$ lineages migrate.
+
+We note that these update equations can also be used to model continuous migration. Assume that continuous migration from population $l$ into $k$ occurs with rate $h$. At every time interval, we can then trigger a pulse admixture event with admixture probability $h\Delta t$, scaled with the time interval $\Delta t$.
  
 \section{The likelihood of a configuration of rare alleles}
     

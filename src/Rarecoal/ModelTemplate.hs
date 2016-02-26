@@ -23,13 +23,15 @@ data ModelTemplate = ModelTemplate {
 } deriving (Eq, Show)
 
 data EventTemplate = JoinEventTemplate (Either Double String) Int Int
+                   | SplitEventTemplate (Either Double String) Int Int (Either Double String)
                    | PopSizeEventTemplate (Either Double String) Int (Either Double String)
                    | JoinPopSizeEventTemplate (Either Double String) Int Int (Either Double String)
                    | GrowthRateEventTemplate (Either Double String) Int (Either Double String)
                    | MigrationRateEventTemplate (Either Double String) Int Int (Either Double String) deriving (Eq, Show)
 
-data ConstraintTemplate = SmallerConstraintTemplate String String
-                        | GreaterConstraintTemplate String String deriving (Eq, Show)
+data ConstraintTemplate = SmallerConstraintTemplate String (Either Double String)
+                        | GreaterConstraintTemplate String (Either Double String)
+                        deriving (Eq, Show)
 
 getInitialParams :: ModelTemplate -> FilePath -> [Double] -> Script (V.Vector Double)
 getInitialParams modelTemplate paramsFile x = do
@@ -70,7 +72,8 @@ parseParamName :: A.Parser String
 parseParamName = (:) <$> A.letter <*> A.many' (A.letter <|> A.digit)
 
 parseEvents :: A.Parser [EventTemplate]
-parseEvents = A.many' (parsePopSizeEvent <|> parseJoinEvent <|> parseJoinPopSizeEvent <|> parseGrowthRateEvent <|> parseMigrationRateEvent)
+parseEvents = A.many' (parsePopSizeEvent <|> parseJoinEvent <|> parseSplitEvent <|> 
+                       parseJoinPopSizeEvent <|> parseGrowthRateEvent <|> parseMigrationRateEvent)
 
 parsePopSizeEvent :: A.Parser EventTemplate
 parsePopSizeEvent = do
@@ -107,6 +110,20 @@ parseJoinEvent = do
     l <- A.decimal
     A.endOfLine
     return $ JoinEventTemplate t k l
+
+parseSplitEvent :: A.Parser EventTemplate
+parseSplitEvent = do
+    _ <- A.char 'S'
+    _ <- A.space
+    t <- parseMaybeParam
+    _ <- A.char ','
+    k <- A.decimal
+    _ <- A.char ','
+    l <- A.decimal
+    _ <- A.char ','
+    m <- parseMaybeParam
+    A.endOfLine
+    return $ SplitEventTemplate t k l m
 
 parseJoinPopSizeEvent :: A.Parser EventTemplate
 parseJoinPopSizeEvent = do
@@ -156,14 +173,14 @@ parseConstraints = A.many' $ (A.try parseSmallerConstraint <|> parseGreaterConst
         _ <- A.space
         name1 <- parseParamName
         _ <- A.char '<'
-        name2 <- parseParamName
+        name2 <- parseMaybeParam
         return $ SmallerConstraintTemplate name1 name2
     parseGreaterConstraint = do
         _ <- A.char 'C'
         _ <- A.space
         name1 <- parseParamName
         _ <- A.char '>'
-        name2 <- parseParamName
+        name2 <- parseMaybeParam
         return $ GreaterConstraintTemplate name1 name2
 
 instantiateModel :: ModelTemplate -> V.Vector Double -> Either String ModelSpec
@@ -183,6 +200,10 @@ instantiateEvent pnames params et = do
         JoinEventTemplate t k l -> do
             t' <- getMaybeParam t
             return [ModelEvent t' (Join k l)]
+        SplitEventTemplate t k l m -> do
+            t' <- getMaybeParam t
+            m' <- getMaybeParam m
+            return [ModelEvent t' (Split k l m')]
         JoinPopSizeEventTemplate t k l n -> do
             t' <- getMaybeParam t
             n' <- getMaybeParam n
@@ -210,13 +231,13 @@ substituteParam pnames params (Right param) =
 validateConstraint :: [String] -> [Double] -> ConstraintTemplate -> Either String ()
 validateConstraint pNames params ct =
     case ct of
-        SmallerConstraintTemplate name1 name2 -> do
+        SmallerConstraintTemplate name1 maybeParam2 -> do
             p1 <- substituteParam pNames params (Right name1)
-            p2 <- substituteParam pNames params (Right name2)
+            p2 <- substituteParam pNames params maybeParam2
             assertErr ("Constrained failed: " ++ show p1 ++ " < " ++ show p2) (p1 < p2)
-        GreaterConstraintTemplate name1 name2 -> do
+        GreaterConstraintTemplate name1 maybeParam2 -> do
             p1 <- substituteParam pNames params (Right name1)
-            p2 <- substituteParam pNames params (Right name2)
+            p2 <- substituteParam pNames params maybeParam2
             assertErr ("Constrained failed: " ++ show p1 ++ " > " ++ show p2) (p1 > p2)
 
 getModelSpec :: FilePath -> Double -> FilePath -> [Double] -> [ModelEvent] -> Int -> Script ModelSpec

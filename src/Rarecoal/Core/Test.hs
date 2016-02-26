@@ -1,6 +1,6 @@
 module Rarecoal.Core.Test (tests) where
 
-import Rarecoal.Core (ModelEvent(..), EventType(..), ModelSpec(..), joinCounts, popJoinA, popJoinB, getProb, defaultTimes)
+import Rarecoal.Core (ModelEvent(..), EventType(..), ModelSpec(..), popJoinA, popJoinB, getProb, defaultTimes)
 import Rarecoal.StateSpace (JointState, JointStateSpace(..))
 import Rarecoal.StateSpace.Test (stateSpace, genPopIndex, genRestrictedIds, nrPops, maxAf, genStates)
 
@@ -16,26 +16,14 @@ import Test.Tasty (TestTree, testGroup)
 import Test.QuickCheck
 
 tests :: TestTree
-tests = testGroup "Core Tests" [ testProperty "joinCounts leaves total prob. invariant" 
-                                                 prop_joinCountsInvariantAlleles,
-                                 testProperty "joinPopsA leaves total nr of ancestral alleles invariant"
-                                                 prop_joinPopsA,
-                                 testProperty "joinPopsB leaves total probabilities invariant" prop_joinPopsB,
-                                 testProperty "total probabilities are all positive" prop_getProbTest,
-                                 testCase "testing consistency with previous versions" assert_consistentProbs
-                               ]
-
-prop_joinCountsInvariantAlleles :: Property
-prop_joinCountsInvariantAlleles = forAll genTriples go
-  where
-    go :: (Int, Int, Int) -> Bool
-    go (k, l, xId) =
-        let oldState = (_jsIdToState stateSpace) xId
-            newId = joinCounts stateSpace k l xId
-            newState = (_jsIdToState stateSpace) newId
-        in  V.sum oldState == V.sum newState
-    genTriples = suchThat ((,,) <$> genPopIndex <*> genPopIndex <*> genRestrictedIds) (\(k, l, _) -> k /= l)
-
+tests = testGroup "Core Tests" [ testProperty "joinPopsA leaves total nr of ancestral alleles \ 
+                                               \invariant" prop_joinPopsA,
+                                 testProperty "joinPopsB leaves total probabilities invariant" 
+                                              prop_joinPopsB,
+                                 testProperty "total probabilities are all positive" 
+                                              prop_getProbTest,
+                                 testCase "testing consistency with previous versions" 
+                                           assert_consistentProbs]
 
 prop_joinPopsA :: Property
 prop_joinPopsA = forAll genTriple go

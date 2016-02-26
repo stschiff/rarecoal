@@ -1,5 +1,6 @@
 module Rarecoal.Core (defaultTimes, getTimeSteps, getProb, validateModel, choose,
-                      ModelEvent(..), EventType(..), ModelSpec(..), joinCounts, popJoinA, popJoinB) where
+                      ModelEvent(..), EventType(..), ModelSpec(..), popJoinA,
+                      popJoinB) where
 
 import Rarecoal.StateSpace (JointStateSpace(..), makeJointStateSpace, getNonZeroStates)
 
@@ -7,7 +8,7 @@ import Control.Error.Safe (assertErr)
 import Control.Exception.Base (assert)
 import Control.Monad (when, forM_, forM, foldM)
 import Control.Monad.ST (runST, ST)
-import Data.List (sortBy)
+import Data.List (sortBy, nub)
 import Data.STRef (STRef, readSTRef, newSTRef, modifySTRef, writeSTRef)
 import qualified Data.Vector.Unboxed as V
 import qualified Data.Vector.Unboxed.Mutable as VM
@@ -28,6 +29,7 @@ data ModelEvent = ModelEvent {
 } deriving (Show, Read)
 
 data EventType = Join Int Int
+               | Split Int Int Double
                | SetPopSize Int Double
                | SetGrowthRate Int Double
                | SetFreeze Int Bool
@@ -80,7 +82,8 @@ getProb modelSpec nVec noShortcut config = do
 
 makeInitModelState :: ModelSpec -> Int -> ST s (ModelState s)
 makeInitModelState (ModelSpec _ _ events) nrPop = do
-    sortedEvents <- newSTRef $ sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) -> time1 `compare` time2) events
+    sortedEvents <- newSTRef $ sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) ->
+                                       time1 `compare` time2) events
     t <- newSTRef 0.0
     popSize <- VM.replicate nrPop 1.0
     growthRates <- VM.replicate nrPop 0.0
@@ -97,7 +100,8 @@ makeInitCoalState nVec config = do
         jointStateSpace = makeJointStateSpace nrPop maxAf
         initialId = (_jsStateToId jointStateSpace) initialState
     b <- VM.replicate (_jsNrStates jointStateSpace) 0.0
-    -- trace (show ("makeInitCoalState", _jsNrStates jointStateSpace, initialState, initialId)) $ return ()
+    -- trace (show ("makeInitCoalState", _jsNrStates jointStateSpace, initialState, initialId)) $ 
+    --        return ()
     VM.write b initialId 1.0
     nonZeroStates <- newSTRef (getNonZeroStates jointStateSpace [initialId])
     bTemp <- VM.new (_jsNrStates jointStateSpace)
@@ -116,7 +120,8 @@ canUseShortcut :: ModelState s -> CoalState s -> ST s Bool
 canUseShortcut ms cs = do
     nonZeroStates <- readSTRef (_csNonZeroStates cs)
     let idToState = _jsIdToState . _csStateSpace $ cs
-        allDerivedHaveCoalesced = and [(V.length . V.filter (>0)) (idToState xId) == 1 | xId <- nonZeroStates]
+        allDerivedHaveCoalesced =
+            and [(V.length . V.filter (>0)) (idToState xId) == 1 | xId <- nonZeroStates]
     a <- V.freeze $ _csA cs
     let allAncestralHaveCoalesced = (V.length . V.filter (>0.0)) a == 1
     r <- V.freeze $ _msGrowthRates ms
@@ -136,7 +141,8 @@ propagateStateShortcut ms cs = do
     probs <- mapM (VM.read (_csB cs)) nonZeroIds
     let additionalBranchLength =
             sum [prob * goState popSize nrA state | (state, prob) <- zip nonZeroStates probs]
-    -- trace ("shortcut: " ++ show additionalBranchLength ++ "; " ++ show nrA ++ "; " ++ show (zip nonZeroStates probs)) (return ())
+    -- trace ("shortcut: " ++ show additionalBranchLength ++ "; " ++ show nrA ++ "; " ++
+    --        show (zip nonZeroStates probs)) (return ())
     VM.set (_csB cs) 0.0
     modifySTRef (_csD cs) (+additionalBranchLength)
     VM.write (_csA cs) popIndex 1.0
@@ -163,7 +169,8 @@ singleStep ms cs nextTime = do
         deltaT <- (nextTime-) <$> readSTRef (_msT ms)
         when (deltaT > 0) $ do
             -- t <- use $ _1 . msT
-            -- trace ("time: " ++ show t ++ ": stepping forward with deltaT=" ++ show deltaT) $ return ()
+            -- trace ("time: " ++ show t ++ ": stepping forward with deltaT=" ++
+            --        show deltaT) $ return ()
             updateCoalState ms cs deltaT
             migrations <- readSTRef (_msMigrationRates ms)
             mapM_ (updateCoalStateMig ms cs deltaT) migrations
@@ -176,7 +183,8 @@ debugOutput ms cs nextTime = do
     nonZeroStates <- readSTRef (_csNonZeroStates cs)
     bList <- mapM (VM.read (_csB cs)) nonZeroStates
     d <- readSTRef (_csD cs)
-    trace (show nextTime ++ " " ++ show currentTime ++ " " ++ show aVec ++ " " ++ show (zip nonZeroStates bList) ++ " " ++ show d) (return ())
+    trace (show nextTime ++ " " ++ show currentTime ++ " " ++ show aVec ++ " " ++
+           show (zip nonZeroStates bList) ++ " " ++ show d) (return ())
 
 performEvent :: ModelState s -> CoalState s -> ST s ()
 performEvent ms cs = do
@@ -186,6 +194,7 @@ performEvent ms cs = do
     -- trace ("time: " ++ show t ++ ": performing event " ++ show (head events)) $ return ()
     case e of
         Join k l -> popJoin ms cs k l
+        Split k l m -> popSplit ms cs k l m
         SetPopSize k p -> do
             VM.write (_msPopSize ms) k p
             VM.write (_msGrowthRates ms) k 0.0
@@ -193,16 +202,10 @@ performEvent ms cs = do
         SetFreeze k b -> VM.write (_msFreezeState ms) k b
         SetMigration k l m -> do
             migrations <- readSTRef (_msMigrationRates ms)
-            let relevantMigs = [i | ((k', l', _), i) <- zip migrations [0..], k' == k, l' == l]
+            let cleanedMigrations = [triple | triple@(k', l', m') <- migrations, k' /= k, l' /= l']
                 newMigrations =
-                    if (null relevantMigs && m > 0) then
-                        (k, l, m) : migrations
-                    else
-                        if not (null relevantMigs) then
-                            let migrationV = V.fromList migrations
-                            in  V.toList $ migrationV V.// [(head relevantMigs, (k, l, m))]
-                        else migrations
-            writeSTRef (_msMigrationRates ms) $ filter (\(_,_,m') -> m' > 0.0) newMigrations
+                    if m > 0.0 then (k, l, m) : cleanedMigrations else cleanedMigrations
+            writeSTRef (_msMigrationRates ms) newMigrations
     writeSTRef (_msEventQueue ms) $ tail events
 
 popJoin :: ModelState s -> CoalState s -> Int -> Int -> ST s ()
@@ -215,19 +218,6 @@ popJoin ms cs k l = do
   where
     deleteMigrations pop list = [mig | mig@(k', l', _) <- list, k' /= pop, l' /= pop]
 
-popJoinB :: VM.MVector s Double -> VM.MVector s Double -> STRef s [Int] -> JointStateSpace -> Int -> Int -> ST s ()
-popJoinB bVec bVecTemp nonZeroStateRef stateSpace k l = do
-    VM.set bVecTemp 0.0
-    nonZeroStateIds <- readSTRef nonZeroStateRef
-    newNonZeroStateIds <- forM nonZeroStateIds $ \xId -> do
-        oldProb <- VM.read bVec xId
-        let newId = joinCounts stateSpace k l xId
-        val <- VM.read bVecTemp newId
-        VM.write bVecTemp newId (val + oldProb)
-        if val == 0.0 then return newId else return (-1)
-    VM.copy bVec bVecTemp
-    writeSTRef nonZeroStateRef $ getNonZeroStates stateSpace (filter (>=0) newNonZeroStateIds)
-
 popJoinA :: VM.MVector s Double -> Int -> Int -> ST s ()
 popJoinA aVec k l = do
     al <- VM.read aVec l
@@ -235,46 +225,61 @@ popJoinA aVec k l = do
     VM.write aVec l 0.0
     VM.write aVec k (al + ak)
 
-joinCounts :: JointStateSpace -> Int -> Int -> Int -> Int
-joinCounts stateSpace k l id_ =
-    let s = (_jsIdToState stateSpace) id_
-        newK = s V.! k + s V.! l
-        newS = s V.// [(k, newK), (l, 0)]
-    in  (_jsStateToId stateSpace) newS
+popJoinB :: VM.MVector s Double -> VM.MVector s Double -> STRef s [Int] -> JointStateSpace ->
+            Int -> Int -> ST s ()
+popJoinB bVec bVecTemp nonZeroStateRef stateSpace k l = do
+    VM.set bVecTemp 0.0
+    nonZeroStateIds <- readSTRef nonZeroStateRef
+    newNonZeroStateIds <- forM nonZeroStateIds $ \xId -> do
+        oldProb <- VM.read bVec xId
+        let xVec = (_jsIdToState stateSpace) xId
+            xl = xVec V.! l
+            xk = xVec V.! k
+            xVec' = xVec V.// [(k, xk + xl), (l, 0)]
+            xId' = (_jsStateToId stateSpace) xVec'
+        val <- VM.read bVecTemp xId'
+        VM.write bVecTemp xId' (val + oldProb)
+        return xId'
+    VM.copy bVec bVecTemp
+    writeSTRef nonZeroStateRef $ getNonZeroStates stateSpace (nub newNonZeroStateIds)
+
+popSplit :: ModelState s -> CoalState s -> Int -> Int -> Double -> ST s ()
+popSplit ms cs k l m = do
+    popSplitA (_csA cs) k l m
+    popSplitB (_csB cs) (_csBtemp cs) (_csNonZeroStates cs) (_csStateSpace cs) k l m 
+
+popSplitA :: VM.MVector s Double -> Int -> Int -> Double -> ST s ()  
+popSplitA aVec k l m = do
+    al <- VM.read aVec l
+    ak <- VM.read aVec k
+    VM.write aVec l $ (1.0 - m) * al
+    VM.write aVec k $ (m * al + ak)
+
+popSplitB :: VM.MVector s Double -> VM.MVector s Double -> STRef s [Int] -> JointStateSpace ->
+             Int -> Int -> Double -> ST s ()
+popSplitB bVec bVecTemp nonZeroStateRef stateSpace k l m = do
+    VM.set bVecTemp 0.0
+    nonZeroStateIds <- readSTRef nonZeroStateRef
+    newNonZeroStateIds <- fmap concat . forM nonZeroStateIds $ \xId -> do
+        oldProb <- VM.read bVec xId
+        let xVec = (_jsIdToState stateSpace) xId
+            xl = xVec V.! l
+            xk = xVec V.! k
+        forM [0..xl] $ \s -> do
+            let xVec' = xVec V.// [(k, xk + s), (l, xl - s)]
+                xId' = (_jsStateToId stateSpace) xVec'
+            val <- VM.read bVecTemp xId'
+            let binomialFactor = m ^ s * (1.0 - m) ^ (xl - s) * choose xl s
+            VM.write bVecTemp xId' (oldProb + val * binomialFactor)
+            return xId'
+    VM.copy bVec bVecTemp
+    writeSTRef nonZeroStateRef $ getNonZeroStates stateSpace (nub newNonZeroStateIds)
 
 updateCoalState :: ModelState s -> CoalState s -> Double -> ST s ()
 updateCoalState ms cs deltaT = do
     updateA ms cs deltaT
     updateB ms cs deltaT
     updateD cs deltaT
-
-updateCoalStateMig :: ModelState s -> CoalState s -> Double -> (Int, Int, Double) -> ST s ()
-updateCoalStateMig _ _ _ _ = undefined
-  -- updateCoalStateMig ms cs deltaT (k, l, m) = do
-  --   freezeK <- VM.read (_msFreezeState ms) k
-  --   freezeL <- VM.read (_msFreezeState ms) l
-  --   if freezeK || freezeL then return () else do
-  --       b <- use $ _2 . csB
-  --       stateSpace <- use $ _2 . csStateSpace
-  --       _2 . csB .= foldl' (updateState stateSpace) b (M.keys b)
-  --       a <- use $ _2 . csA
-  --       _2 . csA . ix l *= exp (-deltaT * m)
-  --       _2 . csA . ix k += a!l * (1.0 - exp (-deltaT * m))
-  -- where
-  --   updateState :: JointStateSpace -> M.IntMap Double -> Int -> M.IntMap Double
-  --   updateState stateSpace b sourceId =
-  --       let bProb = b M.! sourceId
-  --           sourceState = (stateSpace ^. jsIdToState) sourceId
-  --       in  if sourceState ! l > 0 then
-  --               let reduceFactor = exp $ -deltaT * m * fromIntegral (sourceState!l)
-  --                   b' = M.adjust (*reduceFactor) sourceId b
-  --                   targetState = sourceState & ix k +~ 1 & ix l -~ 1
-  --                   targetId = (stateSpace ^. jsStateToId) targetState
-  --               in  if targetId `M.member` b' then
-  --                       M.insertWith (+) targetId (bProb * (1.0 - reduceFactor)) b'
-  --                   else
-  --                       fillStateSpace stateSpace . M.insert targetId (bProb * (1.0 - reduceFactor)) $ b'
-  --           else b
 
 updateA :: ModelState s -> CoalState s -> Double -> ST s ()
 updateA ms cs deltaT = do
@@ -299,8 +304,10 @@ updateB ms cs deltaT = do
         let x1ups = (_jsX1up stateSpace) xId
             x = (_jsIdToState stateSpace) xId
             -- explicit definitions to introduce automatic CAFs for profiling
-            f1 = foldM (t1TermHelper x (_msPopSize ms) (_csA cs) (_msFreezeState ms)) 0 [0..(nrPop - 1)]
-            f2 = foldM (t2TermHelper (_csB cs) x1ups x (_msPopSize ms) (_msFreezeState ms)) 0 [0..(nrPop - 1)]
+            f1 = foldM (t1TermHelper x (_msPopSize ms) (_csA cs) (_msFreezeState ms)) 0
+                       [0..(nrPop - 1)]
+            f2 = foldM (t2TermHelper (_csB cs) x1ups x (_msPopSize ms) (_msFreezeState ms)) 0 
+                       [0..(nrPop - 1)]
         t1 <- f1
         t2 <- f2
         val <- VM.read (_csB cs) xId
@@ -323,9 +330,9 @@ updateB ms cs deltaT = do
         let xx = fromIntegral (state V.! i)
         pp <- VM.read popSize i
         ff <- VM.read freezeState i
-        let add = if ff then 0.0 else bb * (1.0 - exp (-xx * (xx + 1.0) / 2.0 * (1.0 / pp) * deltaT))
+        let add = if ff then 0.0 else
+                bb * (1.0 - exp (-xx * (xx + 1.0) / 2.0 * (1.0 / pp) * deltaT))
         return $ val + add
-
 
 updateD :: CoalState s -> Double -> ST s ()
 updateD cs deltaT = do
@@ -334,6 +341,9 @@ updateD cs deltaT = do
         x1s = map (_jsX1 stateSpace) [0 .. (nrPop - 1)]
     b1s <- mapM (VM.read (_csB cs)) x1s
     modifySTRef (_csD cs) (\v -> v + deltaT * sum b1s)
+
+updateCoalStateMig :: ModelState s -> CoalState s -> Double -> (Int, Int, Double) -> ST s ()
+updateCoalStateMig ms cs deltaT (k, l, m) = popSplit ms cs k l (deltaT * m)
 
 updateModelState :: ModelState s -> CoalState s -> Double -> ST s ()
 updateModelState ms cs deltaT = do
@@ -348,7 +358,8 @@ updateModelState ms cs deltaT = do
 validateModel :: ModelSpec -> Either String ()
 validateModel (ModelSpec _ _ events) = do
     when (or [t < 0 | ModelEvent t _ <- events]) $ Left "Negative event times"
-    let sortedEvents = sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) -> time1 `compare` time2) events
+    let sortedEvents =
+            sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) -> time1 `compare` time2) events
     checkEvents sortedEvents
   where
     checkEvents [] = Right ()
@@ -357,11 +368,14 @@ validateModel (ModelSpec _ _ events) = do
             then Left "Illegal joins"
             else checkEvents rest
     checkEvents (ModelEvent _ (SetPopSize _ p):rest) =
-        if p < 0.001 || p > 1000 then Left $ "Illegal population size: " ++ show p else checkEvents rest
+        if p < 0.001 || p > 1000 then Left $ "Illegal population size: " ++ show p else
+            checkEvents rest
     checkEvents (ModelEvent _ (SetGrowthRate _ r):rest) =
         if abs r > 10000.0 then Left "Illegal growth rates" else checkEvents rest
     checkEvents (ModelEvent _ (SetMigration _ _ r):rest) =
         if r < 0.0 || r > 10000.0 then Left "Illegal migration rate" else checkEvents rest
+    checkEvents (ModelEvent _ (Split _ _ m):rest) =
+        if m < 0.0 || m > 1.0 then Left "Illegal split rate" else checkEvents rest
     checkEvents (ModelEvent _ (SetFreeze _ _):rest) = checkEvents rest
 
 choose :: Int -> Int -> Double
