@@ -1,12 +1,12 @@
 module Rarecoal.Core (defaultTimes, getTimeSteps, getProb, validateModel, choose,
                       ModelEvent(..), EventType(..), ModelSpec(..), popJoinA,
-                      popJoinB) where
+                      popJoinB, popSplitA, popSplitB) where
 
 import Rarecoal.StateSpace (JointStateSpace(..), makeJointStateSpace, getNonZeroStates)
 
 import Control.Error.Safe (assertErr)
 import Control.Exception.Base (assert)
-import Control.Monad (when, forM_, forM, foldM)
+import Control.Monad (when, forM_, forM, foldM, filterM, (>=>))
 import Control.Monad.ST (runST, ST)
 import Data.List (sortBy, nub)
 import Data.STRef (STRef, readSTRef, newSTRef, modifySTRef, writeSTRef)
@@ -270,10 +270,11 @@ popSplitB bVec bVecTemp nonZeroStateRef stateSpace k l m = do
                 xId' = (_jsStateToId stateSpace) xVec'
             val <- VM.read bVecTemp xId'
             let binomialFactor = m ^ s * (1.0 - m) ^ (xl - s) * choose xl s
-            VM.write bVecTemp xId' (oldProb + val * binomialFactor)
+            VM.write bVecTemp xId' (val + oldProb * binomialFactor)
             return xId'
     VM.copy bVec bVecTemp
-    writeSTRef nonZeroStateRef $ getNonZeroStates stateSpace (nub newNonZeroStateIds)
+    filteredNonZeroStates <- filterM (VM.read bVec >=> (\x -> return $ x>0.0)) $ newNonZeroStateIds
+    writeSTRef nonZeroStateRef $ getNonZeroStates stateSpace (nub filteredNonZeroStates)
 
 updateCoalState :: ModelState s -> CoalState s -> Double -> ST s ()
 updateCoalState ms cs deltaT = do
