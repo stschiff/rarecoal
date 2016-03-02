@@ -364,19 +364,26 @@ validateModel (ModelSpec _ _ events) = do
     checkEvents sortedEvents
   where
     checkEvents [] = Right ()
-    checkEvents (ModelEvent _ (Join k l):rest) =
-        if k == l || or [k' == l || l' == l | ModelEvent _ (Join k' l') <- rest]
-            then Left "Illegal joins"
-            else checkEvents rest
+    checkEvents (ModelEvent _ (Join k l):rest) = do
+        let illegalEvents = or $ do
+                ModelEvent _ e <- rest
+                case e of
+                    Join k' l'           -> return $ k' == l || l' == l
+                    Split k' l' _        -> return $ k' == l || l' == l
+                    SetPopSize k' _      -> return $ k' == l
+                    SetGrowthRate k' _   -> return $ k' == l
+                    SetMigration k' l' _ -> return $ k' == l || l' == l
+                    SetFreeze k' _       -> return $ k' == l
+        if k == l || illegalEvents then Left "Illegal joins" else checkEvents rest
     checkEvents (ModelEvent _ (SetPopSize _ p):rest) =
         if p < 0.001 || p > 1000 then Left $ "Illegal population size: " ++ show p else
             checkEvents rest
     checkEvents (ModelEvent _ (SetGrowthRate _ r):rest) =
         if abs r > 10000.0 then Left "Illegal growth rates" else checkEvents rest
     checkEvents (ModelEvent _ (SetMigration _ _ r):rest) =
-        if r < 0.0 || r > 10000.0 then Left "Illegal migration rate" else checkEvents rest
+        if r <= 0.0 || r > 10000.0 then Left "Illegal migration rate" else checkEvents rest
     checkEvents (ModelEvent _ (Split _ _ m):rest) =
-        if m < 0.0 || m > 1.0 then Left "Illegal split rate" else checkEvents rest
+        if m <= 0.0 || m >= 1.0 then Left "Illegal split rate" else checkEvents rest
     checkEvents (ModelEvent _ (SetFreeze _ _):rest) = checkEvents rest
 
 choose :: Int -> Int -> Double

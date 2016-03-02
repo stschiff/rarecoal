@@ -4,9 +4,10 @@ module Rarecoal.ModelTemplate (getInitialParams, ModelTemplate(..), readModelTem
 import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..), EventType(..))
 
 import Control.Applicative ((<|>))
-import Control.Error (Script, scriptIO, tryRight, readErr, justErr, tryJust, throwE, assertErr)
+import Control.Error (Script, scriptIO, tryRight, readErr, err, justErr, tryJust, throwE, assertErr)
 import Control.Monad (unless)
 import qualified Data.Attoparsec.Text as A
+import Debug.Trace (trace)
 import System.Log.Logger (infoM)
 import Data.List (maximumBy)
 import Data.List.Split (splitOn)
@@ -52,15 +53,15 @@ getInitialParams modelTemplate paramsFile x = do
 readModelTemplate :: FilePath -> Double -> [Double] -> Script ModelTemplate
 readModelTemplate path theta timeSteps = do
     c <- scriptIO $ T.readFile path
-    (names, events, constraints) <- tryRight $ A.parseOnly parseModelTemplate c
+    (names, events, constraints) <- tryRight $ A.parseOnly (parseModelTemplate <* A.endOfInput) c
     return $ ModelTemplate names theta timeSteps events constraints
 
 parseModelTemplate :: A.Parser ([String], [EventTemplate], [ConstraintTemplate])
 parseModelTemplate = do
     params <- parseParams
     events <- parseEvents
-    constrains <- parseConstraints
-    return (params, events, constrains)
+    constraints <- parseConstraints
+    return (params, events, constraints)
 
 parseParams :: A.Parser [String]
 parseParams = do
@@ -174,6 +175,7 @@ parseConstraints = A.many' $ (A.try parseSmallerConstraint <|> parseGreaterConst
         name1 <- parseParamName
         _ <- A.char '<'
         name2 <- parseMaybeParam
+        A.endOfLine
         return $ SmallerConstraintTemplate name1 name2
     parseGreaterConstraint = do
         _ <- A.char 'C'
@@ -181,6 +183,7 @@ parseConstraints = A.many' $ (A.try parseSmallerConstraint <|> parseGreaterConst
         name1 <- parseParamName
         _ <- A.char '>'
         name2 <- parseMaybeParam
+        A.endOfLine
         return $ GreaterConstraintTemplate name1 name2
 
 instantiateModel :: ModelTemplate -> V.Vector Double -> Either String ModelSpec

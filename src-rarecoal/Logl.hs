@@ -31,11 +31,15 @@ data LoglOpt = LoglOpt {
 runLogl :: LoglOpt -> Script ()
 runLogl opts = do
     nrProc <- scriptIO getNumProcessors
-    if (loNrThreads opts == 0) then scriptIO $ setNumCapabilities nrProc else scriptIO $ setNumCapabilities (loNrThreads opts)
+    if (loNrThreads opts == 0)
+    then scriptIO $ setNumCapabilities nrProc
+    else scriptIO $ setNumCapabilities (loNrThreads opts)
     nrThreads <- scriptIO getNumCapabilities
     scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
-    modelSpec <- getModelSpec (loTemplatePath opts) (loTheta opts) (loParamsFile opts) (loParams opts) (loModelEvents opts) (loLinGen opts)
-    hist <- loadHistogram (loMinAf opts) (loMaxAf opts) (loConditionOn opts) (loNrCalledSites opts) (loHistPath opts)
+    modelSpec <- getModelSpec (loTemplatePath opts) (loTheta opts) (loParamsFile opts)
+                              (loParams opts) (loModelEvents opts) (loLinGen opts)
+    hist <- loadHistogram (loMinAf opts) (loMaxAf opts) (loConditionOn opts) (loNrCalledSites opts) 
+                          (loHistPath opts)
     val <- tryRight $ computeLikelihood modelSpec hist False
     scriptIO $ print val
     writeSpectrumFile (loSpectrumPath opts) modelSpec False hist
