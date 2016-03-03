@@ -1,4 +1,4 @@
-module Logl (computeLikelihood, runLogl, LoglOpt(..)) where
+module Logl (LoglOpt(..), runLogl, computeLikelihood) where
 
 import Rarecoal.Core (getProb, ModelSpec(..), ModelEvent(..))
 import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..), loadHistogram)
@@ -13,7 +13,6 @@ import qualified Data.Map.Strict as Map
 import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
 
 data LoglOpt = LoglOpt {
-   loSpectrumPath :: FilePath,
    loTheta :: Double,
    loTemplatePath :: FilePath,
    loParamsFile :: FilePath,
@@ -40,32 +39,17 @@ runLogl opts = do
                               (loParams opts) (loModelEvents opts) (loLinGen opts)
     hist <- loadHistogram (loMinAf opts) (loMaxAf opts) (loConditionOn opts) (loNrCalledSites opts) 
                           (loHistPath opts)
-    val <- tryRight $ computeLikelihood modelSpec hist False
-    scriptIO $ print val
-    writeSpectrumFile (loSpectrumPath opts) modelSpec False hist
-
-computeLikelihood :: ModelSpec -> RareAlleleHistogram -> Bool -> Either String Double
-computeLikelihood modelSpec histogram noShortcut = do
-    assertErr "minFreq must be greater than 0" $ raMinAf histogram > 0
-    standardOrder <- computeStandardOrder histogram
-    let nVec = raNVec histogram
-    patternProbs <- sequence $ parMap rdeepseq (getProb modelSpec nVec noShortcut) standardOrder
-    -- patternProbs <- sequence $ parMapChunk rdeepseq (getProb modelSpec nVec) standardOrder
-    -- trace (show $ zip standardOrder patternProbs) $ return ()
-    let patternCounts = map (defaultLookup . Pattern) standardOrder
+    standardOrder <- tryRight $ computeStandardOrder hist
+    let nVec = raNVec hist
+    patternProbs <- tryRight . sequence $
+            parMap rdeepseq (getProb modelSpec nVec False) standardOrder
+    let patternCounts = map (defaultLookup hist . Pattern) standardOrder
         ll = sum $ zipWith (\p c -> log p * fromIntegral c) patternProbs patternCounts
-        otherCounts = defaultLookup Higher
-    return $ ll + fromIntegral otherCounts * log (1.0 - sum patternProbs)
-  where
-    defaultLookup sitePattern = Map.findWithDefault 0 sitePattern (raCounts histogram)
-
-writeSpectrumFile :: FilePath -> ModelSpec -> Bool -> RareAlleleHistogram -> Script ()
-writeSpectrumFile spectrumFile modelSpec noShortcut histogram = 
-    when (spectrumFile /= "/dev/null") $ do
-        standardOrder <- tryRight $ computeStandardOrder histogram
-        let nVec = raNVec histogram
-        vec <- tryRight $ sequence $ parMap rdeepseq (getProb modelSpec nVec noShortcut) standardOrder
-        scriptIO $ writeFile spectrumFile $ unlines $ zipWith (\p val -> show (Pattern p) ++ "\t" ++ show val) standardOrder vec
+        otherCounts = defaultLookup hist Higher
+    let totalLogLikelihood = ll + fromIntegral otherCounts * log (1.0 - sum patternProbs)
+    scriptIO . putStrLn $ "Log Likelihood:" ++ "\t" ++ show totalLogLikelihood
+    scriptIO . mapM_ putStrLn $
+        zipWith (\p val -> show (Pattern p) ++ "\t" ++ show val) standardOrder patternProbs
 
 computeStandardOrder :: RareAlleleHistogram -> Either String [[Int]]
 computeStandardOrder histogram =
@@ -74,3 +58,17 @@ computeStandardOrder histogram =
     in  Right $ filter (\p -> sum p >= raMinAf histogram && hasConditioning (raConditionOn histogram) p) $ computeAllConfigs nrPop (raMaxAf histogram) nVec
   where
     hasConditioning indices pat = all (\i -> pat !! i > 0) indices
+
+computeLikelihood :: ModelSpec -> RareAlleleHistogram -> Bool -> Either String Double
+computeLikelihood modelSpec histogram noShortcut = do
+    assertErr "minFreq must be greater than 0" $ raMinAf histogram > 0
+    standardOrder <- computeStandardOrder histogram
+    let nVec = raNVec histogram
+    patternProbs <- sequence $ parMap rdeepseq (getProb modelSpec nVec noShortcut) standardOrder
+    let patternCounts = map (defaultLookup histogram . Pattern) standardOrder
+        ll = sum $ zipWith (\p c -> log p * fromIntegral c) patternProbs patternCounts
+        otherCounts = defaultLookup histogram Higher
+    return $ ll + fromIntegral otherCounts * log (1.0 - sum patternProbs)
+
+defaultLookup :: RareAlleleHistogram -> SitePattern -> Int64
+defaultLookup histogram sitePattern = Map.findWithDefault 0 sitePattern (raCounts histogram)
