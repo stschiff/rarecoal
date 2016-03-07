@@ -209,7 +209,7 @@ parseLogl :: OP.Parser Command
 parseLogl = CmdLogl <$> parseLoglOpt
 
 parseLoglOpt :: OP.Parser LoglOpt
-parseLoglOpt = LoglOpt <$> parseSpectrumPath <*> parseTheta <*> parseTemplateFilePath <*> 
+parseLoglOpt = LoglOpt <$> parseTheta <*> parseTemplateFilePath <*> 
                            parseInitialParamsFile <*> parseInitialParamsList <*>
                            parseModelEvents <*> parseLinGen <*> parseMinAf <*> parseMaxAf <*> 
                            parseConditioning <*> parseNrCalledSites <*> parseHistPath <*> 
