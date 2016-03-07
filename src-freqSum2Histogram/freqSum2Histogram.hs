@@ -19,8 +19,11 @@ main = OP.execParser opts >>= runWithOptions
     opts = OP.info (OP.helper <*> parser) (OP.progDesc "Tool to convert a freqSum file to to a histogram file as needed for rarecoal. Any pattern containing -1 in any selected column is excluded.")
 
 parser :: OP.Parser MyOpts
-parser = MyOpts <$> OP.option OP.auto (OP.short 'n' <> OP.long "nVec" <> OP.metavar "nVec" <> OP.help "comma-separated list of the number \
-                                       \haplotypes for each population, surrounded by square brackets. Example: -n [100,100,100] for three population \
+parser = MyOpts <$> OP.option OP.auto (OP.short 'n' <> OP.long "nVec" <> OP.metavar "nVec" <> 
+                                       OP.help "comma-separated list of the number \
+                                       \chromosomes (twice the number of diploid samples) for each \
+                                       \population, surrounded by square brackets. Example: -n \ 
+                                       \[100,100,100] for three population \
                                        \each with 100 haplotypes.")
                 <*> OP.option OP.auto (OP.long "maxM"
                                        <> OP.short 'm'
@@ -33,13 +36,17 @@ parser = MyOpts <$> OP.option OP.auto (OP.short 'n' <> OP.long "nVec" <> OP.meta
                                        <> OP.metavar "LIST"
                                        <> OP.value []
                                        <> OP.showDefault
-                                       <> OP.help "If given, select only the populations at the 0-based indices from the input freqSum file. Example: \
-                                                  \-i [0,2,3]: select only the first, the third and the fourth population. Note that the number of samples, \
-                                                  \specified using -n still must be given for all populations.")
-                <*> OP.option OP.auto (OP.long "nrCalledSites" <> OP.short 'N'
-                                       <> OP.help "set the total nr of called sites. This sets the number of non-variant sites (via the pattern \
-                                                   \consisting of zeros only) such that the total number of sites matches the number given. This number is \
-                                                   \important for estimating population sizes correctly, see the README for instructions.")
+                                       <> OP.help "If given, select only the populations at the \
+                                       \0-based indices from the input freqSum file. Example: \
+                                       \-i [0,2,3]: select only the first, the third and the \
+                                       \fourth population.")
+                <*> OP.option OP.auto (OP.long "nrCalledSites" <> OP.short 'N' <>
+                                       OP.help "set the total nr of called sites. This sets the \
+                                       \number of non-variant sites (via the pattern \
+                                       \consisting of zeros only) such that the total number of \
+                                       \sites matches the number given. This number is \
+                                       \important for estimating population sizes correctly, see \
+                                       \the README for instructions.")
 
 runWithOptions :: MyOpts -> IO ()
 runWithOptions (MyOpts nVec maxM popIndices nrCalledSites) = runScript $ do
@@ -47,10 +54,13 @@ runWithOptions (MyOpts nVec maxM popIndices nrCalledSites) = runScript $ do
     case res of
         Left (err, _) -> throwE $ "Parsing error: " ++ show err
         Right () -> return ()
-    let hist = RareAlleleHistogram (selectFromList popIndices nVec) 0 maxM [] patternHist
-    hist' <- tryRight $ setNrCalledSites nrCalledSites hist
-    outs <- tryRight $ showHistogram hist'
-    scriptIO $ T.putStr outs
+    if length nVec /= length popIndices && length popIndices > 0
+    then throwE "length of -n and -i lists don't match"
+    else do
+        let hist = RareAlleleHistogram nVec 0 maxM [] patternHist
+        hist' <- tryRight $ setNrCalledSites nrCalledSites hist
+        outs <- tryRight $ showHistogram hist'
+        scriptIO $ T.putStr outs
   where
     buildPatternHist = Fold step Map.empty id
     step m fse =
