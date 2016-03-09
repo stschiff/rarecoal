@@ -7,11 +7,13 @@ import Control.Applicative ((<|>))
 import Control.Error (Script, scriptIO, tryRight, readErr, err, justErr, tryJust, throwE, assertErr)
 import Control.Monad (unless, when)
 import qualified Data.Attoparsec.Text as A
+import Data.Char (isAlpha, isDigit)
 import Debug.Trace (trace)
 import System.Log.Logger (infoM)
 import Data.List (maximumBy)
 import Data.List.Split (splitOn)
 import Data.String.Utils (replace)
+import Data.Text (unpack)
 import qualified Data.Text.IO as T
 import qualified Data.Vector.Unboxed as V
 
@@ -70,7 +72,7 @@ parseParams = do
     return names
 
 parseParamName :: A.Parser String
-parseParamName = (:) <$> A.letter <*> A.many' (A.letter <|> A.digit)
+parseParamName = unpack <$> A.takeWhile (\c -> isAlpha c || isDigit c || c == '_')
 
 parseEvents :: A.Parser [EventTemplate]
 parseEvents = A.many' (parsePopSizeEvent <|> parseJoinEvent <|> parseSplitEvent <|> 
