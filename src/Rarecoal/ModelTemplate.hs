@@ -5,7 +5,7 @@ import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..), EventType(..)
 
 import Control.Applicative ((<|>))
 import Control.Error (Script, scriptIO, tryRight, readErr, err, justErr, tryJust, throwE, assertErr)
-import Control.Monad (unless)
+import Control.Monad (unless, when)
 import qualified Data.Attoparsec.Text as A
 import Debug.Trace (trace)
 import System.Log.Logger (infoM)
@@ -224,7 +224,8 @@ instantiateEvent pnames params et = do
 
 substituteParam :: [String] -> [Double] -> Either Double String -> Either String Double
 substituteParam _ _ (Left val) = Right val
-substituteParam pnames params (Right param) =
+substituteParam pnames params (Right param) = do
+    when (length params /= length pnames) $ Left "number of parameter values does not match number of parameters in template"
     case foundParam of
         Nothing -> Left $ "Error in Template: could not find parameter named " ++ param
         Just val -> Right val
