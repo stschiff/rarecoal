@@ -22,9 +22,12 @@ data Command = CmdView ViewOpt | CmdProb ProbOpt | CmdLogl LoglOpt | CmdMaxl Max
                CmdMcmc McmcOpt | CmdFind FindOpt
 
 main :: IO ()
-main = run =<< OP.execParser (parseOptions `withInfo` "This software implementats the Rarecoal \ 
+main = run =<< OP.execParser (parseOptions `withInfo` "Version 1.1.0. This software implements the Rarecoal \ 
                               \algorithm, as described in doc/rarecoal.pdf. Type -h for getting \
                               \help")
+
+withInfo :: OP.Parser a -> String -> OP.ParserInfo a
+withInfo opts desc = OP.info (OP.helper <*> opts) $ OP.progDesc desc
 
 run :: Options -> IO ()
 run (Options cmdOpts) = runScript $ do
@@ -83,9 +86,6 @@ parseNrCalledSites = OP.option OP.auto $ OP.short 'N' <> OP.long "nr_called_site
 parseHistPath :: OP.Parser FilePath
 parseHistPath = OP.strOption $ OP.short 'i' <> OP.long "input"
                     <> OP.metavar "<Input File>" <> OP.help "Input Histogram File, use - for stdin"
-
-withInfo :: OP.Parser a -> String -> OP.ParserInfo a
-withInfo opts desc = OP.info (OP.helper <*> opts) $ OP.progDesc desc
 
 parseProb :: OP.Parser Command
 parseProb = CmdProb <$> parseProbOpt
