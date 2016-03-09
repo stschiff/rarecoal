@@ -58,7 +58,6 @@ runMcmc opts = do
     if (mcNrThreads opts == 0) then scriptIO $ setNumCapabilities nrProc else scriptIO $ setNumCapabilities (mcNrThreads opts)
     nrThreads <- scriptIO getNumCapabilities
     scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
-
     let times = getTimeSteps 20000 (mcLinGen opts) 20.0
     modelTemplate <- readModelTemplate (mcTemplatePath opts) (mcTheta opts) times
     hist <- loadHistogram (mcMinAf opts) (mcMaxAf opts) (mcConditionOn opts) (mcNrCalledSites opts) (mcHistPath opts)
