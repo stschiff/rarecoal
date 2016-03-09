@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                rarecoal
-version:             0.0.1
+version:             1.1.0
 license:             GPL-3
 license-file:        LICENSE
 author:              Stephan Schiffels
@@ -41,7 +41,7 @@ Benchmark coreBench
 executable rarecoal
   main-is:             Main.hs
   hs-source-dirs:      src-rarecoal
-  build-depends:       base, rarecoal, rarecoal-tools  
+  build-depends:       base, rarecoal, rarecoal-tools,
                        transformers,
                        containers,
                        errors,

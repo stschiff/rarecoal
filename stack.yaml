@@ -1,5 +1,8 @@
 flags: {}
 packages:
 - '.'
+- location:
+    git: git@github.com:stschiff/rarecoal-tools.git
+    commit: 16bb956424cc87cbb3386fdafa0f698e987b6461
 extra-deps: []
 resolver: lts-3.4
