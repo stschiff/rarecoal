@@ -22,7 +22,7 @@ data Command = CmdView ViewOpt | CmdProb ProbOpt | CmdLogl LoglOpt | CmdMaxl Max
                CmdMcmc McmcOpt | CmdFind FindOpt
 
 main :: IO ()
-main = run =<< OP.execParser (parseOptions `withInfo` "Version 1.1.0. This software implements the Rarecoal \ 
+main = run =<< OP.execParser (parseOptions `withInfo` "Version 1.2.0. This software implements the Rarecoal \ 
                               \algorithm, as described in doc/rarecoal.pdf. Type -h for getting \
                               \help")
 
