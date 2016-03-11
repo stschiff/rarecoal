@@ -12,7 +12,8 @@ This software implements tools to process and analyse genome sequencing data. Th
 ## Rarecoal program
 Rarecoal reads data in the form of a joint allele frequency histogram for rare alleles. An example file can be found under `testData/5popSplit_combined.txt`. The first lines of this file are:
 
-    N=200,200,200,200,200
+    NAMES=POP1,POP2,POP3,POP4,POP5
+	N=200,200,200,200,200
     MAX_M=10
     0,0,0,0,0 1980590858
     HIGHER 9115605
