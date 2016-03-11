@@ -3,6 +3,6 @@ packages:
 - '.'
 - location:
     git: git@github.com:stschiff/rarecoal-tools.git
-    commit: a559c2798dad63cf5508f37b883fae90e12e03b2
+    commit: 7c179eb02e2c0b84ba49641e23030f1745e323c0
 extra-deps: []
 resolver: lts-3.4
