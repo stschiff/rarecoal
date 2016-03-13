@@ -3,14 +3,14 @@
 module Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..),
                             SitePattern(..),
                             filterMaxAf, loadHistogram, filterGlobalMinAf, readHistogram, 
-                            showHistogram, readHistogramFromHandle) where
+                            readHistogramFromHandle) where
 
 import qualified Data.Map.Strict as Map
 import Data.Char (isAlphaNum)
-import Data.List (intercalate, sortBy)
+import Data.List (intercalate)
 import Control.Monad (when, (<=<))
 import Data.Int (Int64)
-import Control.Error (Script, scriptIO, assertErr, tryRight, throwE)
+import Control.Error (Script, scriptIO, tryRight, throwE)
 import Control.Applicative ((<|>))
 import qualified Data.Text as T
 import qualified Data.Attoparsec.Text as A
@@ -32,18 +32,6 @@ data SitePattern = Pattern [Int] | Higher deriving (Eq, Ord)
 instance Show SitePattern where
     show (Pattern nVec) = intercalate "," . map show $ nVec
     show Higher = "HIGHER"
-
-showHistogram :: RareAlleleHistogram -> Either String T.Text
-showHistogram hist = do
-    assertErr "can only print histogram with minAf=0 due to format-legacy" $ raMinAf hist == 0
-    assertErr "can only print histogram with no conditioning due to format-legacy" $ length (raConditionOn hist) == 0
-    let head0 = T.concat ["NAMES=", T.pack . intercalate "," . raNames $ hist]
-        head1 = T.concat ["N=", T.pack . intercalate "," . map show . raNVec $ hist]
-        head2 = T.concat ["MAX_M=", T.pack . show . raMaxAf $ hist]
-        body = [T.intercalate " " [T.pack . show $ k, T.pack . show $ v] | (k, v) <- sorted]
-    return $ T.unlines (head0:head1:head2:body)
-  where
-    sorted = sortBy (\(_, v1) (_, v2)  -> compare v2 v1) $ Map.toList (raCounts hist)
 
 readHistogram :: FilePath -> Script RareAlleleHistogram
 readHistogram path = do

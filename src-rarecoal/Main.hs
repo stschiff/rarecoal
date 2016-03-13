@@ -5,7 +5,6 @@ import Mcmc (McmcOpt(..), runMcmc)
 import Prob (ProbOpt(..), runProb)
 import Rarecoal.Core (ModelEvent(..), EventType(..))
 import Rarecoal.RareAlleleHistogram (SitePattern(..))
-import View (ViewOpt(..), runView)
 
 import Control.Applicative (many, (<|>))
 import Control.Error.Script (runScript, scriptIO)
@@ -17,7 +16,7 @@ import System.Log.Logger (updateGlobalLogger, setLevel, Priority(..), infoM)
 
 data Options = Options Command
 
-data Command = CmdView ViewOpt | CmdProb ProbOpt | CmdLogl LoglOpt | CmdMaxl MaxlOpt |
+data Command = CmdProb ProbOpt | CmdLogl LoglOpt | CmdMaxl MaxlOpt |
                CmdMcmc McmcOpt | CmdFind FindOpt
 
 main :: IO ()
@@ -34,7 +33,6 @@ run (Options cmdOpts) = runScript $ do
     currentT <- scriptIO getCurrentTime
     scriptIO $ infoM "rarecoal" $ "Starting at " ++ show currentT
     case cmdOpts of
-        CmdView opts -> runView opts
         CmdProb opts -> runProb opts
         CmdLogl opts -> runLogl opts
         CmdMaxl opts -> runMaxl opts
@@ -48,7 +46,6 @@ parseOptions = Options <$> parseCommand
 
 parseCommand :: OP.Parser Command
 parseCommand = OP.subparser $
-    OP.command "view" (parseView `withInfo` "View the input file up to some frequency") <>
     OP.command "prob" (parseProb `withInfo` "Compute probability for a given configuration") <>
     OP.command "logl" (parseLogl `withInfo`
                        "Compute the likelihood of the given model for the given data set") <>
@@ -56,12 +53,6 @@ parseCommand = OP.subparser $
                        "Maximize the likelihood of the model given the data set") <>
     OP.command "mcmc" (parseMcmc `withInfo` "Run MCMC on the model and the data") <>
     OP.command "find" (parseFind `withInfo` "Explore where a branch joins the tree")
-
-parseView :: OP.Parser Command
-parseView = CmdView <$> parseViewOpt
-
-parseViewOpt :: OP.Parser ViewOpt
-parseViewOpt = ViewOpt <$> parseMaxAf <*> parseHistPath
 
 parseMinAf :: OP.Parser Int
 parseMinAf = OP.option OP.auto $ OP.long "minAf" <> OP.metavar "<INT>"

@@ -63,7 +63,7 @@ executable rarecoal
                        hslogger,
                        text,
                        attoparsec
-  other-modules:       Find, Logl, Maxl, Mcmc, Prob, View
+  other-modules:       Find, Logl, Maxl, Mcmc, Prob
   default-language:    Haskell2010
   extra-lib-dirs:      /usr/lib
   ghc-options:         -threaded -O -with-rtsopts=-A200m
