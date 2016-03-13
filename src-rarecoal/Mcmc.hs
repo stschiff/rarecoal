@@ -12,7 +12,6 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad (when, forM_)
 import Data.List (intercalate, sort, minimumBy)
 import Control.Error (Script, scriptIO, tryRight, err)
-import Data.Int (Int64)
 import Data.Ord (comparing)
 import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
 import System.Log.Logger (infoM)
@@ -33,7 +32,6 @@ data McmcOpt = McmcOpt {
    mcMinAf :: Int,
    mcMaxAf :: Int,
    mcConditionOn :: [Int],
-   mcNrCalledSites :: Int64,
    mcLinGen :: Int,
    mcHistPath :: FilePath,
    mcRandomSeed :: Int,
@@ -60,7 +58,7 @@ runMcmc opts = do
     scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
     let times = getTimeSteps 20000 (mcLinGen opts) 20.0
     modelTemplate <- readModelTemplate (mcTemplatePath opts) (mcTheta opts) times
-    hist <- loadHistogram (mcMinAf opts) (mcMaxAf opts) (mcConditionOn opts) (mcNrCalledSites opts) (mcHistPath opts)
+    hist <- loadHistogram (mcMinAf opts) (mcMaxAf opts) (mcConditionOn opts) (mcHistPath opts)
     let extraEvents = concat [[ModelEvent 0.0 (SetFreeze k True), ModelEvent t (SetFreeze k False)] | (t, k) <- zip (mcBranchAges opts) [0..], t > 0]
     x <- getInitialParams modelTemplate (mcInitialParamsFile opts) (mcInitialParams opts)
     _ <- tryRight $ minFunc modelTemplate extraEvents hist x

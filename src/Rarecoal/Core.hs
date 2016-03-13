@@ -12,7 +12,7 @@ import Data.List (sortBy, nub)
 import Data.STRef (STRef, readSTRef, newSTRef, modifySTRef, writeSTRef)
 import qualified Data.Vector.Unboxed as V
 import qualified Data.Vector.Unboxed.Mutable as VM
-import Debug.Trace (trace)
+-- import Debug.Trace (trace)
 
 data CoalState s = CoalState {
     _csA :: VM.MVector s Double,
@@ -173,18 +173,18 @@ singleStep ms cs nextTime = do
             --        show deltaT) $ return ()
             updateCoalState ms cs deltaT
             migrations <- readSTRef (_msMigrationRates ms)
-            mapM_ (updateCoalStateMig ms cs deltaT) migrations
+            mapM_ (updateCoalStateMig cs deltaT) migrations
             updateModelState ms cs deltaT
 
-debugOutput :: ModelState s -> CoalState s -> Double -> ST s ()
-debugOutput ms cs nextTime = do
-    currentTime <- readSTRef (_msT ms)
-    aVec <- V.freeze (_csA cs)
-    nonZeroStates <- readSTRef (_csNonZeroStates cs)
-    bList <- mapM (VM.read (_csB cs)) nonZeroStates
-    d <- readSTRef (_csD cs)
-    trace (show nextTime ++ " " ++ show currentTime ++ " " ++ show aVec ++ " " ++
-           show (zip nonZeroStates bList) ++ " " ++ show d) (return ())
+-- debugOutput :: ModelState s -> CoalState s -> Double -> ST s ()
+-- debugOutput ms cs nextTime = do
+--     currentTime <- readSTRef (_msT ms)
+--     aVec <- V.freeze (_csA cs)
+--     nonZeroStates <- readSTRef (_csNonZeroStates cs)
+--     bList <- mapM (VM.read (_csB cs)) nonZeroStates
+--     d <- readSTRef (_csD cs)
+--     trace (show nextTime ++ " " ++ show currentTime ++ " " ++ show aVec ++ " " ++
+--            show (zip nonZeroStates bList) ++ " " ++ show d) (return ())
 
 performEvent :: ModelState s -> CoalState s -> ST s ()
 performEvent ms cs = do
@@ -194,7 +194,7 @@ performEvent ms cs = do
     -- trace ("time: " ++ show t ++ ": performing event " ++ show (head events)) $ return ()
     case e of
         Join k l -> popJoin ms cs k l
-        Split k l m -> popSplit ms cs k l m
+        Split k l m -> popSplit cs k l m
         SetPopSize k p -> do
             VM.write (_msPopSize ms) k p
             VM.write (_msGrowthRates ms) k 0.0
@@ -202,7 +202,7 @@ performEvent ms cs = do
         SetFreeze k b -> VM.write (_msFreezeState ms) k b
         SetMigration k l m -> do
             migrations <- readSTRef (_msMigrationRates ms)
-            let cleanedMigrations = [triple | triple@(k', l', m') <- migrations, k' /= k, l' /= l']
+            let cleanedMigrations = [triple | triple@(k', l', _) <- migrations, k' /= k, l' /= l']
                 newMigrations =
                     if m > 0.0 then (k, l, m) : cleanedMigrations else cleanedMigrations
             writeSTRef (_msMigrationRates ms) newMigrations
@@ -243,8 +243,8 @@ popJoinB bVec bVecTemp nonZeroStateRef stateSpace k l = do
     VM.copy bVec bVecTemp
     writeSTRef nonZeroStateRef $ getNonZeroStates stateSpace (nub newNonZeroStateIds)
 
-popSplit :: ModelState s -> CoalState s -> Int -> Int -> Double -> ST s ()
-popSplit ms cs k l m = do
+popSplit :: CoalState s -> Int -> Int -> Double -> ST s ()
+popSplit cs k l m = do
     popSplitA (_csA cs) k l m
     popSplitB (_csB cs) (_csBtemp cs) (_csNonZeroStates cs) (_csStateSpace cs) k l m 
 
@@ -343,8 +343,8 @@ updateD cs deltaT = do
     b1s <- mapM (VM.read (_csB cs)) x1s
     modifySTRef (_csD cs) (\v -> v + deltaT * sum b1s)
 
-updateCoalStateMig :: ModelState s -> CoalState s -> Double -> (Int, Int, Double) -> ST s ()
-updateCoalStateMig ms cs deltaT (k, l, m) = popSplit ms cs k l (deltaT * m)
+updateCoalStateMig :: CoalState s -> Double -> (Int, Int, Double) -> ST s ()
+updateCoalStateMig cs deltaT (k, l, m) = popSplit cs k l (deltaT * m)
 
 updateModelState :: ModelState s -> CoalState s -> Double -> ST s ()
 updateModelState ms cs deltaT = do

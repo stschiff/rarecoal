@@ -9,7 +9,6 @@ import View (ViewOpt(..), runView)
 
 import Control.Applicative (many, (<|>))
 import Control.Error.Script (runScript, scriptIO)
-import Data.Int (Int64)
 import Data.List.Split (splitOn)
 import Data.Monoid ((<>))
 import Data.Time.Clock (getCurrentTime)
@@ -62,7 +61,7 @@ parseView :: OP.Parser Command
 parseView = CmdView <$> parseViewOpt
 
 parseViewOpt :: OP.Parser ViewOpt
-parseViewOpt = ViewOpt <$> parseMaxAf <*> parseNrCalledSites <*> parseHistPath
+parseViewOpt = ViewOpt <$> parseMaxAf <*> parseHistPath
 
 parseMinAf :: OP.Parser Int
 parseMinAf = OP.option OP.auto $ OP.long "minAf" <> OP.metavar "<INT>"
@@ -74,14 +73,6 @@ parseMaxAf = OP.option OP.auto $ OP.short 'm' <> OP.long "max_af"
                                               <> OP.metavar "INT"
                                               <> OP.value 0
                                               <> OP.help "maximum allele count"
-
-parseNrCalledSites :: OP.Parser Int64
-parseNrCalledSites = OP.option OP.auto $ OP.short 'N' <> OP.long "nr_called_sites"
-                              <> OP.metavar "INT"
-                              <> OP.value 0
-                              <> OP.help "set the nr of called sites. This will affect only the \ 
-                                          \number of non-variant sites, mainly added for legacy \ 
-                                          \purposes for histograms without a non-variant pattern."
 
 parseHistPath :: OP.Parser FilePath
 parseHistPath = OP.strOption $ OP.short 'i' <> OP.long "input"
@@ -212,15 +203,8 @@ parseLoglOpt :: OP.Parser LoglOpt
 parseLoglOpt = LoglOpt <$> parseTheta <*> parseTemplateFilePath <*> 
                            parseInitialParamsFile <*> parseInitialParamsList <*>
                            parseModelEvents <*> parseLinGen <*> parseMinAf <*> parseMaxAf <*> 
-                           parseConditioning <*> parseNrCalledSites <*> parseHistPath <*> 
+                           parseConditioning <*> parseHistPath <*> 
                            parseNrThreads
-
-parseSpectrumPath :: OP.Parser FilePath
-parseSpectrumPath = OP.strOption $ OP.short 's' <> OP.long "spectrumFile"
-                            <> OP.metavar "<Output Spectrum File>"
-                            <> OP.value "/dev/null"
-                            <> OP.help "Write the model probabilities for each pattern in the \ 
-                            \Histogram to a file."
 
 parseNrThreads :: OP.Parser Int
 parseNrThreads = OP.option OP.auto $ OP.long "nrThreads" <> OP.metavar "<INT>" <> OP.value 0 <>
@@ -235,7 +219,7 @@ parseMaxlOpt :: OP.Parser MaxlOpt
 parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*> parseInitialParamsFile
                        <*> parseInitialParamsList <*> parseMaxCycles <*> parseNrRestarts
                        <*> parseTraceFilePath  <*> parseMinAf <*> parseMaxAf <*> parseConditioning
-                       <*> parseNrCalledSites <*> parseLinGen <*> parseHistPath <*> parseNrThreads
+                       <*> parseLinGen <*> parseHistPath <*> parseNrThreads
   where
     parseMaxCycles = OP.option OP.auto $ OP.short 'c' <> OP.long "maxCycles"
                     <> OP.metavar "<NR_MAX_CYCLES>"
@@ -262,7 +246,7 @@ parseMcmcOpt :: OP.Parser McmcOpt
 parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*> parseInitialParamsFile <*> 
                            parseInitialParamsList <*> parseNrCycles <*> parseTraceFilePath <*> 
                            parseMinAf <*> parseMaxAf <*> parseConditioning <*>
-                           parseNrCalledSites <*> parseLinGen <*> parseHistPath <*>
+                           parseLinGen <*> parseHistPath <*>
                            parseRandomSeed <*> parseBranchAges <*> parseNrThreads
   where
     parseRandomSeed = OP.option OP.auto $ OP.short 'S' <> OP.long "seed" <> OP.metavar "<INT>" <> 
@@ -300,7 +284,7 @@ parseFindOpt = FindOpt <$> parseQueryIndex <*> parseEvalFile <*> parseBranchAge 
                            parseDeltaTime <*> parseMaxTime <*> parseTheta <*>
                            parseTemplateFilePath <*> parseInitialParamsFile <*> 
                            parseInitialParamsList <*> parseModelEvents <*> parseMinAf <*>
-                           parseMaxAf <*> parseConditioning <*> parseNrCalledSites <*>
+                           parseMaxAf <*> parseConditioning <*> 
                            parseLinGen <*> parseIgnoreList <*> parseHistPath <*>
                            parseNoShortcut <*> parseNrThreads
   where

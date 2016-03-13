@@ -4,10 +4,10 @@ import Rarecoal.Core (defaultTimes)
 import Rarecoal.ModelTemplate (ModelTemplate(..), EventTemplate(..), readModelTemplate)
 
 import Control.Error (runScript)
-import qualified Data.Vector.Unboxed as V
 import Test.Tasty
-import Test.Tasty.HUnit (testCase, Assertion, assertBool, assertFailure, assertEqual)
+import Test.Tasty.HUnit (testCase, Assertion, assertEqual)
 
+template :: ModelTemplate
 template = ModelTemplate {
     mtParams = ["p0","p1","p2","p3","p4","t01","t23","t24","t02","p01","p23","p24","p02"],
     mtTheta = 0.0005,
@@ -39,5 +39,6 @@ testLoadTemplate = do
 --         diffVec = V.zipWith (\a b -> abs (a - b)) (V.fromList [1, 1, 1, 1, 1, 0.02, 0.04, 0.043, 0.05, 1, 2, 3, 4]) newP'
 --     assertBool "no overlapping join" $ V.all (<1.0e-8) diffVec
 
+tests :: TestTree
 tests = testGroup "ModelTemplate Tests" [ testCase "testing template loading" testLoadTemplate]
                                         -- , testCase "testing getNewParams" testGetNewParams]

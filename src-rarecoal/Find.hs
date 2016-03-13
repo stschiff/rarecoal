@@ -5,7 +5,6 @@ import Rarecoal.RareAlleleHistogram (loadHistogram, RareAlleleHistogram(..), Sit
 import Rarecoal.ModelTemplate (getModelSpec)
 
 import Control.Error (Script, scriptIO, tryAssert, tryRight, err)
-import Data.Int (Int64)
 import Data.List (sortBy)
 import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
 import Logl (computeLikelihood)
@@ -25,7 +24,6 @@ data FindOpt = FindOpt {
     fiMinAf :: Int,
     fiMaxAf :: Int,
     fiConditionOn :: [Int],
-    fiNrCalledSites :: Int64,
     fiLinGen :: Int,
     fiIgnoreList :: [SitePattern],
     fiHistPath :: FilePath,
@@ -50,7 +48,7 @@ runFind opts = do
             else
                 modelSpec'
     tryAssert ("model must have free branch " ++ show (fiQueryIndex opts)) $ hasFreeBranch l modelSpec
-    hist <- loadHistogram (fiMinAf opts) (fiMaxAf opts) (fiConditionOn opts) (fiNrCalledSites opts) (fiHistPath opts)
+    hist <- loadHistogram (fiMinAf opts) (fiMaxAf opts) (fiConditionOn opts) (fiHistPath opts)
     let nrPops = length $ raNVec hist
         targetBranches = [branch | branch <- [0..nrPops-1], branch /= l]
         allJoinTimes = [getJoinTimes modelSpec (fiDeltaTime opts) (fiMaxTime opts) (fiBranchAge opts) k | k <- targetBranches]

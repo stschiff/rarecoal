@@ -6,7 +6,6 @@ import Rarecoal.ModelTemplate (ModelTemplate(..), instantiateModel, readModelTem
 import Rarecoal.RareAlleleHistogram (RareAlleleHistogram, loadHistogram)
 
 import Control.Error (Script, scriptIO, assertErr, tryRight, err)
-import Data.Int (Int64)
 import Data.List (intercalate)
 import qualified Data.Vector.Unboxed as V
 import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
@@ -25,7 +24,6 @@ data MaxlOpt = MaxlOpt {
    maMinAf :: Int,
    maMaxAf :: Int,
    maConditionOn :: [Int],
-   maNrCalledSites :: Int64,
    maLinGen :: Int,
    maHistPath :: FilePath,
    maNrThreads :: Int
@@ -39,7 +37,7 @@ runMaxl opts = do
     scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
     let times = getTimeSteps 20000 (maLinGen opts) 20.0
     modelTemplate <- readModelTemplate (maTemplatePath opts) (maTheta opts) times
-    hist <- loadHistogram (maMinAf opts) (maMaxAf opts) (maConditionOn opts) (maNrCalledSites opts) (maHistPath opts)
+    hist <- loadHistogram (maMinAf opts) (maMaxAf opts) (maConditionOn opts) (maHistPath opts)
     x <- getInitialParams modelTemplate (maInitialParamsFile opts) (maInitialParams opts)
     _ <- tryRight $ minFunc modelTemplate [] hist x
     let minFunc' = either (const penalty) id . minFunc modelTemplate [] hist

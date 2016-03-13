@@ -4,7 +4,7 @@ import Control.Exception.Base (assert)
 import Control.Monad (foldM)
 import Data.List (nub)
 import Data.MemoCombinators (arrayRange)
-import Debug.Trace (trace)
+-- import Debug.Trace (trace)
 import qualified Data.Vector.Unboxed as V
 
 type JointState = V.Vector Int

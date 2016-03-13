@@ -6,7 +6,6 @@ import Rarecoal.Utils (computeAllConfigs)
 import Rarecoal.ModelTemplate (getModelSpec)
 
 import Control.Error (Script, scriptIO, assertErr, tryRight, err)
-import Control.Monad (when)
 import Control.Parallel.Strategies (rdeepseq, parMap)
 import Data.Int (Int64)
 import qualified Data.Map.Strict as Map
@@ -22,7 +21,6 @@ data LoglOpt = LoglOpt {
    loMinAf :: Int,
    loMaxAf :: Int,
    loConditionOn :: [Int],
-   loNrCalledSites :: Int64,
    loHistPath :: FilePath,
    loNrThreads :: Int
 }
@@ -37,8 +35,7 @@ runLogl opts = do
     scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
     modelSpec <- getModelSpec (loTemplatePath opts) (loTheta opts) (loParamsFile opts)
                               (loParams opts) (loModelEvents opts) (loLinGen opts)
-    hist <- loadHistogram (loMinAf opts) (loMaxAf opts) (loConditionOn opts) (loNrCalledSites opts) 
-                          (loHistPath opts)
+    hist <- loadHistogram (loMinAf opts) (loMaxAf opts) (loConditionOn opts) (loHistPath opts)
     standardOrder <- tryRight $ computeStandardOrder hist
     let nVec = raNVec hist
     patternProbs <- tryRight . sequence $
