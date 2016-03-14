@@ -2,7 +2,8 @@ module Maxl (minFunc, penalty, runMaxl, MaxlOpt(..)) where
 
 import Logl (computeLikelihood)
 import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..))
-import Rarecoal.ModelTemplate (ModelTemplate(..), instantiateModel, readModelTemplate, getInitialParams)
+import Rarecoal.ModelTemplate (ModelTemplate(..), instantiateModel, readModelTemplate, 
+                               getInitialParams, ParamsDesc)
 import Rarecoal.RareAlleleHistogram (RareAlleleHistogram, loadHistogram)
 
 import Control.Error (Script, scriptIO, assertErr, tryRight, err)
@@ -16,8 +17,7 @@ import System.Log.Logger (infoM)
 data MaxlOpt = MaxlOpt {
    maTheta :: Double,
    maTemplatePath :: FilePath,
-   maInitialParamsFile :: FilePath,
-   maInitialParams :: [Double],
+   maParamsDesc :: ParamsDesc,
    maMaxCycles :: Int,
    maNrRestarts :: Int,
    maTracePath :: FilePath,
@@ -38,7 +38,7 @@ runMaxl opts = do
     let times = getTimeSteps 20000 (maLinGen opts) 20.0
     modelTemplate <- readModelTemplate (maTemplatePath opts) (maTheta opts) times
     hist <- loadHistogram (maMinAf opts) (maMaxAf opts) (maConditionOn opts) (maHistPath opts)
-    x <- getInitialParams modelTemplate (maInitialParamsFile opts) (maInitialParams opts)
+    x <- getInitialParams modelTemplate (maParamsDesc opts)
     _ <- tryRight $ minFunc modelTemplate [] hist x
     let minFunc' = either (const penalty) id . minFunc modelTemplate [] hist
         minimizationRoutine = minimizeV (maMaxCycles opts) minFunc'

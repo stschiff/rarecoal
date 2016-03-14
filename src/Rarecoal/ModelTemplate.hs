@@ -1,5 +1,6 @@
-module Rarecoal.ModelTemplate (getInitialParams, ModelTemplate(..), readModelTemplate, instantiateModel,
-                               getModelSpec, EventTemplate(..)) where
+module Rarecoal.ModelTemplate (getInitialParams, ModelTemplate(..), readModelTemplate, 
+                               instantiateModel, ModelDesc(..),
+                               getModelSpec, EventTemplate(..), ParamsDesc) where
 
 import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..), EventType(..))
 
@@ -33,16 +34,21 @@ data ConstraintTemplate = SmallerConstraintTemplate String (Either Double String
                         | GreaterConstraintTemplate String (Either Double String)
                         deriving (Eq, Show)
 
-getInitialParams :: ModelTemplate -> FilePath -> [Double] -> Script (V.Vector Double)
-getInitialParams modelTemplate paramsFile x = do
-    if paramsFile == "/dev/null" then return . V.fromList $ x else do
-        l <- lines <$> (scriptIO . readFile $ paramsFile)
-        ret <- if (head . head $ l) == '#' then
-                loadFromDict [(k, read $ v !! 2) | (k : v) <- map words . drop 3 $ l]
-            else
-                loadFromDict [(k, read v) | [k, v] <- map words $ l]
-        scriptIO . infoM "rarecoal" $ "initial parameters loaded: " ++ show ret
-        return ret
+data ModelDesc = ModelDescTemplate FilePath ParamsDesc | ModelDescDirect [ModelEvent] 
+type ParamsDesc = Either FilePath [Double]
+
+getInitialParams :: ModelTemplate -> ParamsDesc -> Script (V.Vector Double)
+getInitialParams modelTemplate paramsDesc = do
+    case paramsDesc of
+        Left paramsFile -> do
+            l <- lines <$> (scriptIO . readFile $ paramsFile)
+            ret <- if (head . head $ l) == '#' then
+                    loadFromDict [(k, read $ v !! 2) | (k : v) <- map words . drop 3 $ l]
+                else
+                    loadFromDict [(k, read v) | [k, v] <- map words $ l]
+            scriptIO . infoM "rarecoal" $ "initial parameters loaded: " ++ show ret
+            return ret
+        Right x -> return . V.fromList $ x
   where
     loadFromDict dict = do
         let err' = "parameters in the initialParams-file do not match the parameters in the modelTemplate"
@@ -243,55 +249,14 @@ validateConstraint pNames params ct =
             p2 <- substituteParam pNames params maybeParam2
             assertErr ("Constrained failed: " ++ show p1 ++ " > " ++ show p2) (p1 > p2)
 
-getModelSpec :: FilePath -> Double -> FilePath -> [Double] -> [ModelEvent] -> Int -> Script ModelSpec
-getModelSpec path theta paramsFile x events lingen =
-    let times = getTimeSteps 20000 lingen 20.0
-    in  if path /= "/dev/null" then do
+getModelSpec :: ModelDesc -> Double -> Int -> Script ModelSpec
+getModelSpec modelDesc theta lingen =
+    case modelDesc of
+        ModelDescTemplate path paramsDesc -> do
             template <- readModelTemplate path theta times
-            x' <- getInitialParams template paramsFile x
+            x' <- getInitialParams template paramsDesc
             tryRight $ instantiateModel template x'
-        else
+        ModelDescDirect events ->
             return $ ModelSpec times theta events
-
--- getNewParams :: ModelTemplate -> V.Vector Double -> Int -> Double -> V.Vector Double
--- getNewParams mt params i change =
---     if null relevantEvents then simpleChange else
---         let relevantEvent = head relevantEvents
---             crossingJoins = getCrossingJoins relevantEvent
---         in  hasCrossingJoins then simpleChange else
---             if
---     let pNames = mtParams mt
---         paramMap = zip pNames (V.toList params)
---         paramIndexMap = zip pNames [0..]
---         pName = pNames !! i
---         allJoinPopSizeEventTemplates = [e | e@(JoinPopSizeEventTemplate _ _ _ _) <- (mtEventTemplates mt)]
---         allJoinPopSizeTimes = do
---             JoinPopSizeEventTemplate t k l n <- allJoinPopSizeEventTemplates
---             case t of
---                 Left val -> return val
---                 Right name -> do
---                     let (Just val) = lookup name paramMap
---                     return val
---         eventLibrary = zip allJoinPopSizeTimes allJoinPopSizeEventTemplates
---         eventsForParam = [p | p@(_, JoinPopSizeEventTemplate (Right n) _ _ (Right _)) <- eventLibrary, n == pName]
---     in  if null eventsForParam then
---             simpleModifyParams
---         else
---             let (t, JoinPopSizeEventTemplate _ k _ (Right p))  = head eventsForParam
---                 overlappingJoins =
---                     [p' | p'@(t', JoinPopSizeEventTemplate _ k' _ (Right n)) <- eventLibrary, t' > t, t' < t + change, k' == k]
---             in  if null overlappingJoins then
---                     simpleModifyParams
---                 else
---                     let (_, JoinPopSizeEventTemplate _ _ _ (Right n)) = maximumBy (\(t1, _) (t2, _) -> t1 `compare` t2) overlappingJoins
---                         Just j = lookup p paramIndexMap
---                         Just j' = lookup n paramIndexMap
---                     in  let newParams = simpleModifyParams
---                         in  newParams V.// [(j, newParams V.! j')]
---   where
---     simpleModifyParams =
---         let oldVal = params V.! i
---             newVal = oldVal + change
---         in  params V.// [(i, newVal)]
-            
-    
+  where
+    times = getTimeSteps 20000 lingen 20.0

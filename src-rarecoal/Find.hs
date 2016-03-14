@@ -2,7 +2,7 @@ module Find (runFind, FindOpt(..)) where
 
 import Rarecoal.Core (ModelSpec(..), ModelEvent(..), EventType(..))
 import Rarecoal.RareAlleleHistogram (loadHistogram, RareAlleleHistogram(..), SitePattern(..))
-import Rarecoal.ModelTemplate (getModelSpec)
+import Rarecoal.ModelTemplate (getModelSpec, ModelDesc)
 
 import Control.Error (Script, scriptIO, tryAssert, tryRight, err)
 import Data.List (sortBy)
@@ -17,10 +17,7 @@ data FindOpt = FindOpt {
     fiDeltaTime :: Double,
     fiMaxTime :: Double,
     fiTheta :: Double,
-    fiTemplatePath :: FilePath,
-    fiParamsFile :: FilePath,
-    fiParams :: [Double],
-    fiModelEvents :: [ModelEvent],
+    fiModelDesc :: ModelDesc,
     fiMinAf :: Int,
     fiMaxAf :: Int,
     fiConditionOn :: [Int],
@@ -38,7 +35,7 @@ runFind opts = do
     nrThreads <- scriptIO getNumCapabilities
     scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
 
-    modelSpec' <- getModelSpec (fiTemplatePath opts) (fiTheta opts) (fiParamsFile opts) (fiParams opts) (fiModelEvents opts) (fiLinGen opts)
+    modelSpec' <- getModelSpec (fiModelDesc opts) (fiTheta opts) (fiLinGen opts)
     let l = fiQueryIndex opts
         modelSpec = if fiBranchAge opts > 0.0 then
                 let events' = mEvents modelSpec'

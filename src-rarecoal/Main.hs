@@ -4,6 +4,7 @@ import Maxl (MaxlOpt(..), runMaxl)
 import Mcmc (McmcOpt(..), runMcmc)
 import Prob (ProbOpt(..), runProb)
 import Rarecoal.Core (ModelEvent(..), EventType(..))
+import Rarecoal.ModelTemplate(ModelDesc(..), ParamsDesc)
 import Rarecoal.RareAlleleHistogram (SitePattern(..))
 
 import Control.Applicative (many, (<|>))
@@ -20,8 +21,8 @@ data Command = CmdProb ProbOpt | CmdLogl LoglOpt | CmdMaxl MaxlOpt |
                CmdMcmc McmcOpt | CmdFind FindOpt
 
 main :: IO ()
-main = run =<< OP.execParser (parseOptions `withInfo` "Version 1.2.0. This software implements the Rarecoal \ 
-                              \algorithm, as described in doc/rarecoal.pdf. Type -h for getting \
+main = run =<< OP.execParser (parseOptions `withInfo` "Version 1.2.1. This software implements the \
+                        \Rarecoal algorithm, as described in doc/rarecoal.pdf. Type -h for getting \
                               \help")
 
 withInfo :: OP.Parser a -> String -> OP.ParserInfo a
@@ -55,7 +56,7 @@ parseCommand = OP.subparser $
     OP.command "find" (parseFind `withInfo` "Explore where a branch joins the tree")
 
 parseMinAf :: OP.Parser Int
-parseMinAf = OP.option OP.auto $ OP.long "minAf" <> OP.metavar "<INT>"
+parseMinAf = OP.option OP.auto $ OP.long "minAf" <> OP.metavar "INT" <> OP.hidden
                                                  <> OP.help "minimal allele count" <> OP.value 1
                                                  <> OP.showDefault
 
@@ -67,59 +68,65 @@ parseMaxAf = OP.option OP.auto $ OP.short 'm' <> OP.long "max_af"
 
 parseHistPath :: OP.Parser FilePath
 parseHistPath = OP.strOption $ OP.short 'i' <> OP.long "input"
-                    <> OP.metavar "<Input File>" <> OP.help "Input Histogram File, use - for stdin"
+                    <> OP.metavar "FILE" <> OP.help "Input Histogram File, use - for stdin"
 
 parseProb :: OP.Parser Command
 parseProb = CmdProb <$> parseProbOpt
 
 parseProbOpt :: OP.Parser ProbOpt
-parseProbOpt = ProbOpt <$> parseTheta <*> parseTemplateFilePath <*> parseInitialParamsFile
-                       <*> parseInitialParamsList <*> parseModelEvents <*> parseLinGen
-                       <*> OP.argument OP.auto (OP.metavar "NVec" <> OP.help "number of samples, \ 
+parseProbOpt = ProbOpt <$> parseTheta <*> parseModelDesc <*> parseLinGen <*> parseNVec <*> parseKVec
+  where
+    parseNVec = OP.argument OP.auto (OP.metavar "[N1,N2,...]" <> OP.help "number of samples, \ 
                        \comma-separated, without spaces, and surrounded by square brackets, e.g. \ 
                        \[100,100] for two populations with a 100 haploid samples each")
-                       <*> OP.argument OP.auto (OP.metavar "MVec" <> OP.help "number of derived \ 
+    parseKVec = OP.argument OP.auto (OP.metavar "[k1,k2,...]" <> OP.help "number of derived \ 
                        \alleles in each population, same format as for NVec, e.g. [1,2] for allele \
                         \count 3 shared with one sample from the first and two from the second \ 
                         \population.")
 
 parseTheta :: OP.Parser Double
-parseTheta = OP.option OP.auto $ OP.short 't' <> OP.long "theta"
-                    <> OP.metavar "DOUBLE"
+parseTheta = OP.option OP.auto $ OP.short 't' <> OP.long "theta" <> OP.hidden <> OP.metavar "FLOAT"
                     <> OP.value 0.0005 <> OP.showDefault
                     <> OP.help "set the scaled mutation rate. This is only used for scaling and \ 
                                 \should rarely be changed from the default."
 
+parseModelDesc :: OP.Parser ModelDesc
+parseModelDesc = parseModelDescTemplate <|> parseModelDescDirect
+  where
+    parseModelDescDirect = ModelDescDirect <$> many parseEvent
+
+parseModelDescTemplate :: OP.Parser ModelDesc
+parseModelDescTemplate = ModelDescTemplate <$> parseTemplateFilePath <*> parseParamsDesc
+
+parseParamsDesc :: OP.Parser ParamsDesc
+parseParamsDesc = parseInitialParamsFile <|> parseInitialParamsList
+
 parseTemplateFilePath :: OP.Parser FilePath
 parseTemplateFilePath = OP.strOption $ OP.short 'T' <> OP.long "template" <>
-                                       OP.metavar "<Input Template File>" <>
-                                       OP.value "/dev/null" <> 
+                                       OP.metavar "FILE" <>
                                        OP.help "the model template file"
 
-parseInitialParamsList :: OP.Parser [Double]
-parseInitialParamsList = OP.option OP.auto $ OP.short 'x' <> OP.long "params" <>
-                         OP.metavar "[p1,p2,...]" <> OP.value [] <> 
+parseInitialParamsFile :: OP.Parser ParamsDesc
+parseInitialParamsFile = OP.option (Left <$> OP.str) $ OP.long "paramsFile" <>
+                         OP.metavar "FILE" <> 
+                         OP.help "read the initial parameters from a file, which can be the main \ 
+                         \output file from either the maxl or the mcmc commands. This is useful for continuing an optimization from a previous run, or for starting an MCMC run from the maximum found \
+                         \by maxl"
+
+parseInitialParamsList :: OP.Parser ParamsDesc
+parseInitialParamsList = OP.option (Right <$> OP.auto) $ OP.short 'x' <> OP.long "params" <>
+                         OP.metavar "[x1,x2,...]" <> 
                          OP.help "initial parameters for the template, given as comma-separated \ 
                          \list without spaces and surrounded by square-brackets, e.g. \ 
                          \[1.0,1.0,0.1,0,1] for four parameters. The number given here must match \ 
                          \the number of parameters in the model template file."
 
-parseInitialParamsFile :: OP.Parser FilePath
-parseInitialParamsFile = OP.strOption $ OP.long "paramsFile" <>
-                         OP.metavar "<FILE>" <> OP.value "/dev/null" <> 
-                         OP.help "read the initial parameters from a file, which can be the main \ 
-                         \output file from either the maxl or the mcmc commands. This is useful for continuing an optimization from a previous run, or for starting an MCMC run from the maximum found \
-                         \by maxl"
-
-parseModelEvents :: OP.Parser [ModelEvent]
-parseModelEvents = many parseEvent
-
 parseEvent :: OP.Parser ModelEvent
 parseEvent = parseJoin <|> parseSplit <|> parseSetP <|> parseSetR <|> parseSetM
 
 parseJoin :: OP.Parser ModelEvent
-parseJoin = OP.option (OP.str >>= readJoin) $ OP.short 'j' <> OP.long "join"
-                                              <> OP.metavar "t,k,l"
+parseJoin = OP.option (OP.str >>= readJoin) $ OP.short 'j' <> OP.long "join" <> OP.hidden
+                                              <> OP.metavar "FLOAT,INT,INT"
                                               <> OP.help "Specify a join event at time t from l \ 
                                               \into k. Can be given multiple times. Ignored if a \ 
                                               \model template file is given. Example: -j 0.1,0,1 \ 
@@ -131,7 +138,7 @@ parseJoin = OP.option (OP.str >>= readJoin) $ OP.short 'j' <> OP.long "join"
         return $ ModelEvent (read t) (Join (read k) (read l))
 
 parseSplit :: OP.Parser ModelEvent
-parseSplit = OP.option (OP.str >>= readSplit) $ OP.long "split" <> OP.metavar "t,k,l,m"
+parseSplit = OP.option (OP.str >>= readSplit) $ OP.long "split" <> OP.metavar "FLOAT,INT,INT,FLOAT"
                                               <> OP.help "Specify a split event at time t from l \ 
                                               \into k with probability m. Can be given multiple \
                                               \times. Ignored if a \ 
@@ -139,7 +146,7 @@ parseSplit = OP.option (OP.str >>= readSplit) $ OP.long "split" <> OP.metavar "t
                                               \0.1,0,1,0.2 \ 
                                               \specifies a split from branch 1 into branch 0 at \
                                               \time 0.1 with probability 0.2. You can give this \ 
-                                              \option multiple times"
+                                              \option multiple times" <> OP.hidden
   where
     readSplit s = do
         let [t, k, l, m] = splitOn "," s
@@ -147,7 +154,7 @@ parseSplit = OP.option (OP.str >>= readSplit) $ OP.long "split" <> OP.metavar "t
 
 parseSetP :: OP.Parser ModelEvent
 parseSetP = OP.option (OP.str >>= readSetP) $ OP.short 'p' <> OP.long "popSize"
-                    <> OP.metavar "t,k,p"
+                    <> OP.metavar "FLOAT,INT,FLOAT" <> OP.hidden
                     <> OP.help "Specify a population size change event at time t in branch k to \ 
                     \population size p. Can be given multiple times. Ignored if a model template \ 
                     \file is given. Example: -p 0.1,0,2.2 specifies that at time 0.1 the \
@@ -160,7 +167,7 @@ parseSetP = OP.option (OP.str >>= readSetP) $ OP.short 'p' <> OP.long "popSize"
 
 parseSetR :: OP.Parser ModelEvent
 parseSetR = OP.option (OP.str >>= readSetR) $ OP.short 'r' <> OP.internal <> OP.long "growthRate"
-                                              <> OP.metavar "t,k,r"
+                                              <> OP.metavar "FLAOT,INT,FLOAT"
                                               <> OP.help "At time t, set growth rate in k to r"
   where
     readSetR s = do
@@ -168,7 +175,8 @@ parseSetR = OP.option (OP.str >>= readSetR) $ OP.short 'r' <> OP.internal <> OP.
         return $ ModelEvent (read t) (SetGrowthRate (read k) (read r))
 
 parseSetM :: OP.Parser ModelEvent
-parseSetM = OP.option (OP.str >>= readSetM) $ OP.long "mig" <> OP.metavar "t,k,l,m" <> OP.internal
+parseSetM = OP.option (OP.str >>= readSetM) $ OP.long "mig" <> OP.metavar "FLAOT,INT,INT,FLOAT"
+                                              <> OP.internal
                                               <> OP.help "At time t, set migration rate m from l to k"
   where
     readSetM s = do
@@ -176,7 +184,7 @@ parseSetM = OP.option (OP.str >>= readSetM) $ OP.long "mig" <> OP.metavar "t,k,l
         return $ ModelEvent (read t) (SetMigration (read k) (read l) (read m))
 
 parseLinGen :: OP.Parser Int
-parseLinGen = OP.option OP.auto $ OP.long "lingen"
+parseLinGen = OP.option OP.auto $ OP.long "lingen" <> OP.hidden
                             <> OP.metavar "INT"
                             <> OP.value 400 <> OP.showDefault
                             <> OP.help "set the number of approximately linearly spaced time \ 
@@ -191,33 +199,32 @@ parseLogl :: OP.Parser Command
 parseLogl = CmdLogl <$> parseLoglOpt
 
 parseLoglOpt :: OP.Parser LoglOpt
-parseLoglOpt = LoglOpt <$> parseTheta <*> parseTemplateFilePath <*> 
-                           parseInitialParamsFile <*> parseInitialParamsList <*>
-                           parseModelEvents <*> parseLinGen <*> parseMinAf <*> parseMaxAf <*> 
+parseLoglOpt = LoglOpt <$> parseTheta <*> parseModelDesc <*> 
+                           parseLinGen <*> parseMinAf <*> parseMaxAf <*> 
                            parseConditioning <*> parseHistPath <*> 
                            parseNrThreads
 
 parseNrThreads :: OP.Parser Int
-parseNrThreads = OP.option OP.auto $ OP.long "nrThreads" <> OP.metavar "<INT>" <> OP.value 0 <>
+parseNrThreads = OP.option OP.auto $ OP.long "nrThreads" <> OP.metavar "INT" <> OP.value 0 <>
                  OP.help "set number of threads to use. By default this is set to the number of \ 
-                 \processors on your system."
+                 \processors on your system." <> OP.hidden
 
 
 parseMaxl :: OP.Parser Command
 parseMaxl = CmdMaxl <$> parseMaxlOpt
 
 parseMaxlOpt :: OP.Parser MaxlOpt
-parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*> parseInitialParamsFile
-                       <*> parseInitialParamsList <*> parseMaxCycles <*> parseNrRestarts
+parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParamsDesc
+                       <*> parseMaxCycles <*> parseNrRestarts
                        <*> parseTraceFilePath  <*> parseMinAf <*> parseMaxAf <*> parseConditioning
                        <*> parseLinGen <*> parseHistPath <*> parseNrThreads
   where
     parseMaxCycles = OP.option OP.auto $ OP.short 'c' <> OP.long "maxCycles"
-                    <> OP.metavar "<NR_MAX_CYCLES>"
+                    <> OP.metavar "INT" <> OP.hidden
                     <> OP.value 10000 <> OP.showDefault
                     <> OP.help "Specifies the maximum number of cycles in the minimization routine"
     parseNrRestarts = OP.option OP.auto $ OP.long "nrRestarts"
-                      <> OP.metavar "<NR_Restarts>"
+                      <> OP.metavar "INT" <> OP.hidden
                       <> OP.value 5 <> OP.showDefault
                       <> OP.help "Specifies the number of restarts of the minimization routine. \ 
                       \Each restart will start from the end point of the previous maximization. \ 
@@ -225,7 +232,7 @@ parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*> parseInitial
                       \true maximum."
 
 parseTraceFilePath :: OP.Parser FilePath
-parseTraceFilePath = OP.strOption $ OP.short 'f' <> OP.long "traceFile" <> OP.metavar "<FILE>"
+parseTraceFilePath = OP.strOption $ OP.short 'f' <> OP.long "traceFile" <> OP.metavar "FILE"
                                <> OP.value "/dev/null"
                                <> OP.help "The file to write the trace of the maximization or the \
                                \MCMC. Can be useful to check whether parameters are converging."
@@ -234,38 +241,38 @@ parseMcmc :: OP.Parser Command
 parseMcmc = CmdMcmc <$> parseMcmcOpt
 
 parseMcmcOpt :: OP.Parser McmcOpt
-parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*> parseInitialParamsFile <*> 
-                           parseInitialParamsList <*> parseNrCycles <*> parseTraceFilePath <*> 
+parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*> parseParamsDesc <*> 
+                           parseNrCycles <*> parseTraceFilePath <*> 
                            parseMinAf <*> parseMaxAf <*> parseConditioning <*>
                            parseLinGen <*> parseHistPath <*>
                            parseRandomSeed <*> parseBranchAges <*> parseNrThreads
   where
-    parseRandomSeed = OP.option OP.auto $ OP.short 'S' <> OP.long "seed" <> OP.metavar "<INT>" <> 
-                      OP.value 0 <>
+    parseRandomSeed = OP.option OP.auto $ OP.short 'S' <> OP.long "seed" <> OP.metavar "INT" <> 
+                      OP.value 0 <> OP.hidden <>
                       OP.showDefault <>
                       OP.help "Random seed, use zero to determine the seed from the machine clock"
     parseNrCycles = OP.option OP.auto $ OP.long "cycles" <> OP.short 'c' <> OP.value 1000 <> 
-                            OP.metavar "<INT>" <> OP.help "nr of MCMC cycles after Burnin. The \ 
+                            OP.metavar "INT" <> OP.help "nr of MCMC cycles after Burnin. The \ 
                             \burnin phase is determined automatically by requiring the likelihood \ 
                             \to still systematicallyl increase. Once the likelihood stabilizes, \
                             \the number of cycles given here are performed. Note that a cycle \
                             \here means that every parameter is tried." <>
-                            OP.showDefault
+                            OP.showDefault <> OP.hidden
     parseBranchAges = OP.option OP.auto $ OP.long "branchAges" <> OP.short 'b' <>
-                                OP.metavar "<LIST>" <> OP.help "scaled ages of samples, to input \ 
+                                OP.metavar "[FLOAT,FLOAT,...]" <> OP.help "scaled ages of samples, to input \ 
                                 \ancient samples. This should be a comma-separated list without \ 
                                 \spaces and surrounded by square-brackets. The length of the \
                                 \list must equal the number of populations in the histogram \
-                                \file." <> OP.value []
+                                \file." <> OP.value [] <> OP.hidden
 
 parseConditioning :: OP.Parser [Int]
-parseConditioning = OP.option OP.auto $ OP.long "conditionOn" <> OP.metavar "<List>"
+parseConditioning = OP.option OP.auto $ OP.long "conditionOn" <> OP.metavar "[INT,INT,...]"
                                         <> OP.help "a comma-separated list without spaces and \ 
                                         \surrounded by square-brackets. Gives all branches (as \
                                         \0-based indices) in which you require at least one \
                                         \derived allele for the computation of the likelihood. \
                                         \This is useful for mapping ancient samples onto a tree" <> 
-                                        OP.value []
+                                        OP.value [] <> OP.hidden
 
 parseFind :: OP.Parser Command
 parseFind = CmdFind <$> parseFindOpt
@@ -273,24 +280,25 @@ parseFind = CmdFind <$> parseFindOpt
 parseFindOpt :: OP.Parser FindOpt
 parseFindOpt = FindOpt <$> parseQueryIndex <*> parseEvalFile <*> parseBranchAge <*>
                            parseDeltaTime <*> parseMaxTime <*> parseTheta <*>
-                           parseTemplateFilePath <*> parseInitialParamsFile <*> 
-                           parseInitialParamsList <*> parseModelEvents <*> parseMinAf <*>
+                           parseModelDesc <*> parseMinAf <*>
                            parseMaxAf <*> parseConditioning <*> 
                            parseLinGen <*> parseIgnoreList <*> parseHistPath <*>
                            parseNoShortcut <*> parseNrThreads
   where
-    parseQueryIndex = OP.option OP.auto $ OP.short 'q' <> OP.long "queryIndex" <> OP.metavar "<INT>"
+    parseQueryIndex = OP.option OP.auto $ OP.short 'q' <> OP.long "queryIndex" <> OP.metavar "INT"
                                                        <> OP.help "0-based index of query branch"
-    parseEvalFile = OP.strOption $ OP.short 'f' <> OP.long "evalFile" <> OP.metavar "<FILE>" <>
+    parseEvalFile = OP.strOption $ OP.short 'f' <> OP.long "evalFile" <> OP.metavar "FILE" <>
                                    OP.help "file to write the list of computed likelihoods to"
     parseBranchAge = OP.option OP.auto $ OP.short 'b' <> OP.long "branchAge" <>
-                        OP.metavar "<Double>" <> OP.help "sampling age of the query sample"
+                        OP.metavar "FLOAT" <> OP.help "sampling age of the query sample"
     parseDeltaTime = OP.option OP.auto $ OP.long "deltaTime" <> OP.metavar "<Double>" <> 
-                            OP.showDefault <> OP.help "time between the points" <> OP.value 0.0005
+                            OP.showDefault <> OP.help "time between the points" <>
+                            OP.value 0.0005 <> OP.hidden
     parseMaxTime = OP.option OP.auto $ OP.long "maxTime" <> OP.metavar "<Double>" <>
-                         OP.showDefault <> OP.help "maximum time" <> OP.value 0.025
+                         OP.showDefault <> OP.help "maximum time" <> OP.value 0.025 <> OP.hidden
     parseIgnoreList = OP.option (OP.str >>= readIgnoreList) $ OP.long "exclude" <>
-                            OP.metavar "<list of lists>" <> OP.help "a comma-separated list of \ 
+                            OP.metavar "[[INT,INT,...],[INT,INT,...],...]" <>
+                            OP.help "a comma-separated list of \ 
                             \lists, without spaces, with patterns to exclude from the likelihood \ 
                             \computation" <> OP.value [] <> OP.internal
     parseNoShortcut = OP.switch $ OP.long "noShortcut" <> OP.internal <>

@@ -1,9 +1,9 @@
 module Logl (LoglOpt(..), runLogl, computeLikelihood) where
 
-import Rarecoal.Core (getProb, ModelSpec(..), ModelEvent(..))
+import Rarecoal.Core (getProb, ModelSpec(..))
 import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..), loadHistogram)
 import Rarecoal.Utils (computeAllConfigs)
-import Rarecoal.ModelTemplate (getModelSpec)
+import Rarecoal.ModelTemplate (getModelSpec, ModelDesc)
 
 import Control.Error (Script, scriptIO, assertErr, tryRight, err)
 import Control.Parallel.Strategies (rdeepseq, parMap)
@@ -13,10 +13,7 @@ import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
 
 data LoglOpt = LoglOpt {
    loTheta :: Double,
-   loTemplatePath :: FilePath,
-   loParamsFile :: FilePath,
-   loParams :: [Double],
-   loModelEvents :: [ModelEvent],
+   loModelDesc :: ModelDesc,
    loLinGen :: Int,
    loMinAf :: Int,
    loMaxAf :: Int,
@@ -33,8 +30,7 @@ runLogl opts = do
     else scriptIO $ setNumCapabilities (loNrThreads opts)
     nrThreads <- scriptIO getNumCapabilities
     scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
-    modelSpec <- getModelSpec (loTemplatePath opts) (loTheta opts) (loParamsFile opts)
-                              (loParams opts) (loModelEvents opts) (loLinGen opts)
+    modelSpec <- getModelSpec (loModelDesc opts) (loTheta opts) (loLinGen opts)
     hist <- loadHistogram (loMinAf opts) (loMaxAf opts) (loConditionOn opts) (loHistPath opts)
     standardOrder <- tryRight $ computeStandardOrder hist
     let nVec = raNVec hist

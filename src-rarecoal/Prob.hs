@@ -1,16 +1,13 @@
 module Prob (runProb, ProbOpt(..)) where
 
-import Rarecoal.Core (getProb, ModelEvent(..))
-import Rarecoal.ModelTemplate (getModelSpec)
+import Rarecoal.Core (getProb)
+import Rarecoal.ModelTemplate (getModelSpec, ModelDesc)
 
 import Control.Error (Script, scriptIO, tryRight)
 
 data ProbOpt = ProbOpt {
     prTheta :: Double,
-    prTemplatePath :: FilePath,
-    prParamsFile :: FilePath,
-    prParams :: [Double],
-    prModelEvents :: [ModelEvent],
+    prModelDesc :: ModelDesc,
     prLinGen :: Int,
     prNvec :: [Int],
     prKvec :: [Int]
@@ -18,6 +15,6 @@ data ProbOpt = ProbOpt {
 
 runProb :: ProbOpt -> Script ()
 runProb opts = do
-    modelSpec <- getModelSpec (prTemplatePath opts) (prTheta opts) (prParamsFile opts) (prParams opts) (prModelEvents opts) (prLinGen opts)
+    modelSpec <- getModelSpec (prModelDesc opts) (prTheta opts) (prLinGen opts)
     val <- tryRight $ getProb modelSpec (prNvec opts) False (prKvec opts)
     scriptIO $ print val     

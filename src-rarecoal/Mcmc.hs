@@ -1,7 +1,7 @@
 module Mcmc (runMcmc, McmcOpt(..)) where
 
 import Maxl (minFunc, penalty)
-import Rarecoal.ModelTemplate (ModelTemplate(..), readModelTemplate, getInitialParams)
+import Rarecoal.ModelTemplate (ModelTemplate(..), readModelTemplate, getInitialParams, ParamsDesc)
 import Rarecoal.Core (getTimeSteps, ModelEvent(..), EventType(..)) 
 import Rarecoal.RareAlleleHistogram (loadHistogram)
 
@@ -25,8 +25,7 @@ import Control.Monad.Loops (whileM)
 data McmcOpt = McmcOpt {
    mcTheta :: Double,
    mcTemplatePath :: FilePath,
-   mcInitialParamsFile :: FilePath,
-   mcInitialParams :: [Double],
+   mcParamsDesc :: ParamsDesc,
    mcNrCycles :: Int,
    mcTracePath :: FilePath,
    mcMinAf :: Int,
@@ -60,7 +59,7 @@ runMcmc opts = do
     modelTemplate <- readModelTemplate (mcTemplatePath opts) (mcTheta opts) times
     hist <- loadHistogram (mcMinAf opts) (mcMaxAf opts) (mcConditionOn opts) (mcHistPath opts)
     let extraEvents = concat [[ModelEvent 0.0 (SetFreeze k True), ModelEvent t (SetFreeze k False)] | (t, k) <- zip (mcBranchAges opts) [0..], t > 0]
-    x <- getInitialParams modelTemplate (mcInitialParamsFile opts) (mcInitialParams opts)
+    x <- getInitialParams modelTemplate (mcParamsDesc opts)
     _ <- tryRight $ minFunc modelTemplate extraEvents hist x
     let minFunc' = either (const penalty) id . minFunc modelTemplate extraEvents hist
         initV = minFunc' x
