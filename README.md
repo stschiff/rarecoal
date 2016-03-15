@@ -36,13 +36,6 @@ definition of theta in population genetics. It was a historical mistake which I 
 
 A note on multithreading: Without specifying the number of threads via `--nrThreads`, rarecoal will run on parallel using all the processors on your system. In my experience, the speed increases fairly linearly up to around 8 processors. Up to around 16 processors, there is still some improvement, but much slower than linear. So I would usually recommend running on 8 processors at most, although you can try to go higher if you can afford it.
 
-### rarecoal view
-You can use this subcommand to read in a histogram file and view it up to a specific allele count, using the `-m` option. For example, you can view the number of all singletons and doubletons in the example data set via:
-
-    rarecoal view -m2 -i testData/5popSplit_combined.txt
-
-You can also use the `-N` option to to adjust the total number of called sites, which will affect the number of non-variant sites (the special pattern `0,0,0,0,0` in the case for five populations) such that the total number of sites matches the number given.
-
 ### rarecoal maxl
 This command instructs rarecoal to perform a numerical optimization of the parameters of a model given the data. You first need to specify a model for your data, which is done by writing a template. As an example, consider the template in `testData/5popSimTemplateFixedPop.txt `:
 
@@ -61,10 +54,12 @@ The first line of a template file contains all the parameters, comma-separated. 
 
 There are four event types:
 
-* Population size changes. The syntax for a population size change is `P t,i,p`, where `P` is the capital letter `P`, `t` is the time at which the new population size should be set, `i` is the index of the branch, starting with 0, and `p` is the new population size. You can put parameters of your model as time and/or as new population sizes using the `<>` brackets as shown in the example.
+* Population size changes. The syntax for a population size change is `P t,i,p`, where `P` is the capital letter `P`, `t` is the time at which the new population size should be set, `i` is the index of the branch, starting with 0, and `p` is the new population size. You can put parameters of your model as time and/or as new population sizes using the `<>` brackets as shown in the example. Note this goes backwards in time, so the change affects times *before* time t.
 * Population Joins: The syntax is `J t,k,l`, where `J` is the capital letter `J`, `t` is the time of the join, `k` is the target branch and `l` is the source branch, looking backwards in time. Again, parameters are allowed using the `<>`-syntax for the time of the event.
 * Population Joins with Population size change: The syntax is `K t,k,l,p`, where `t`, `k` and `l` are the same as above, and `p` also specifies a new population size for the target branch at that time.
-* Population Splits: Those are admixture events forward in time. The syntax is `S t,k,l,m`, where `t` denotes the scaled time of the event, `k` denotes the receiving branch (looking backward in time), and `l` denotes the source branch, `m` denotes the fraction of lineages that are moved. Note that for m=1, this event is exactly similar to a join event.
+* Population Splits: Those are admixture events forward in time. The syntax is `S t,k,l,m`, where `t` denotes the scaled time of the event, `k` denotes the target branch (looking backward in time), and `l` denotes the source branch, `m` denotes the fraction of lineages that are moved. Note that for m=1, this event is exactly similar to a join event.
+
+Please note that all notions of `target` and `source` branches are meant as you go backwards in time. So for example, if you want to model a scenario where branch 0 admixes into branch 2 with 30% at scaled time 0.005, you would write `S 0.005,0,2,0.3`. Here, 2 is the source branch and 0 is the target branch. You can see this if you go backwards in time and imagine how lineages move across branches. An admixture - forward in time - from branch 0 to branch 2 is the same as - backward in time - moving lineages from branch 2 into branch 0.
 
 An example using the last event type is given in `testData/5popSimTemplate.txt`. The model in these templates described the tree ((0,1),((2,3),4)) in Newick Format, which is also the tree used to simulate the data in `testData/5popSplit_combined.txt`.
 
@@ -83,13 +78,13 @@ This works very similarly to the `maxl` command. However, instead of a heuristic
 A particularly useful parameter for this command is the `--paramsFile` option, which lets you specify the output of a previous maxl or mcmc run as the starting point for MCMC. A typical work flow is to first run `maxl` on a particular model to get close to the maximum, and then use `mcmc` with `--paramsFile` to begin at the point found by `maxl`.
 
 ### rarecoal logl
-The command simply takes a model and a histogram and spits out the log likelihood for that particular model. In addition, you can specify an output file for the complete joint allele frequency spectrum, which is useful if you want to compare empirical with theoretical spectra (fits). A typical command line is:
+The command simply takes a model and a histogram and spits out the log likelihood for that particular model. In addition, you can specify an output file for the complete joint allele frequency spectrum, which can be useful if you want to compare empirical with theoretical spectra (see also `fitTable` for a more condensed output for plotting fits). A typical command line is:
 
     rarecoal logl -T testData/5popSimTemplateFixedPop.txt -x [0.001,0.002,0.003,0.004,1] -m 4 -i testData/5popSplit_combined.txt -s model_spectrum.txt
 
 which gives the likelihood and writes the probability for each allele frequency pattern into the filed specified by `-s`. Note that you can again use `--paramsFile` to input the output of a previous `mcmc` or `maxl` run.
 
-In contrast to `maxl` and `mcmc`, which need a model template, `logl` also accepts model specifications via the command line, given by the options `-j` and `-p`, as explained in the help text. Note that for setting events of type "K" (see model template syntax above) on the command line, you need to be give both of `-j` and `-p`.
+In contrast to `maxl` and `mcmc`, which need a model template, `logl` also accepts model specifications via the command line, given by the options `-j`, `-p` and `--split`, as explained in the help text. Note that for setting events of type "K" (see model template syntax above) on the command line, you need to be give both of `-j` and `-p`.
 
 ### rarecoal prob
 A little program which lets you compute the probability for a particular pattern using rarecoal. Similarly to `logl`, it accepts models via a template and via command line options. An example is:
@@ -108,4 +103,11 @@ Here, the parameter `-q 4` specifies that we are trying to find the merge-point 
 The second use case is for placing individual samples onto a tree. Let's say you have optimized a full model including population sizes in each branch for your five populations, with the final MCMC output stored in `mcmc_out.txt`. You have generated a new histogram for these five populations plus one individual of unknown ancestry. Let's say your individual is an ancient sample, with a sampling age 2,000 years before present. Scaling with 2N<sub>0</sub>=20,000 (see scaling note above), and a generation time of 29 years, the scaled age is then 0.00172.Then for mapping the individual, you would run:
 
     rarecoal find -T testData/5popSimTemplate.txt --paramsFile mcmc_out.txt -m 4 -q 4 -f mapping_out.txt -b 0.00172 -i testData/testData/5popSplit_combined.txt
+
+### rarecoal fitTable
+This program takes as input a histogram, a template file and the result file from an MCMC or a Maximization run. It then prints a table with real and fitted probabilites for singletons and shared variants up to an allele count specified on the command line. For example:
+
+    rarecoal fitTable -i <histogram> -m 4 -T <template> --paramsFile <mcmc_output.txt>
+
+Instead of providing a template and a parameter file, `fitTable` also accepts model specifications via the command line, given by the options `-j`, `-p` and `--split`, as explained in the help text. Note that for setting events of type "K" (see model template syntax above) on the command line, you need to be give both of `-j` and `-p`.
 
