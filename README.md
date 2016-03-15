@@ -3,11 +3,11 @@ This software implements tools to process and analyse genome sequencing data. Th
 
 ## Installation instructions
 * Install the Haskell tool stack, available [here](https://github.com/commercialhaskell/stack).
-* Download this repository and unpack it.
+* Download this repository and unpack it, or clone directly via `git clone https://github.com/stschiff/rarecoal.git`. In the latter case you can also easily pull changes by executing `git pull` in the `rarecoal` directory.
 * Change directory into this repository
 * (Optional) run `stack setup` to install the correct compiler. If you are not sure whether you have the compiler already, you can directly go to the next step. It will tell you to run `stack setup` if you need to.
 * Run `stack build`. This will download all the dependencies and may take a while. You may get an error about missing software such as pkg-config, or gsl, which then need to be installed using your standard package manager, such as `apt-get` on Linux or `brew` on a Mac. As soon as you have installed those, just run `stack build` again to continue where you left before the error.
-* Run `stack install` to copy the executables into "~/.local/bin". You should then add this directory to your path.
+* After building, the executables are buried relatively deep in the hidden `.stack-work` directory within the `rarecoal` directory. You can either find them in there or simply run `stack install` to copy the executables into "~/.local/bin". You should then add this directory to your path.
 
 ## Rarecoal program
 Rarecoal reads data in the form of a joint allele frequency histogram for rare alleles. An example file can be found under `testData/5popSplit_combined.txt`. The first lines of this file are:
