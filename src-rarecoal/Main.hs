@@ -3,6 +3,7 @@ import Logl (runLogl, LoglOpt(..))
 import Maxl (MaxlOpt(..), runMaxl)
 import Mcmc (McmcOpt(..), runMcmc)
 import Prob (ProbOpt(..), runProb)
+import FitTable (FitTableOpt(..), runFitTable)
 import Rarecoal.Core (ModelEvent(..), EventType(..))
 import Rarecoal.ModelTemplate(ModelDesc(..), ParamsDesc)
 import Rarecoal.RareAlleleHistogram (SitePattern(..))
@@ -18,7 +19,7 @@ import System.Log.Logger (updateGlobalLogger, setLevel, Priority(..), infoM)
 data Options = Options Command
 
 data Command = CmdProb ProbOpt | CmdLogl LoglOpt | CmdMaxl MaxlOpt |
-               CmdMcmc McmcOpt | CmdFind FindOpt
+               CmdMcmc McmcOpt | CmdFind FindOpt | CmdFitTable FitTableOpt
 
 main :: IO ()
 main = run =<< OP.execParser (parseOptions `withInfo` "Version 1.2.1. This software implements the \
@@ -39,6 +40,7 @@ run (Options cmdOpts) = runScript $ do
         CmdMaxl opts -> runMaxl opts
         CmdMcmc opts -> runMcmc opts
         CmdFind opts -> runFind opts
+        CmdFitTable opts -> runFitTable opts
     currentTafter <- scriptIO getCurrentTime
     scriptIO $ infoM "rarecoal" $ "Finished at " ++ show currentTafter
 
@@ -53,7 +55,8 @@ parseCommand = OP.subparser $
     OP.command "maxl" (parseMaxl `withInfo`
                        "Maximize the likelihood of the model given the data set") <>
     OP.command "mcmc" (parseMcmc `withInfo` "Run MCMC on the model and the data") <>
-    OP.command "find" (parseFind `withInfo` "Explore where a branch joins the tree")
+    OP.command "find" (parseFind `withInfo` "Explore where a branch joins the tree") <>
+    OP.command "fitTable" (parseFitTable `withInfo` "Print a table for plotting fits")
 
 parseMinAf :: OP.Parser Int
 parseMinAf = OP.option OP.auto $ OP.long "minAf" <> OP.metavar "INT" <> OP.hidden
@@ -307,3 +310,10 @@ parseFindOpt = FindOpt <$> parseQueryIndex <*> parseEvalFile <*> parseBranchAge 
     readIgnoreList s = do
         let ll = read s :: [[Int]]
         return $ map Pattern ll
+
+parseFitTable :: OP.Parser Command
+parseFitTable = CmdFitTable <$> parseFitTableOpt
+
+parseFitTableOpt :: OP.Parser FitTableOpt
+parseFitTableOpt = FitTableOpt <$> parseModelDesc <*> parseTheta <*> parseLinGen <*> parseMaxAf <*>
+                                parseHistPath
