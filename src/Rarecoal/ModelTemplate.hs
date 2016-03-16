@@ -23,15 +23,18 @@ data ModelTemplate = ModelTemplate {
     mtConstraintTemplates :: [ConstraintTemplate]
 } deriving (Eq, Show)
 
-data EventTemplate = JoinEventTemplate (Either Double String) Int Int
-                   | SplitEventTemplate (Either Double String) Int Int (Either Double String)
-                   | PopSizeEventTemplate (Either Double String) Int (Either Double String)
-                   | JoinPopSizeEventTemplate (Either Double String) Int Int (Either Double String)
-                   | GrowthRateEventTemplate (Either Double String) Int (Either Double String)
-                   | MigrationRateEventTemplate (Either Double String) Int Int (Either Double String) deriving (Eq, Show)
+type ParamSpec = Either Double String
 
-data ConstraintTemplate = SmallerConstraintTemplate String (Either Double String)
-                        | GreaterConstraintTemplate String (Either Double String)
+data EventTemplate = JoinEventTemplate ParamSpec Int Int
+                   | SplitEventTemplate ParamSpec Int Int ParamSpec
+                   | PopSizeEventTemplate ParamSpec Int ParamSpec
+                   | JoinPopSizeEventTemplate ParamSpec Int Int ParamSpec
+                   | GrowthRateEventTemplate ParamSpec Int ParamSpec
+                   | MigrationRateEventTemplate ParamSpec Int Int ParamSpec
+                   deriving (Eq, Show)
+
+data ConstraintTemplate = SmallerConstraintTemplate ParamSpec ParamSpec
+                        | GreaterConstraintTemplate ParamSpec ParamSpec
                         deriving (Eq, Show)
 
 data ModelDesc = ModelDescTemplate FilePath ParamsDesc | ModelDescDirect [ModelEvent] 
@@ -93,7 +96,7 @@ parsePopSizeEvent = do
     A.endOfLine
     return $ PopSizeEventTemplate t k n
 
-parseMaybeParam :: A.Parser (Either Double String)
+parseMaybeParam :: A.Parser ParamSpec
 parseMaybeParam = do
     c <- A.peekChar'
     if c == '<' then do
@@ -177,7 +180,7 @@ parseConstraints = A.many' $ (A.try parseSmallerConstraint <|> parseGreaterConst
     parseSmallerConstraint = do
         _ <- A.char 'C'
         _ <- A.space
-        name1 <- parseParamName
+        name1 <- parseMaybeParam
         _ <- A.char '<'
         name2 <- parseMaybeParam
         A.endOfLine
@@ -185,7 +188,7 @@ parseConstraints = A.many' $ (A.try parseSmallerConstraint <|> parseGreaterConst
     parseGreaterConstraint = do
         _ <- A.char 'C'
         _ <- A.space
-        name1 <- parseParamName
+        name1 <- parseMaybeParam
         _ <- A.char '>'
         name2 <- parseMaybeParam
         A.endOfLine
@@ -240,12 +243,12 @@ substituteParam pnames params (Right param) = do
 validateConstraint :: [String] -> [Double] -> ConstraintTemplate -> Either String ()
 validateConstraint pNames params ct =
     case ct of
-        SmallerConstraintTemplate name1 maybeParam2 -> do
-            p1 <- substituteParam pNames params (Right name1)
+        SmallerConstraintTemplate maybeParam1 maybeParam2 -> do
+            p1 <- substituteParam pNames params maybeParam1
             p2 <- substituteParam pNames params maybeParam2
             assertErr ("Constrained failed: " ++ show p1 ++ " < " ++ show p2) (p1 < p2)
-        GreaterConstraintTemplate name1 maybeParam2 -> do
-            p1 <- substituteParam pNames params (Right name1)
+        GreaterConstraintTemplate maybeParam1 maybeParam2 -> do
+            p1 <- substituteParam pNames params maybeParam1
             p2 <- substituteParam pNames params maybeParam2
             assertErr ("Constrained failed: " ++ show p1 ++ " > " ++ show p2) (p1 > p2)
 
