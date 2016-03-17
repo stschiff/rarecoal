@@ -29,7 +29,7 @@ runFitTable (FitTableOpt modelDesc theta linGen maxAf histPath) = do
         combinedFoldTheory = (,) <$> singletonProbsF nVec <*> sharingProbsF nVec
         (singletonProbs, sharingProbs, normFactor) = F.fold combinedFold rawCountList
         (singletonProbsTheory, sharingProbsTheory) = F.fold combinedFoldTheory probList
-        singletonLabels = map (++ "_singletons") names
+        singletonLabels = map (++ "(singletons)") names
         sharingLabels = [names!!i ++ "/" ++ names!!j |
                          i <- [0..(length names - 1)], j <- [i .. (length names - 1)]]
         allLabels = singletonLabels ++ sharingLabels
