@@ -281,15 +281,18 @@ parseFind :: OP.Parser Command
 parseFind = CmdFind <$> parseFindOpt
 
 parseFindOpt :: OP.Parser FindOpt
-parseFindOpt = FindOpt <$> parseQueryIndex <*> parseEvalFile <*> parseBranchAge <*>
+parseFindOpt = FindOpt <$> parseQueryBranch <*> parseEvalFile <*> parseBranchAge <*>
                            parseDeltaTime <*> parseMaxTime <*> parseTheta <*>
                            parseModelDesc <*> parseMinAf <*>
                            parseMaxAf <*> parseConditioning <*> 
                            parseLinGen <*> parseIgnoreList <*> parseHistPath <*>
                            parseNoShortcut <*> parseNrThreads
   where
+    parseQueryBranch = (Left <$> parseQueryIndex) <|> (Right <$> parseQueryName)
     parseQueryIndex = OP.option OP.auto $ OP.short 'q' <> OP.long "queryIndex" <> OP.metavar "INT"
                                                        <> OP.help "0-based index of query branch"
+    parseQueryName = OP.strOption $ OP.short 'n' <> OP.long "queryName" <> OP.metavar "STRING"
+                                                       <> OP.help "branch name to query"
     parseEvalFile = OP.strOption $ OP.short 'f' <> OP.long "evalFile" <> OP.metavar "FILE" <>
                                    OP.help "file to write the list of computed likelihoods to"
     parseBranchAge = OP.option OP.auto $ OP.short 'b' <> OP.long "branchAge" <>

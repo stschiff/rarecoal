@@ -1,6 +1,6 @@
 module Rarecoal.ModelTemplate (getInitialParams, ModelTemplate(..), readModelTemplate, 
                                instantiateModel, ModelDesc(..),
-                               getModelSpec, EventTemplate(..), ParamsDesc) where
+                               getModelSpec, EventTemplate(..), ParamsDesc, BranchSpec) where
 
 import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..), EventType(..))
 

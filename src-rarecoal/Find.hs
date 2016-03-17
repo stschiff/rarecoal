@@ -2,16 +2,16 @@ module Find (runFind, FindOpt(..)) where
 
 import Rarecoal.Core (ModelSpec(..), ModelEvent(..), EventType(..))
 import Rarecoal.RareAlleleHistogram (loadHistogram, RareAlleleHistogram(..), SitePattern(..))
-import Rarecoal.ModelTemplate (getModelSpec, ModelDesc)
+import Rarecoal.ModelTemplate (getModelSpec, ModelDesc, BranchSpec)
 
-import Control.Error (Script, scriptIO, tryAssert, tryRight, err)
+import Control.Error (Script, scriptIO, tryAssert, tryRight, err, tryJust)
 import Data.List (sortBy)
 import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
 import Logl (computeLikelihood)
 import System.IO (stderr, hPutStrLn, openFile, IOMode(..), hClose)
 
 data FindOpt = FindOpt {
-    fiQueryIndex :: Int,
+    fiQueryBranch :: BranchSpec,
     fiEvalPath :: FilePath,
     fiBranchAge :: Double,
     fiDeltaTime :: Double,
@@ -38,16 +38,15 @@ runFind opts = do
     scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
     hist <- loadHistogram (fiMinAf opts) (fiMaxAf opts) (fiConditionOn opts) (fiHistPath opts)
     modelSpec' <- getModelSpec (fiModelDesc opts) (raNames hist) (fiTheta opts) (fiLinGen opts)
-    let l = fiQueryIndex opts
-        modelSpec = if fiBranchAge opts > 0.0 then
+    l <- findQueryIndex (raNames hist) (fiQueryBranch opts)
+    let modelSpec = if fiBranchAge opts > 0.0 then
                 let events' = mEvents modelSpec'
                     events = ModelEvent 0.0 (SetFreeze l True) :
                              ModelEvent (fiBranchAge opts) (SetFreeze l False) : events'
                 in  modelSpec' {mEvents = events}
             else
                 modelSpec'
-    tryAssert ("model must have free branch " ++ show (fiQueryIndex opts)) $
-            hasFreeBranch l modelSpec
+    tryAssert ("model must have free branch " ++ show l) $ hasFreeBranch l modelSpec
     let nrPops = length $ raNVec hist
         targetBranches = [branch | branch <- [0..nrPops-1], branch /= l]
         allJoinTimes =
@@ -68,6 +67,9 @@ runFind opts = do
         let e = mEvents modelSpec
             jIndices = concat [[k, l] | ModelEvent _ (Join k l) <- e]
         in  queryBranch `notElem` jIndices
+    findQueryIndex _ (Left i) = return i
+    findQueryIndex names (Right branchName) =
+        tryJust ("could not find branch name " ++ branchName) $ lookup branchName (zip names [0..])
 
 getJoinTimes :: ModelSpec -> Double -> Double -> Double -> Int -> [Double]
 getJoinTimes modelSpec deltaT maxT branchAge k =
