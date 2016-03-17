@@ -52,20 +52,27 @@ data MCMCstate = MCMCstate {
 runMcmc :: McmcOpt -> Script ()
 runMcmc opts = do
     nrProc <- scriptIO getNumProcessors
-    if (mcNrThreads opts == 0) then scriptIO $ setNumCapabilities nrProc else scriptIO $ setNumCapabilities (mcNrThreads opts)
+    if   (mcNrThreads opts == 0)
+    then scriptIO $ setNumCapabilities nrProc
+    else scriptIO $ setNumCapabilities (mcNrThreads opts)
     nrThreads <- scriptIO getNumCapabilities
     scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
     let times = getTimeSteps 20000 (mcLinGen opts) 20.0
     modelTemplate <- readModelTemplate (mcTemplatePath opts) (mcTheta opts) times
     hist <- loadHistogram (mcMinAf opts) (mcMaxAf opts) (mcConditionOn opts) (mcHistPath opts)
-    let extraEvents = concat [[ModelEvent 0.0 (SetFreeze k True), ModelEvent t (SetFreeze k False)] | (t, k) <- zip (mcBranchAges opts) [0..], t > 0]
+    let extraEvents = concat $ do
+            (t, k) <- zip (mcBranchAges opts) [0..]
+            True <- return $ t > 0
+            return [ModelEvent 0.0 (SetFreeze k True), ModelEvent t (SetFreeze k False)]
     x <- getInitialParams modelTemplate (mcParamsDesc opts)
     _ <- tryRight $ minFunc modelTemplate extraEvents hist x
     let minFunc' = either (const penalty) id . minFunc modelTemplate extraEvents hist
         initV = minFunc' x
         stepWidths = V.map (max 1.0e-8 . abs . (/100.0)) x
         successRates = V.replicate (V.length x) 0.44
-    ranGen <- if mcRandomSeed opts == 0 then scriptIO R.getStdGen else return $ R.mkStdGen (mcRandomSeed opts)
+    ranGen <- if   mcRandomSeed opts == 0
+              then scriptIO R.getStdGen
+              else return $ R.mkStdGen (mcRandomSeed opts)
     let initState = MCMCstate 0 0 initV x stepWidths successRates ranGen []
         pred_ = mcmcNotDone (mcNrCycles opts)
         act = mcmcCycle minFunc'
@@ -155,7 +162,8 @@ accept newPoint newVal i = do
     successRate <- gets mcmcSuccesRate
     let newR = successRate!i * 0.975 + 0.025
         successRate' = successRate // [(i, newR)]
-    modify (\s -> s {mcmcCurrentPoint = newPoint, mcmcCurrentValue = newVal, mcmcSuccesRate = successRate'})
+    modify (\s -> s {mcmcCurrentPoint = newPoint, mcmcCurrentValue = newVal,
+                     mcmcSuccesRate = successRate'})
 
 reject :: Int -> StateT MCMCstate Script ()
 reject i = do
@@ -205,9 +213,11 @@ reportPosteriorStats paramNames states = do
     
 reportTrace :: [String] -> [MCMCstate] -> FilePath -> IO ()
 reportTrace paramNames states traceFilePath = do
-    let body = [intercalate "\t" . map show . V.toList $
-                V.concat [V.singleton (mcmcCurrentValue s), mcmcCurrentPoint s, mcmcStepWidths s, mcmcSuccesRate s] |
-                s <- states]
+    let body = do
+            s <- states
+            let l = [V.singleton (mcmcCurrentValue s), mcmcCurrentPoint s, mcmcStepWidths s, 
+                     mcmcSuccesRate s]
+            return . intercalate "\t" . map show . V.toList . V.concat $ l
         headerLine = intercalate "\t" $ ["Score"] ++ paramNames ++ map (++"_delta") paramNames ++
                      map (++"_success") paramNames
     writeFile traceFilePath $ unlines (headerLine:body)

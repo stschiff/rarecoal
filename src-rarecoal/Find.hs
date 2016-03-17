@@ -31,11 +31,13 @@ data FindOpt = FindOpt {
 runFind :: FindOpt -> Script ()
 runFind opts = do
     nrProc <- scriptIO getNumProcessors
-    if (fiNrThreads opts == 0) then scriptIO $ setNumCapabilities nrProc else scriptIO $ setNumCapabilities (fiNrThreads opts)
+    if   (fiNrThreads opts == 0)
+    then scriptIO $ setNumCapabilities nrProc
+    else scriptIO $ setNumCapabilities (fiNrThreads opts)
     nrThreads <- scriptIO getNumCapabilities
     scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
-
-    modelSpec' <- getModelSpec (fiModelDesc opts) (fiTheta opts) (fiLinGen opts)
+    hist <- loadHistogram (fiMinAf opts) (fiMaxAf opts) (fiConditionOn opts) (fiHistPath opts)
+    modelSpec' <- getModelSpec (fiModelDesc opts) (raNames hist) (fiTheta opts) (fiLinGen opts)
     let l = fiQueryIndex opts
         modelSpec = if fiBranchAge opts > 0.0 then
                 let events' = mEvents modelSpec'
@@ -44,13 +46,18 @@ runFind opts = do
                 in  modelSpec' {mEvents = events}
             else
                 modelSpec'
-    tryAssert ("model must have free branch " ++ show (fiQueryIndex opts)) $ hasFreeBranch l modelSpec
-    hist <- loadHistogram (fiMinAf opts) (fiMaxAf opts) (fiConditionOn opts) (fiHistPath opts)
+    tryAssert ("model must have free branch " ++ show (fiQueryIndex opts)) $
+            hasFreeBranch l modelSpec
     let nrPops = length $ raNVec hist
         targetBranches = [branch | branch <- [0..nrPops-1], branch /= l]
-        allJoinTimes = [getJoinTimes modelSpec (fiDeltaTime opts) (fiMaxTime opts) (fiBranchAge opts) k | k <- targetBranches]
-        allParamPairs = concat $ zipWith (\k times -> [(k, t) | t <- times]) targetBranches allJoinTimes
-    allLikelihoods <- mapM (\(k, t) -> computeLikelihoodIO hist modelSpec k l t (fiNoShortcut opts)) allParamPairs
+        allJoinTimes =
+            [getJoinTimes modelSpec (fiDeltaTime opts) (fiMaxTime opts) (fiBranchAge opts) k |
+             k <- targetBranches]
+        allParamPairs =
+            concat $ zipWith (\k times -> [(k, t) | t <- times]) targetBranches allJoinTimes
+    allLikelihoods <- do
+            let f = (\(k, t) -> computeLikelihoodIO hist modelSpec k l t (fiNoShortcut opts))
+            mapM f allParamPairs
     scriptIO $ writeResult (fiEvalPath opts) allParamPairs allLikelihoods
     let ((minBranch, minTime), minLL) = last . sortBy (\(_, ll1) (_, ll2) -> ll1 `compare` ll2) $
                                         zip allParamPairs allLikelihoods
@@ -68,7 +75,8 @@ getJoinTimes modelSpec deltaT maxT branchAge k =
         leaveTimes = [t | ModelEvent t (Join _ l) <- mEvents modelSpec, k == l]
     in  if null leaveTimes then allTimes else filter (<head leaveTimes) allTimes
 
-computeLikelihoodIO :: RareAlleleHistogram -> ModelSpec -> Int -> Int -> Double -> Bool -> Script Double
+computeLikelihoodIO :: RareAlleleHistogram -> ModelSpec -> Int -> Int -> Double -> Bool ->
+                       Script Double
 computeLikelihoodIO hist modelSpec k l t noShortcut = do
     let e = mEvents modelSpec
         newE = ModelEvent t (Join k l)
@@ -81,6 +89,7 @@ writeResult :: FilePath -> [(Int, Double)] -> [Double] -> IO ()
 writeResult fp paramPairs allLikelihoods = do
     h <- openFile fp WriteMode
     hPutStrLn h "Branch\tTime\tLikelihood"
-    let l_ = zipWith (\(k, t) l -> show k ++ "\t" ++ show t ++ "\t" ++ show l) paramPairs allLikelihoods
+    let f = (\(k, t) l -> show k ++ "\t" ++ show t ++ "\t" ++ show l)
+        l_ = zipWith f paramPairs allLikelihoods
     mapM_ (hPutStrLn h) l_
     hClose h

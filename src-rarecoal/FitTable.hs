@@ -20,8 +20,8 @@ data FitTableOpt = FitTableOpt {
 
 runFitTable :: FitTableOpt -> Script ()
 runFitTable (FitTableOpt modelDesc theta linGen maxAf histPath) = do
-    modelSpec <- getModelSpec modelDesc theta linGen
     RareAlleleHistogram names nVec _ _ _ countMap <- loadHistogram 1 maxAf [] histPath
+    modelSpec <- getModelSpec modelDesc names theta linGen
     let rawCountList = [(p, fromIntegral c) | (p, c) <- M.toList countMap]
     probList <- tryRight . sequence $ [(\prob -> (p, prob)) <$> getProb modelSpec nVec False pat |
                                        (p@(Pattern pat), _) <- rawCountList]

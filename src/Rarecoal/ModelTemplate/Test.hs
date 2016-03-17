@@ -12,15 +12,15 @@ template = ModelTemplate {
     mtParams = ["p0","p1","p2","p3","p4","t01","t23","t24","t02","p01","p23","p24","p02"],
     mtTheta = 0.0005,
     mtTimeSteps = defaultTimes,
-    mtEventTemplates = [ PopSizeEventTemplate (Left 0.0) 0 (Right "p0")
-                       , PopSizeEventTemplate (Left 0.0) 1 (Right "p1")
-                       , PopSizeEventTemplate (Left 0.0) 2 (Right "p2")
-                       , PopSizeEventTemplate (Left 0.0) 3 (Right "p3")
-                       , PopSizeEventTemplate (Left 0.0) 4 (Right "p4")
-                       , JoinPopSizeEventTemplate (Right "t01") 0 1 (Right "p01")
-                       , JoinPopSizeEventTemplate (Right "t23") 2 3 (Right "p23")
-                       , JoinPopSizeEventTemplate (Right "t24") 2 4 (Right "p24")
-                       , JoinPopSizeEventTemplate (Right "t02") 0 2 (Right "p02")
+    mtEventTemplates = [ PopSizeEventTemplate (Left 0.0) (Left 0) (Right "p0")
+                       , PopSizeEventTemplate (Left 0.0) (Left 1) (Right "p1")
+                       , PopSizeEventTemplate (Left 0.0) (Left 2) (Right "p2")
+                       , PopSizeEventTemplate (Left 0.0) (Left 3) (Right "p3")
+                       , PopSizeEventTemplate (Left 0.0) (Left 4) (Right "p4")
+                       , JoinPopSizeEventTemplate (Right "t01") (Left 0) (Left 1) (Right "p01")
+                       , JoinPopSizeEventTemplate (Right "t23") (Left 2) (Left 3) (Right "p23")
+                       , JoinPopSizeEventTemplate (Right "t24") (Left 2) (Left 4) (Right "p24")
+                       , JoinPopSizeEventTemplate (Right "t02") (Left 0) (Left 2) (Right "p02")
                        ],
     mtConstraintTemplates = []
 }

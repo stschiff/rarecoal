@@ -4,7 +4,7 @@ import Logl (computeLikelihood)
 import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..))
 import Rarecoal.ModelTemplate (ModelTemplate(..), instantiateModel, readModelTemplate, 
                                getInitialParams, ParamsDesc)
-import Rarecoal.RareAlleleHistogram (RareAlleleHistogram, loadHistogram)
+import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), loadHistogram)
 
 import Control.Error (Script, scriptIO, assertErr, tryRight, err)
 import Data.List (intercalate)
@@ -79,7 +79,7 @@ reportTrace modelTemplate trace path = do
 
 minFunc :: ModelTemplate -> [ModelEvent] -> RareAlleleHistogram -> V.Vector Double -> Either String Double
 minFunc modelTemplate extraEvents hist params = do
-    modelSpec <- instantiateModel modelTemplate params
+    modelSpec <- instantiateModel modelTemplate params (raNames hist)
     let events = mEvents modelSpec
         events' = extraEvents ++ events
         modelSpec' = modelSpec {mEvents = events'}

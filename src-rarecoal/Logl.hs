@@ -30,8 +30,8 @@ runLogl opts = do
     else scriptIO $ setNumCapabilities (loNrThreads opts)
     nrThreads <- scriptIO getNumCapabilities
     scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
-    modelSpec <- getModelSpec (loModelDesc opts) (loTheta opts) (loLinGen opts)
     hist <- loadHistogram (loMinAf opts) (loMaxAf opts) (loConditionOn opts) (loHistPath opts)
+    modelSpec <- getModelSpec (loModelDesc opts) (raNames hist) (loTheta opts) (loLinGen opts)
     standardOrder <- tryRight $ computeStandardOrder hist
     let nVec = raNVec hist
     patternProbs <- tryRight . sequence $

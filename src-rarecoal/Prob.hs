@@ -15,6 +15,6 @@ data ProbOpt = ProbOpt {
 
 runProb :: ProbOpt -> Script ()
 runProb opts = do
-    modelSpec <- getModelSpec (prModelDesc opts) (prTheta opts) (prLinGen opts)
+    modelSpec <- getModelSpec (prModelDesc opts) [] (prTheta opts) (prLinGen opts)
     val <- tryRight $ getProb modelSpec (prNvec opts) False (prKvec opts)
     scriptIO $ print val     
