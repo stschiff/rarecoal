@@ -381,7 +381,7 @@ validateModel (ModelSpec _ _ events) = do
     checkEvents (ModelEvent _ (SetGrowthRate _ r):rest) =
         if abs r > 10000.0 then Left "Illegal growth rates" else checkEvents rest
     checkEvents (ModelEvent _ (SetMigration _ _ r):rest) =
-        if r <= 0.0 || r > 10000.0 then Left "Illegal migration rate" else checkEvents rest
+        if r < 0.0 || r > 10000.0 then Left "Illegal migration rate" else checkEvents rest
     checkEvents (ModelEvent _ (Split _ _ m):rest) =
         if m <= 0.0 || m >= 1.0 then Left "Illegal split rate" else checkEvents rest
     checkEvents (ModelEvent _ (SetFreeze _ _):rest) = checkEvents rest
