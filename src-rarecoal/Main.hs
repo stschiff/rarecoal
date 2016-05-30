@@ -58,21 +58,6 @@ parseCommand = OP.subparser $
     OP.command "find" (parseFind `withInfo` "Explore where a branch joins the tree") <>
     OP.command "fitTable" (parseFitTable `withInfo` "Print a table for plotting fits")
 
-parseMinAf :: OP.Parser Int
-parseMinAf = OP.option OP.auto $ OP.long "minAf" <> OP.metavar "INT" <> OP.hidden
-                                                 <> OP.help "minimal allele count" <> OP.value 1
-                                                 <> OP.showDefault
-
-parseMaxAf :: OP.Parser Int
-parseMaxAf = OP.option OP.auto $ OP.short 'm' <> OP.long "max_af"
-                                              <> OP.metavar "INT"
-                                              <> OP.value 0
-                                              <> OP.help "maximum allele count"
-
-parseHistPath :: OP.Parser FilePath
-parseHistPath = OP.strOption $ OP.short 'i' <> OP.long "input"
-                    <> OP.metavar "FILE" <> OP.help "Input Histogram File, use - for stdin"
-
 parseProb :: OP.Parser Command
 parseProb = CmdProb <$> parseProbOpt
 
@@ -93,6 +78,8 @@ parseTheta = OP.option OP.auto $ OP.short 't' <> OP.long "theta" <> OP.hidden <>
                     <> OP.help "set the scaled mutation rate. This is only used for scaling and \ 
                                 \should rarely be changed from the default."
 
+
+
 parseModelDesc :: OP.Parser ModelDesc
 parseModelDesc = parseModelDescTemplate <|> parseModelDescDirect
   where
@@ -101,23 +88,42 @@ parseModelDesc = parseModelDescTemplate <|> parseModelDescDirect
 parseModelDescTemplate :: OP.Parser ModelDesc
 parseModelDescTemplate = ModelDescTemplate <$> parseTemplateFilePath <*> parseParamsDesc
 
-parseParamsDesc :: OP.Parser ParamsDesc
-parseParamsDesc = parseInitialParamsFile <|> parseInitialParamsList
-
 parseTemplateFilePath :: OP.Parser FilePath
 parseTemplateFilePath = OP.strOption $ OP.short 'T' <> OP.long "template" <>
                                        OP.metavar "FILE" <>
                                        OP.help "the model template file"
 
-parseInitialParamsFile :: OP.Parser ParamsDesc
-parseInitialParamsFile = OP.option (Left <$> OP.str) $ OP.long "paramsFile" <>
-                         OP.metavar "FILE" <> 
+parseParamsDesc :: OP.Parser ParamsDesc
+parseParamsDesc = (Left <$> parseInitialParamsFromFile) <|> (Right <$> parseInitialParamsList)
+
+parseInitialParamsFromFile :: OP.Parser (FilePath, [(String, Double)])
+parseInitialParamsFromFile = (,) <$> parseInitialParamsFile <*> parseAdditionalParams
+
+parseInitialParamsFile :: OP.Parser FilePath
+parseInitialParamsFile = OP.strOption $ OP.long "paramsFile" <> OP.metavar "FILE" <> 
                          OP.help "read the initial parameters from a file, which can be the main \ 
                          \output file from either the maxl or the mcmc commands. This is useful for continuing an optimization from a previous run, or for starting an MCMC run from the maximum found \
                          \by maxl"
 
-parseInitialParamsList :: OP.Parser ParamsDesc
-parseInitialParamsList = OP.option (Right <$> OP.auto) $ OP.short 'x' <> OP.long "params" <>
+parseAdditionalParams :: OP.Parser [(String, Double)]
+parseAdditionalParams = many parseAdditionalParam
+  where
+    parseAdditionalParam = OP.option (parseOptionString <$> OP.str) $ OP.long "setParam" <> 
+                           OP.short 'X' <>
+                           OP.hidden <> OP.help "set parameter in addition to parameters read \
+                           \from the given parameter file. If the parameter is also found in \
+                           \the file, it is overwritten. Should be given in format PARAM=VALUE. \
+                           \Can be given multiple times."
+    parseOptionString s =
+        let fields = splitOn "=" s
+        in if length fields /= 2
+           then error ("could not parse parameter option " ++ s)
+           else
+               let [param, valueS] = fields
+               in  (param, read valueS)
+
+parseInitialParamsList :: OP.Parser [Double]
+parseInitialParamsList = OP.option OP.auto $ OP.short 'x' <> OP.long "params" <>
                          OP.metavar "[x1,x2,...]" <> 
                          OP.help "initial parameters for the template, given as comma-separated \ 
                          \list without spaces and surrounded by square-brackets, e.g. \ 
@@ -206,6 +212,21 @@ parseLoglOpt = LoglOpt <$> parseTheta <*> parseModelDesc <*>
                            parseLinGen <*> parseMinAf <*> parseMaxAf <*> 
                            parseConditioning <*> parseHistPath <*> 
                            parseNrThreads
+
+parseMinAf :: OP.Parser Int
+parseMinAf = OP.option OP.auto $ OP.long "minAf" <> OP.metavar "INT" <> OP.hidden
+                                                 <> OP.help "minimal allele count" <> OP.value 1
+                                                 <> OP.showDefault
+
+parseMaxAf :: OP.Parser Int
+parseMaxAf = OP.option OP.auto $ OP.short 'm' <> OP.long "max_af"
+                                              <> OP.metavar "INT"
+                                              <> OP.value 0
+                                              <> OP.help "maximum allele count"
+
+parseHistPath :: OP.Parser FilePath
+parseHistPath = OP.strOption $ OP.short 'i' <> OP.long "input"
+                    <> OP.metavar "FILE" <> OP.help "Input Histogram File, use - for stdin"
 
 parseNrThreads :: OP.Parser Int
 parseNrThreads = OP.option OP.auto $ OP.long "nrThreads" <> OP.metavar "INT" <> OP.value 0 <>

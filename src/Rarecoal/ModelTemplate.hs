@@ -6,7 +6,7 @@ import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..), EventType(..)
 
 import Control.Applicative ((<|>))
 import Control.Error (Script, scriptIO, tryRight, tryJust, assertErr, justErr)
-import Control.Monad (when)
+import Control.Monad (when, forM)
 import qualified Data.Attoparsec.Text as A
 import Data.Char (isAlphaNum)
 -- import Debug.Trace (trace)
@@ -39,25 +39,29 @@ data ConstraintTemplate = SmallerConstraintTemplate ParamSpec ParamSpec
                         deriving (Eq, Show)
 
 data ModelDesc = ModelDescTemplate FilePath ParamsDesc | ModelDescDirect [ModelEvent] 
-type ParamsDesc = Either FilePath [Double]
+type ParamsDesc = Either (FilePath, [(String, Double)]) [Double]
 
 getInitialParams :: ModelTemplate -> ParamsDesc -> Script (V.Vector Double)
 getInitialParams modelTemplate paramsDesc = do
     case paramsDesc of
-        Left paramsFile -> do
+        Left (paramsFile, additionalParams) -> do
             l <- lines <$> (scriptIO . readFile $ paramsFile)
-            ret <- if (head . head $ l) == '#' then
-                    loadFromDict [(k, read $ v !! 2) | (k : v) <- map words . drop 3 $ l]
-                else
-                    loadFromDict [(k, read v) | [k, v] <- map words $ l]
-            scriptIO . infoM "rarecoal" $ "initial parameters loaded: " ++ show ret
+            ret <- if (head . head $ l) == '#' then -- aha, have rarecoal mcmc output file
+                    loadFromDict [(k, read $ v !! 2) | (k : v) <- map words . drop 3 $ l] 
+                                 additionalParams
+                else -- aha, have rarecoal maxl output file
+                    loadFromDict [(k, read v) | [k, v] <- map words $ l] additionalParams
+            scriptIO . infoM "rarecoal" $ "initial parameters: " ++ show ret
             return ret
         Right x -> return . V.fromList $ x
   where
-    loadFromDict dict = do
-        let err' = "parameters in the initialParams-file do not match the parameters in the modelTemplate"
-        x' <- tryJust err' . mapM (`lookup` dict) $ mtParams modelTemplate
-        return . V.fromList $ x'
+    loadFromDict dict additionalParams =
+        fmap V.fromList . forM (mtParams modelTemplate) $ \p -> do
+            case p `lookup` additionalParams of
+                Just x -> return x
+                Nothing -> do
+                    let err' = "parameter " ++ show p ++ " in the Model Template not set"
+                    tryJust err' $ p `lookup` dict
 
 readModelTemplate :: FilePath -> Double -> [Double] -> Script ModelTemplate
 readModelTemplate path theta timeSteps = do
