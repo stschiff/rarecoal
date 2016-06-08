@@ -48,12 +48,13 @@ runFind opts = do
                 modelSpec'
     tryAssert ("model must have free branch " ++ show l) $ hasFreeBranch l modelSpec
     let nrPops = length $ raNVec hist
-        targetBranches = [branch | branch <- [0..nrPops-1], branch /= l]
-        allJoinTimes =
-            [getJoinTimes modelSpec (fiDeltaTime opts) (fiMaxTime opts) (fiBranchAge opts) k |
-             k <- targetBranches]
-        allParamPairs =
-            concat $ zipWith (\k times -> [(k, t) | t <- times]) targetBranches allJoinTimes
+        allParamPairs = do
+            branch <- [0..(nrPops - 1)]
+            False <- return $ branch == l
+            False <- return $ isEmptyBranch modelSpec branch (fiBranchAge opts)
+            time <- getJoinTimes modelSpec (fiDeltaTime opts) (fiMaxTime opts) (fiBranchAge opts) 
+                                  branch
+            return (branch, time)
     allLikelihoods <- do
             let f = (\(k, t) -> computeLikelihoodIO hist modelSpec k l t (fiNoShortcut opts))
             mapM f allParamPairs
@@ -70,6 +71,11 @@ runFind opts = do
     findQueryIndex _ (Left i) = return i
     findQueryIndex names (Right branchName) =
         tryJust ("could not find branch name " ++ branchName) $ lookup branchName (zip names [0..])
+
+isEmptyBranch :: ModelSpec -> Int -> Double -> Bool
+isEmptyBranch modelSpec l t = not $ null previousJoins
+  where
+    previousJoins = [j | ModelEvent t' j@(Join _ l') <- mEvents modelSpec, l' == l, t' < t]
 
 getJoinTimes :: ModelSpec -> Double -> Double -> Double -> Int -> [Double]
 getJoinTimes modelSpec deltaT maxT branchAge k =
