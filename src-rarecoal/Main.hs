@@ -4,6 +4,7 @@ import Maxl (MaxlOpt(..), runMaxl)
 import Mcmc (McmcOpt(..), runMcmc)
 import Prob (ProbOpt(..), runProb)
 import FitTable (FitTableOpt(..), runFitTable)
+import SimCommand (SimCommandOpt(..), runSimCommand)
 import Rarecoal.Core (ModelEvent(..), EventType(..))
 import Rarecoal.ModelTemplate(ModelDesc(..), ParamsDesc)
 import Rarecoal.RareAlleleHistogram (SitePattern(..))
@@ -19,7 +20,8 @@ import System.Log.Logger (updateGlobalLogger, setLevel, Priority(..), infoM)
 data Options = Options Command
 
 data Command = CmdProb ProbOpt | CmdLogl LoglOpt | CmdMaxl MaxlOpt |
-               CmdMcmc McmcOpt | CmdFind FindOpt | CmdFitTable FitTableOpt
+               CmdMcmc McmcOpt | CmdFind FindOpt | CmdFitTable FitTableOpt |
+               CmdSimCommand SimCommandOpt
 
 main :: IO ()
 main = run =<< OP.execParser (parseOptions `withInfo` "Version 1.2.1. This software implements the \
@@ -41,6 +43,7 @@ run (Options cmdOpts) = runScript $ do
         CmdMcmc opts -> runMcmc opts
         CmdFind opts -> runFind opts
         CmdFitTable opts -> runFitTable opts
+        CmdSimCommand opts -> runSimCommand opts
     currentTafter <- scriptIO getCurrentTime
     scriptIO $ infoM "rarecoal" $ "Finished at " ++ show currentTafter
 
@@ -56,7 +59,9 @@ parseCommand = OP.subparser $
                        "Maximize the likelihood of the model given the data set") <>
     OP.command "mcmc" (parseMcmc `withInfo` "Run MCMC on the model and the data") <>
     OP.command "find" (parseFind `withInfo` "Explore where a branch joins the tree") <>
-    OP.command "fitTable" (parseFitTable `withInfo` "Print a table for plotting fits")
+    OP.command "fitTable" (parseFitTable `withInfo` "Print a table for plotting fits") <>
+    OP.command "simCommand" (parseSimCommand `withInfo` "print a simulation command line from a \
+                                                         \model")
 
 parseProb :: OP.Parser Command
 parseProb = CmdProb <$> parseProbOpt
@@ -341,3 +346,28 @@ parseFitTable = CmdFitTable <$> parseFitTableOpt
 parseFitTableOpt :: OP.Parser FitTableOpt
 parseFitTableOpt = FitTableOpt <$> parseModelDesc <*> parseTheta <*> parseLinGen <*> parseMaxAf <*>
                                 parseHistPath
+
+parseSimCommand :: OP.Parser Command
+parseSimCommand = CmdSimCommand <$> parseSimCommandOpts
+
+parseSimCommandOpts :: OP.Parser SimCommandOpt
+parseSimCommandOpts = SimCommandOpt <$> parseModelDesc <*> parseBranchNames <*> parseNrHaps <*> 
+                                        parseTheta <*> parseRho <*> parseChromLength
+  where
+    parseBranchNames = OP.option (splitOn "," <$> OP.str) $ OP.long "branchNames" <>
+                       OP.short 'b' <> OP.metavar "NAME1,NAME2,..." <>
+                       OP.help ("specify the branch names as a comma-separated string. This is \
+                                 \needed because the model template may contain branch names \
+                                 \instead of numbers.")
+    parseNrHaps = OP.option (map read . splitOn "," <$> OP.str) $ OP.long "nrHaps" <>
+                    OP.short 'n' <>
+                    OP.metavar "N1,N2,..." <>
+                            OP.help ("specify the number of chromosomes needed per population, as \
+                            \a comma-separated list of integers")
+                            
+    parseRho = OP.option OP.auto $ OP.short 'r' <> OP.long "rho" <> OP.hidden <>
+                 OP.metavar "FLOAT" <> OP.value 0.0004 <> OP.showDefault <> OP.help "set the \
+                 \scaled recombination rate."
+    parseChromLength = OP.option OP.auto $ OP.short 'L' <> OP.long "chromLength" <>
+                       OP.metavar "INT" <> OP.value 100000000 <>
+                       OP.help "specify the length of the simulated chromosomes in basepairs"

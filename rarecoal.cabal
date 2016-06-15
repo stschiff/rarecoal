@@ -63,8 +63,9 @@ executable rarecoal
                        parsec,
                        hslogger,
                        text,
+                       turtle,
                        attoparsec
-  other-modules:       Find, Logl, Maxl, Mcmc, Prob, FitTable
+  other-modules:       Find, Logl, Maxl, Mcmc, Prob, FitTable, SimCommand
   default-language:    Haskell2010
   extra-lib-dirs:      /usr/lib
   ghc-options:         -threaded -O -with-rtsopts=-A200m
