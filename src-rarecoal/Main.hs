@@ -67,7 +67,7 @@ parseProb :: OP.Parser Command
 parseProb = CmdProb <$> parseProbOpt
 
 parseProbOpt :: OP.Parser ProbOpt
-parseProbOpt = ProbOpt <$> parseTheta <*> parseModelDesc <*> parseLinGen <*> parseNVec <*> parseKVec
+parseProbOpt = ProbOpt <$> parseTheta <*> parseModelDesc <*> parseLinGen <*> parseBranchnames <*> parseNVec <*> parseKVec
   where
     parseNVec = OP.argument OP.auto (OP.metavar "[N1,N2,...]" <> OP.help "number of samples, \ 
                        \comma-separated, without spaces, and surrounded by square brackets, e.g. \ 
@@ -76,6 +76,7 @@ parseProbOpt = ProbOpt <$> parseTheta <*> parseModelDesc <*> parseLinGen <*> par
                        \alleles in each population, same format as for NVec, e.g. [1,2] for allele \
                         \count 3 shared with one sample from the first and two from the second \ 
                         \population.")
+    parseBranchnames = OP.option (splitOn "," <$> OP.str) (OP.help "string of branch names" <> OP.long "branchnames" <> OP.metavar "Pop1,Pop2,...")
 
 parseTheta :: OP.Parser Double
 parseTheta = OP.option OP.auto $ OP.short 't' <> OP.long "theta" <> OP.hidden <> OP.metavar "FLOAT"
