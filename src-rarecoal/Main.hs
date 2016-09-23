@@ -76,7 +76,7 @@ parseProbOpt = ProbOpt <$> parseTheta <*> parseModelDesc <*> parseLinGen <*> par
                        \alleles in each population, same format as for NVec, e.g. [1,2] for allele \
                         \count 3 shared with one sample from the first and two from the second \ 
                         \population.")
-    parseBranchnames = OP.option (splitOn "," <$> OP.str) (OP.help "string of branch names" <> OP.long "branchnames" <> OP.metavar "Pop1,Pop2,...")
+    parseBranchnames = OP.option (splitOn "," <$> OP.str) (OP.help "string of branch names" <> OP.long "branchnames")
 
 parseTheta :: OP.Parser Double
 parseTheta = OP.option OP.auto $ OP.short 't' <> OP.long "theta" <> OP.hidden <> OP.metavar "FLOAT"
