@@ -12,6 +12,7 @@ import System.IO (stderr, hPutStrLn, openFile, IOMode(..), hClose)
 
 data FindOpt = FindOpt {
     fiQueryBranch :: BranchSpec,
+    fiBranchPopSize :: Double,
     fiEvalPath :: FilePath,
     fiBranchAge :: Double,
     fiDeltaTime :: Double,
@@ -37,26 +38,30 @@ runFind opts = do
     nrThreads <- scriptIO getNumCapabilities
     scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
     hist <- loadHistogram (fiMinAf opts) (fiMaxAf opts) (fiConditionOn opts) (fiHistPath opts)
-    modelSpec' <- getModelSpec (fiModelDesc opts) (raNames hist) (fiTheta opts) (fiLinGen opts)
+    modelSpec <- getModelSpec (fiModelDesc opts) (raNames hist) (fiTheta opts) (fiLinGen opts)
     l <- findQueryIndex (raNames hist) (fiQueryBranch opts)
-    let modelSpec = if fiBranchAge opts > 0.0 then
-                let events' = mEvents modelSpec'
-                    events = ModelEvent 0.0 (SetFreeze l True) :
-                             ModelEvent (fiBranchAge opts) (SetFreeze l False) : events'
-                in  modelSpec' {mEvents = events}
+    let modelSpec' =
+            if fiBranchAge opts > 0.0
+            then
+                let events = ModelEvent 0.0 (SetFreeze l True) :
+                             ModelEvent (fiBranchAge opts) (SetFreeze l False) :
+                             ModelEvent (fiBranchAge opts) (SetPopSize l (fiBranchPopSize opts)) :
+                             mEvents modelSpec
+                in  modelSpec {mEvents = events}
             else
-                modelSpec'
-    tryAssert ("model must have free branch " ++ show l) $ hasFreeBranch l modelSpec
+                let events = ModelEvent 0.0 (SetPopSize l (fiBranchPopSize opts)) : mEvents modelSpec
+                in  modelSpec {mEvents = events}
+    tryAssert ("model must have free branch " ++ show l) $ hasFreeBranch l modelSpec'
     let nrPops = length $ raNVec hist
         allParamPairs = do
             branch <- [0..(nrPops - 1)]
             False <- return $ branch == l
-            False <- return $ isEmptyBranch modelSpec branch (fiBranchAge opts)
-            time <- getJoinTimes modelSpec (fiDeltaTime opts) (fiMaxTime opts) (fiBranchAge opts) 
+            False <- return $ isEmptyBranch modelSpec' branch (fiBranchAge opts)
+            time <- getJoinTimes modelSpec' (fiDeltaTime opts) (fiMaxTime opts) (fiBranchAge opts) 
                                   branch
             return (branch, time)
     allLikelihoods <- do
-            let f = (\(k, t) -> computeLikelihoodIO hist modelSpec k l t (fiNoShortcut opts))
+            let f = (\(k, t) -> computeLikelihoodIO hist modelSpec' k l t (fiNoShortcut opts))
             mapM f allParamPairs
     scriptIO $ writeResult (fiEvalPath opts) allParamPairs allLikelihoods
     let ((minBranch, minTime), minLL) = last . sortBy (\(_, ll1) (_, ll2) -> ll1 `compare` ll2) $

@@ -308,7 +308,7 @@ parseFind :: OP.Parser Command
 parseFind = CmdFind <$> parseFindOpt
 
 parseFindOpt :: OP.Parser FindOpt
-parseFindOpt = FindOpt <$> parseQueryBranch <*> parseEvalFile <*> parseBranchAge <*>
+parseFindOpt = FindOpt <$> parseQueryBranch <*> parseBranchPopSize <*> parseEvalFile <*> parseBranchAge <*>
                            parseDeltaTime <*> parseMaxTime <*> parseTheta <*>
                            parseModelDesc <*> parseMinAf <*>
                            parseMaxAf <*> parseConditioning <*> 
@@ -316,6 +316,8 @@ parseFindOpt = FindOpt <$> parseQueryBranch <*> parseEvalFile <*> parseBranchAge
                            parseNoShortcut <*> parseNrThreads
   where
     parseQueryBranch = (Left <$> parseQueryIndex) <|> (Right <$> parseQueryName)
+    parseBranchPopSize = OP.option OP.auto $ OP.long "branchPopSize" <> OP.metavar "FLOAT"
+        <> OP.help "branch population size" <> OP.value 1 <> OP.showDefault
     parseQueryIndex = OP.option OP.auto $ OP.short 'q' <> OP.long "queryIndex" <> OP.metavar "INT"
                                                        <> OP.help "0-based index of query branch"
     parseQueryName = OP.strOption $ OP.short 'n' <> OP.long "queryName" <> OP.metavar "STRING"
