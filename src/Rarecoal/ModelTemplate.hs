@@ -19,6 +19,7 @@ data ModelTemplate = ModelTemplate {
     mtParams :: [String],
     mtTheta :: Double,
     mtTimeSteps :: [Double],
+    mtDiscoveryRate :: [(BranchSpec, ParamSpec)],
     mtEventTemplates :: [EventTemplate],
     mtConstraintTemplates :: [ConstraintTemplate]
 } deriving (Eq, Show)
@@ -26,19 +27,23 @@ data ModelTemplate = ModelTemplate {
 type ParamSpec = Either Double String
 type BranchSpec = Either Int String
 
-data EventTemplate = JoinEventTemplate ParamSpec BranchSpec BranchSpec
-                   | SplitEventTemplate ParamSpec BranchSpec BranchSpec ParamSpec
-                   | PopSizeEventTemplate ParamSpec BranchSpec ParamSpec
-                   | JoinPopSizeEventTemplate ParamSpec BranchSpec BranchSpec ParamSpec
-                   | GrowthRateEventTemplate ParamSpec BranchSpec ParamSpec
-                   | MigrationRateEventTemplate ParamSpec BranchSpec BranchSpec ParamSpec
-                   deriving (Eq, Show)
+data EventTemplate =
+    JoinEventTemplate ParamSpec BranchSpec BranchSpec |
+    SplitEventTemplate ParamSpec BranchSpec BranchSpec ParamSpec |
+    PopSizeEventTemplate ParamSpec BranchSpec ParamSpec |
+    JoinPopSizeEventTemplate ParamSpec BranchSpec BranchSpec ParamSpec |
+    GrowthRateEventTemplate ParamSpec BranchSpec ParamSpec |
+    MigrationRateEventTemplate ParamSpec BranchSpec BranchSpec ParamSpec
+    deriving (Eq, Show)
 
-data ConstraintTemplate = SmallerConstraintTemplate ParamSpec ParamSpec
-                        | GreaterConstraintTemplate ParamSpec ParamSpec
-                        deriving (Eq, Show)
+data ConstraintTemplate =
+    SmallerConstraintTemplate ParamSpec ParamSpec |
+    GreaterConstraintTemplate ParamSpec ParamSpec
+    deriving (Eq, Show)
 
-data ModelDesc = ModelDescTemplate FilePath ParamsDesc | ModelDescDirect [ModelEvent] 
+data ModelDesc =
+    ModelDescTemplate FilePath ParamsDesc [ModelEvent] |
+    ModelDescDirect [(String, Double)] [ModelEvent] 
 type ParamsDesc = Either (FilePath, [(String, Double)]) [Double]
 
 getInitialParams :: ModelTemplate -> ParamsDesc -> Script (V.Vector Double)
@@ -46,11 +51,14 @@ getInitialParams modelTemplate paramsDesc = do
     case paramsDesc of
         Left (paramsFile, additionalParams) -> do
             l <- lines <$> (scriptIO . readFile $ paramsFile)
-            ret <- if (head . head $ l) == '#' then -- aha, have rarecoal mcmc output file
-                    loadFromDict [(k, read $ v !! 2) | (k : v) <- map words . drop 3 $ l] 
-                                 additionalParams
+            ret <- if (head . head $ l) == '#'
+                then -- aha, have rarecoal mcmc output file
+                    loadFromDict
+                        [(k, read $ v !! 2) | (k : v) <- map words . drop 3 $ l] 
+                        additionalParams
                 else -- aha, have rarecoal maxl output file
-                    loadFromDict [(k, read v) | [k, v] <- map words $ l] additionalParams
+                    loadFromDict
+                        [(k, read v) | [k, v] <- map words $ l] additionalParams
             scriptIO . infoM "rarecoal" $ "initial parameters: " ++ show ret
             return ret
         Right x -> return . V.fromList $ x
@@ -60,21 +68,26 @@ getInitialParams modelTemplate paramsDesc = do
             case p `lookup` additionalParams of
                 Just x -> return x
                 Nothing -> do
-                    let err' = "parameter " ++ show p ++ " in the Model Template not set"
+                    let err' = "parameter " ++ show p ++
+                            " in the Model Template not set"
                     tryJust err' $ p `lookup` dict
 
 readModelTemplate :: FilePath -> Double -> [Double] -> Script ModelTemplate
 readModelTemplate path theta timeSteps = do
     c <- scriptIO $ T.readFile path
-    (names, events, constraints) <- tryRight $ A.parseOnly (parseModelTemplate <* A.endOfInput) c
-    return $ ModelTemplate names theta timeSteps events constraints
+    (names, discoveryRates, events, constraints) <- tryRight $
+        A.parseOnly (parseModelTemplate <* A.endOfInput) c
+    return $
+        ModelTemplate names theta timeSteps discoveryRates events constraints
 
-parseModelTemplate :: A.Parser ([String], [EventTemplate], [ConstraintTemplate])
+parseModelTemplate :: A.Parser ([String], [(BranchSpec, ParamSpec)],
+    [EventTemplate], [ConstraintTemplate])
 parseModelTemplate = do
     params <- parseParams
+    discoveryRates <- A.many' parseDiscoveryRate
     events <- parseEvents
     constraints <- parseConstraints
-    return (params, events, constraints)
+    return (params, discoveryRates, events, constraints)
 
 parseParams :: A.Parser [String]
 parseParams = do
@@ -84,6 +97,16 @@ parseParams = do
 
 parseParamName :: A.Parser String
 parseParamName = unpack <$> A.takeWhile (\c -> isAlphaNum c || c == '_')
+
+parseDiscoveryRate :: A.Parser (BranchSpec, ParamSpec)
+parseDiscoveryRate = do
+    _ <- A.char 'D'
+    _ <- A.space
+    k <- parseEitherBranch
+    _ <- A.space
+    d <- parseEitherParam
+    A.endOfLine
+    return (k, d) 
 
 parseEvents :: A.Parser [EventTemplate]
 parseEvents = A.many' (parsePopSizeEvent <|> parseJoinEvent <|> parseSplitEvent <|> 
@@ -195,12 +218,25 @@ parseConstraints = A.many' $ (A.try parseSmallerConstraint <|> parseGreaterConst
         A.endOfLine
         return $ GreaterConstraintTemplate name1 name2
 
-instantiateModel :: ModelTemplate -> V.Vector Double -> [String] -> Either String ModelSpec
-instantiateModel (ModelTemplate pNames theta timeSteps ets cts) params branchNames = do
+instantiateModel :: ModelTemplate -> V.Vector Double -> [String] ->
+    Either String ModelSpec
+instantiateModel (ModelTemplate pNames theta timeSteps drates ets cts) params
+        branchNames = do
     let params' = V.toList params
+    dr <- do
+        indexValuePairs <-
+            mapM (instantiateDiscoveryRates pNames params' branchNames) drates
+        return . V.toList $ V.replicate (length pNames) 1.0 V.// indexValuePairs
     events <- mapM (instantiateEvent pNames params' branchNames) ets
     mapM_ (validateConstraint pNames params') cts
-    return $ ModelSpec timeSteps theta (concat events)
+    return $ ModelSpec timeSteps theta dr (concat events)
+
+instantiateDiscoveryRates :: [String] -> [Double] -> [String] ->
+    (BranchSpec, ParamSpec) -> Either String (Int, Double)
+instantiateDiscoveryRates pnames params branchNames (k, r) = do
+    k' <- substituteBranch branchNames k
+    r' <- substituteParam pnames params r
+    return (k', r')
 
 instantiateEvent :: [String] -> [Double] -> [String] -> EventTemplate -> Either String [ModelEvent]
 instantiateEvent pnames params branchNames et = do
@@ -240,9 +276,13 @@ instantiateEvent pnames params branchNames et = do
             return [ModelEvent t' (SetMigration k' l' r')]
   where
     getEitherParam = substituteParam pnames params
-    getEitherBranch k = case k of
-        Left k' -> return k'
-        Right n -> justErr ("did not find branch name " ++ n) $ lookup n (zip branchNames [0..])
+    getEitherBranch k = substituteBranch branchNames k
+
+substituteBranch :: [String] -> BranchSpec -> Either String Int
+substituteBranch branchNames branchSpec = case branchSpec of
+    Left k' -> return k'
+    Right n -> justErr ("did not find branch name " ++ n) $
+        lookup n (zip branchNames [0..])
 
 substituteParam :: [String] -> [Double] -> ParamSpec -> Either String Double
 substituteParam _ _ (Left val) = Right val
@@ -269,11 +309,18 @@ validateConstraint pNames params ct =
 getModelSpec :: ModelDesc -> [String] -> Double -> Int -> Script ModelSpec
 getModelSpec modelDesc branchNames theta lingen =
     case modelDesc of
-        ModelDescTemplate path paramsDesc -> do
+        ModelDescTemplate path paramsDesc additionalEvents -> do
             template <- readModelTemplate path theta times
             x' <- getInitialParams template paramsDesc
-            tryRight $ instantiateModel template x' branchNames
-        ModelDescDirect events ->
-            return $ ModelSpec times theta events
+            modelSpec <- tryRight $ instantiateModel template x' branchNames
+            let e = mEvents modelSpec
+            return $ modelSpec {mEvents = e ++ additionalEvents}
+        ModelDescDirect discoveryRates events -> do
+            indexValuePairs <- forM discoveryRates $ \(branchName, rate) -> do
+                k <- tryRight $ substituteBranch branchNames (Right branchName)
+                return (k, rate)
+            let dr = V.toList $
+                    V.replicate (length branchNames) 1.0 V.// indexValuePairs 
+            return $ ModelSpec times theta dr events
   where
     times = getTimeSteps 20000 lingen 20.0

@@ -17,6 +17,7 @@ import System.Log.Logger (infoM)
 data MaxlOpt = MaxlOpt {
    maTheta :: Double,
    maTemplatePath :: FilePath,
+   maAdditionalEvents :: [ModelEvent],
    maParamsDesc :: ParamsDesc,
    maMaxCycles :: Int,
    maNrRestarts :: Int,
@@ -39,8 +40,9 @@ runMaxl opts = do
     modelTemplate <- readModelTemplate (maTemplatePath opts) (maTheta opts) times
     hist <- loadHistogram (maMinAf opts) (maMaxAf opts) (maConditionOn opts) (maHistPath opts)
     x <- getInitialParams modelTemplate (maParamsDesc opts)
-    _ <- tryRight $ minFunc modelTemplate [] hist x
-    let minFunc' = either (const penalty) id . minFunc modelTemplate [] hist
+    let extraEvents = maAdditionalEvents opts
+    _ <- tryRight $ minFunc modelTemplate extraEvents hist x
+    let minFunc' = either (const penalty) id . minFunc modelTemplate extraEvents hist
         minimizationRoutine = minimizeV (maMaxCycles opts) minFunc'
     (minResult, trace) <- scriptIO $ minimizeWithRestarts (maNrRestarts opts) minimizationRoutine x
     scriptIO $ reportMaxResult modelTemplate minResult (minFunc' minResult)

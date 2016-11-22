@@ -12,6 +12,7 @@ template = ModelTemplate {
     mtParams = ["p0","p1","p2","p3","p4","t01","t23","t24","t02","p01","p23","p24","p02"],
     mtTheta = 0.0005,
     mtTimeSteps = defaultTimes,
+    mtDiscoveryRate = [],
     mtEventTemplates = [ PopSizeEventTemplate (Left 0.0) (Left 0) (Right "p0")
                        , PopSizeEventTemplate (Left 0.0) (Left 1) (Right "p1")
                        , PopSizeEventTemplate (Left 0.0) (Left 2) (Right "p2")

@@ -39,6 +39,7 @@ data EventType = Join Int Int
 data ModelSpec = ModelSpec {
     mTimeSteps :: [Double],
     mTheta :: Double,
+    mDiscoveryRates :: [Double],
     mEvents :: [ModelEvent]
 } deriving (Show)
 
@@ -75,13 +76,17 @@ getProb modelSpec nVec noShortcut config = do
             propagateStates ms cs timeSteps noShortcut
             readSTRef (_csD cs)
         combFac = product $ zipWith choose nVec config
-        err = "Overflow Error in getProb for nVec=" ++ show nVec ++ ", kVec=" ++ show config
+        discoveryRateFactor =
+            product [if c > 0 then d else 1.0 |
+                (c, d) <- zip config (mDiscoveryRates modelSpec)]
     assertErr err $ combFac > 0
     --trace (show $ combFac) $ return ()
-    return $ d * mTheta modelSpec * combFac
+    return $ d * mTheta modelSpec * combFac * discoveryRateFactor
+  where
+    err = "Overflow Error in getProb for nVec=" ++ show nVec ++ ", kVec=" ++ show config
 
 makeInitModelState :: ModelSpec -> Int -> ST s (ModelState s)
-makeInitModelState (ModelSpec _ _ events) nrPop = do
+makeInitModelState (ModelSpec _ _ _ events) nrPop = do
     sortedEvents <- newSTRef $ sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) ->
                                        time1 `compare` time2) events
     t <- newSTRef 0.0
@@ -357,8 +362,9 @@ updateModelState ms cs deltaT = do
     modifySTRef (_msT ms) (+deltaT)
 
 validateModel :: ModelSpec -> Either String ()
-validateModel (ModelSpec _ _ events) = do
+validateModel (ModelSpec _ _ dr events) = do
     when (or [t < 0 | ModelEvent t _ <- events]) $ Left "Negative event times"
+    when (or [r <= 0 || r > 1 | r <- dr]) $ Left "illegal discovery Rate"
     let sortedEvents =
             sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) -> time1 `compare` time2) events
     checkEvents sortedEvents

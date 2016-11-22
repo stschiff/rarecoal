@@ -12,7 +12,7 @@ import System.IO (stderr, hPutStrLn, openFile, IOMode(..), hClose)
 
 data FindOpt = FindOpt {
     fiQueryBranch :: BranchSpec,
-    fiBranchPopSize :: Double,
+    -- fiBranchPopSize :: Double,
     fiEvalPath :: FilePath,
     fiBranchAge :: Double,
     fiDeltaTime :: Double,
@@ -40,17 +40,15 @@ runFind opts = do
     hist <- loadHistogram (fiMinAf opts) (fiMaxAf opts) (fiConditionOn opts) (fiHistPath opts)
     modelSpec <- getModelSpec (fiModelDesc opts) (raNames hist) (fiTheta opts) (fiLinGen opts)
     l <- findQueryIndex (raNames hist) (fiQueryBranch opts)
-    let modelSpec' =
+    let modelSpec' = 
             if fiBranchAge opts > 0.0
             then
-                let events = ModelEvent 0.0 (SetFreeze l True) :
-                             ModelEvent (fiBranchAge opts) (SetFreeze l False) :
-                             ModelEvent (fiBranchAge opts) (SetPopSize l (fiBranchPopSize opts)) :
-                             mEvents modelSpec
+                let events = ModelEvent 0.0 (SetFreeze l True) : mEvents modelSpec
                 in  modelSpec {mEvents = events}
             else
-                let events = ModelEvent 0.0 (SetPopSize l (fiBranchPopSize opts)) : mEvents modelSpec
-                in  modelSpec {mEvents = events}
+                modelSpec
+                -- let events = ModelEvent 0.0 (SetPopSize l (fiBranchPopSize opts)) : mEvents modelSpec
+                -- in  modelSpec {mEvents = events}
     tryAssert ("model must have free branch " ++ show l) $ hasFreeBranch l modelSpec'
     let nrPops = length $ raNVec hist
         allParamPairs = do
