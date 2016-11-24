@@ -103,7 +103,7 @@ parseDiscoveryRate = do
     _ <- A.char 'D'
     _ <- A.space
     k <- parseEitherBranch
-    _ <- A.space
+    _ <- A.char ','
     d <- parseEitherParam
     A.endOfLine
     return (k, d) 
