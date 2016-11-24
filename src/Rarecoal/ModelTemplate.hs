@@ -226,7 +226,7 @@ instantiateModel (ModelTemplate pNames theta timeSteps drates ets cts) params
     dr <- do
         indexValuePairs <-
             mapM (instantiateDiscoveryRates pNames params' branchNames) drates
-        return . V.toList $ V.replicate (length pNames) 1.0 V.// indexValuePairs
+        return . V.toList $ V.replicate (length branchNames) 1.0 V.// indexValuePairs
     events <- mapM (instantiateEvent pNames params' branchNames) ets
     mapM_ (validateConstraint pNames params') cts
     return $ ModelSpec timeSteps theta dr (concat events)
