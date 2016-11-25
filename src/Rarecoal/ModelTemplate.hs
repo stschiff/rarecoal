@@ -42,7 +42,7 @@ data ConstraintTemplate =
     deriving (Eq, Show)
 
 data ModelDesc =
-    ModelDescTemplate FilePath ParamsDesc [ModelEvent] |
+    ModelDescTemplate FilePath ParamsDesc [(String, Double)] [ModelEvent] |
     ModelDescDirect [(String, Double)] [ModelEvent] 
 type ParamsDesc = Either (FilePath, [(String, Double)]) [Double]
 
@@ -309,12 +309,18 @@ validateConstraint pNames params ct =
 getModelSpec :: ModelDesc -> [String] -> Double -> Int -> Script ModelSpec
 getModelSpec modelDesc branchNames theta lingen =
     case modelDesc of
-        ModelDescTemplate path paramsDesc additionalEvents -> do
+        ModelDescTemplate path paramsDesc discoveryRates additionalEvents -> do
             template <- readModelTemplate path theta times
             x' <- getInitialParams template paramsDesc
             modelSpec <- tryRight $ instantiateModel template x' branchNames
+            indexValuePairs <- forM discoveryRates $ \(branchName, rate) -> do
+                k <- tryRight $ substituteBranch branchNames (Right branchName)
+                return (k, rate)
             let e = mEvents modelSpec
-            return $ modelSpec {mEvents = e ++ additionalEvents}
+                d = V.fromList $ mDiscoveryRates modelSpec
+                d' = V.toList $ d V.// indexValuePairs
+            return $ modelSpec {mEvents = e ++ additionalEvents,
+                mDiscoveryRates = d'}
         ModelDescDirect discoveryRates events -> do
             indexValuePairs <- forM discoveryRates $ \(branchName, rate) -> do
                 k <- tryRight $ substituteBranch branchNames (Right branchName)
