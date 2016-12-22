@@ -2,29 +2,33 @@ module Rarecoal.Core (defaultTimes, getTimeSteps, getProb, validateModel, choose
                       ModelEvent(..), EventType(..), ModelSpec(..), popJoinA,
                       popJoinB, popSplitA, popSplitB) where
 
-import Rarecoal.StateSpace (JointStateSpace(..), makeJointStateSpace, getNonZeroStates)
+import           Rarecoal.StateSpace         (JointStateSpace (..),
+                                              getNonZeroStates,
+                                              makeJointStateSpace)
 
-import Control.Error.Safe (assertErr)
-import Control.Exception.Base (assert)
-import Control.Monad (when, forM_, forM, foldM, filterM, (>=>))
-import Control.Monad.ST (runST, ST)
-import Data.List (sortBy, nub)
-import Data.STRef (STRef, readSTRef, newSTRef, modifySTRef, writeSTRef)
-import qualified Data.Vector.Unboxed as V
+import           Control.Error.Safe          (assertErr)
+import           Control.Exception.Base      (assert)
+import           Control.Monad               (filterM, foldM, forM, forM_, when,
+                                              (>=>))
+import           Control.Monad.ST            (ST, runST)
+import           Data.List                   (nub, sortBy)
+import           Data.STRef                  (STRef, modifySTRef, newSTRef,
+                                              readSTRef, writeSTRef)
+import qualified Data.Vector.Unboxed         as V
 import qualified Data.Vector.Unboxed.Mutable as VM
 -- import Debug.Trace (trace)
 
 data CoalState s = CoalState {
-    _csA :: VM.MVector s Double,
-    _csB :: VM.MVector s Double,
-    _csBtemp :: VM.MVector s Double,
+    _csA             :: VM.MVector s Double,
+    _csB             :: VM.MVector s Double,
+    _csBtemp         :: VM.MVector s Double,
     _csNonZeroStates :: STRef s [Int],
-    _csD :: STRef s Double,
-    _csStateSpace :: JointStateSpace
+    _csD             :: STRef s Double,
+    _csStateSpace    :: JointStateSpace
 }
 
 data ModelEvent = ModelEvent {
-    meTime :: Double,
+    meTime      :: Double,
     meEventType ::EventType
 } deriving (Show, Read)
 
@@ -37,18 +41,18 @@ data EventType = Join Int Int
                deriving (Show, Read)
 
 data ModelSpec = ModelSpec {
-    mTimeSteps :: [Double],
-    mTheta :: Double,
+    mTimeSteps      :: [Double],
+    mTheta          :: Double,
     mDiscoveryRates :: [Double],
-    mEvents :: [ModelEvent]
+    mEvents         :: [ModelEvent]
 } deriving (Show)
 
 data ModelState s = ModelState {
-    _msT :: STRef s Double,
-    _msEventQueue :: STRef s [ModelEvent],
-    _msPopSize :: VM.MVector s Double,
-    _msGrowthRates :: VM.MVector s Double,
-    _msFreezeState :: VM.MVector s Bool,
+    _msT              :: STRef s Double,
+    _msEventQueue     :: STRef s [ModelEvent],
+    _msPopSize        :: VM.MVector s Double,
+    _msGrowthRates    :: VM.MVector s Double,
+    _msFreezeState    :: VM.MVector s Bool,
     _msMigrationRates :: STRef s [(Int, Int, Double)]
 }
 
@@ -105,7 +109,7 @@ makeInitCoalState nVec config = do
         jointStateSpace = makeJointStateSpace nrPop maxAf
         initialId = (_jsStateToId jointStateSpace) initialState
     b <- VM.replicate (_jsNrStates jointStateSpace) 0.0
-    -- trace (show ("makeInitCoalState", _jsNrStates jointStateSpace, initialState, initialId)) $ 
+    -- trace (show ("makeInitCoalState", _jsNrStates jointStateSpace, initialState, initialId)) $
     --        return ()
     VM.write b initialId 1.0
     nonZeroStates <- newSTRef (getNonZeroStates jointStateSpace [initialId])
@@ -132,7 +136,7 @@ canUseShortcut ms cs = do
     r <- V.freeze $ _msGrowthRates ms
     e <- readSTRef $ _msEventQueue ms
     return $ allDerivedHaveCoalesced && allAncestralHaveCoalesced && V.all (==0.0) r && null e
-    
+
 propagateStateShortcut :: ModelState s -> CoalState s -> ST s ()
 propagateStateShortcut ms cs = do
     let stateSpace = _csStateSpace cs
@@ -251,14 +255,14 @@ popJoinB bVec bVecTemp nonZeroStateRef stateSpace k l = do
 popSplit :: CoalState s -> Int -> Int -> Double -> ST s ()
 popSplit cs k l m = do
     popSplitA (_csA cs) k l m
-    popSplitB (_csB cs) (_csBtemp cs) (_csNonZeroStates cs) (_csStateSpace cs) k l m 
+    popSplitB (_csB cs) (_csBtemp cs) (_csNonZeroStates cs) (_csStateSpace cs) k l m
 
-popSplitA :: VM.MVector s Double -> Int -> Int -> Double -> ST s ()  
+popSplitA :: VM.MVector s Double -> Int -> Int -> Double -> ST s ()
 popSplitA aVec k l m = do
     al <- VM.read aVec l
     ak <- VM.read aVec k
     VM.write aVec l $ (1.0 - m) * al
-    VM.write aVec k $ (m * al + ak)
+    VM.write aVec k (m * al + ak)
 
 popSplitB :: VM.MVector s Double -> VM.MVector s Double -> STRef s [Int] -> JointStateSpace ->
              Int -> Int -> Double -> ST s ()
@@ -278,7 +282,7 @@ popSplitB bVec bVecTemp nonZeroStateRef stateSpace k l m = do
             VM.write bVecTemp xId' (val + oldProb * binomialFactor)
             return xId'
     VM.copy bVec bVecTemp
-    filteredNonZeroStates <- filterM (VM.read bVec >=> (\x -> return $ x>0.0)) $ newNonZeroStateIds
+    filteredNonZeroStates <- filterM (VM.read bVec >=> (\x -> return $ x>0.0)) newNonZeroStateIds
     writeSTRef nonZeroStateRef $ getNonZeroStates stateSpace (nub filteredNonZeroStates)
 
 updateCoalState :: ModelState s -> CoalState s -> Double -> ST s ()
@@ -312,7 +316,7 @@ updateB ms cs deltaT = do
             -- explicit definitions to introduce automatic CAFs for profiling
             f1 = foldM (t1TermHelper x (_msPopSize ms) (_csA cs) (_msFreezeState ms)) 0
                        [0..(nrPop - 1)]
-            f2 = foldM (t2TermHelper (_csB cs) x1ups x (_msPopSize ms) (_msFreezeState ms)) 0 
+            f2 = foldM (t2TermHelper (_csB cs) x1ups x (_msPopSize ms) (_msFreezeState ms)) 0
                        [0..(nrPop - 1)]
         t1 <- f1
         t2 <- f2

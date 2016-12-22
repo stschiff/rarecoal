@@ -1,26 +1,28 @@
-module Rarecoal.ModelTemplate (getInitialParams, ModelTemplate(..), readModelTemplate, 
+module Rarecoal.ModelTemplate (getInitialParams, ModelTemplate(..), readModelTemplate,
                                instantiateModel, ModelDesc(..),
                                getModelSpec, EventTemplate(..), ParamsDesc, BranchSpec) where
 
-import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..), EventType(..))
+import           Rarecoal.Core        (EventType (..), ModelEvent (..),
+                                       ModelSpec (..), getTimeSteps)
 
-import Control.Applicative ((<|>))
-import Control.Error (Script, scriptIO, tryRight, tryJust, assertErr, justErr)
-import Control.Monad (when, forM)
+import           Control.Applicative  ((<|>))
+import           Control.Error        (Script, assertErr, justErr, scriptIO,
+                                       tryJust, tryRight)
+import           Control.Monad        (forM, when)
 import qualified Data.Attoparsec.Text as A
-import Data.Char (isAlphaNum)
+import           Data.Char            (isAlphaNum)
 -- import Debug.Trace (trace)
-import System.Log.Logger (infoM)
-import Data.Text (unpack)
-import qualified Data.Text.IO as T
-import qualified Data.Vector.Unboxed as V
+import           Data.Text            (unpack)
+import qualified Data.Text.IO         as T
+import qualified Data.Vector.Unboxed  as V
+import           System.Log.Logger    (infoM)
 
 data ModelTemplate = ModelTemplate {
-    mtParams :: [String],
-    mtTheta :: Double,
-    mtTimeSteps :: [Double],
-    mtDiscoveryRate :: [(BranchSpec, ParamSpec)],
-    mtEventTemplates :: [EventTemplate],
+    mtParams              :: [String],
+    mtTheta               :: Double,
+    mtTimeSteps           :: [Double],
+    mtDiscoveryRate       :: [(BranchSpec, ParamSpec)],
+    mtEventTemplates      :: [EventTemplate],
     mtConstraintTemplates :: [ConstraintTemplate]
 } deriving (Eq, Show)
 
@@ -43,28 +45,28 @@ data ConstraintTemplate =
 
 data ModelDesc =
     ModelDescTemplate FilePath ParamsDesc [ModelEvent] |
-    ModelDescDirect [(String, Double)] [ModelEvent] 
+    ModelDescDirect [(String, Double)] [ModelEvent]
 type ParamsDesc = Either (FilePath, [(String, Double)]) [Double]
 
 getInitialParams :: ModelTemplate -> ParamsDesc -> Script (V.Vector Double)
-getInitialParams modelTemplate paramsDesc = do
+getInitialParams modelTemplate paramsDesc =
     case paramsDesc of
         Left (paramsFile, additionalParams) -> do
             l <- lines <$> (scriptIO . readFile $ paramsFile)
             ret <- if (head . head $ l) == '#'
                 then -- aha, have rarecoal mcmc output file
                     loadFromDict
-                        [(k, read $ v !! 2) | (k : v) <- map words . drop 3 $ l] 
+                        [(k, read $ v !! 2) | (k : v) <- map words . drop 3 $ l]
                         additionalParams
                 else -- aha, have rarecoal maxl output file
                     loadFromDict
-                        [(k, read v) | [k, v] <- map words $ l] additionalParams
+                        [(k, read v) | [k, v] <- map words l] additionalParams
             scriptIO . infoM "rarecoal" $ "initial parameters: " ++ show ret
             return ret
         Right x -> return . V.fromList $ x
   where
     loadFromDict dict additionalParams =
-        fmap V.fromList . forM (mtParams modelTemplate) $ \p -> do
+        fmap V.fromList . forM (mtParams modelTemplate) $ \p ->
             case p `lookup` additionalParams of
                 Just x -> return x
                 Nothing -> do
@@ -106,10 +108,10 @@ parseDiscoveryRate = do
     _ <- A.space
     d <- parseEitherParam
     A.endOfLine
-    return (k, d) 
+    return (k, d)
 
 parseEvents :: A.Parser [EventTemplate]
-parseEvents = A.many' (parsePopSizeEvent <|> parseJoinEvent <|> parseSplitEvent <|> 
+parseEvents = A.many' (parsePopSizeEvent <|> parseJoinEvent <|> parseSplitEvent <|>
                        parseJoinPopSizeEvent <|> parseGrowthRateEvent <|> parseMigrationRateEvent)
 
 parsePopSizeEvent :: A.Parser EventTemplate
@@ -125,7 +127,7 @@ parsePopSizeEvent = do
     return $ PopSizeEventTemplate t k n
 
 parseEitherParam :: A.Parser ParamSpec
-parseEitherParam = (Left <$> A.double) <|> (Right <$> (A.char '<' *> parseParamName <* A.char '>')) 
+parseEitherParam = (Left <$> A.double) <|> (Right <$> (A.char '<' *> parseParamName <* A.char '>'))
 
 parseEitherBranch :: A.Parser BranchSpec
 parseEitherBranch = (Left <$> A.decimal) <|> (Right <$> (A.char '"' *> parseBranchName <* A.char '"'))
@@ -320,7 +322,7 @@ getModelSpec modelDesc branchNames theta lingen =
                 k <- tryRight $ substituteBranch branchNames (Right branchName)
                 return (k, rate)
             let dr = V.toList $
-                    V.replicate (length branchNames) 1.0 V.// indexValuePairs 
+                    V.replicate (length branchNames) 1.0 V.// indexValuePairs
             return $ ModelSpec times theta dr events
   where
     times = getTimeSteps 20000 lingen 20.0
