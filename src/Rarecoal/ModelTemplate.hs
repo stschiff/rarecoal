@@ -44,7 +44,7 @@ data ConstraintTemplate =
     deriving (Eq, Show)
 
 data ModelDesc =
-    ModelDescTemplate FilePath ParamsDesc [ModelEvent] |
+    ModelDescTemplate FilePath ParamsDesc [(String, Double)] [ModelEvent] |
     ModelDescDirect [(String, Double)] [ModelEvent]
 type ParamsDesc = Either (FilePath, [(String, Double)]) [Double]
 
@@ -105,7 +105,7 @@ parseDiscoveryRate = do
     _ <- A.char 'D'
     _ <- A.space
     k <- parseEitherBranch
-    _ <- A.space
+    _ <- A.char ','
     d <- parseEitherParam
     A.endOfLine
     return (k, d)
@@ -228,7 +228,7 @@ instantiateModel (ModelTemplate pNames theta timeSteps drates ets cts) params
     dr <- do
         indexValuePairs <-
             mapM (instantiateDiscoveryRates pNames params' branchNames) drates
-        return . V.toList $ V.replicate (length pNames) 1.0 V.// indexValuePairs
+        return . V.toList $ V.replicate (length branchNames) 1.0 V.// indexValuePairs
     events <- mapM (instantiateEvent pNames params' branchNames) ets
     mapM_ (validateConstraint pNames params') cts
     return $ ModelSpec timeSteps theta dr (concat events)
@@ -311,12 +311,18 @@ validateConstraint pNames params ct =
 getModelSpec :: ModelDesc -> [String] -> Double -> Int -> Script ModelSpec
 getModelSpec modelDesc branchNames theta lingen =
     case modelDesc of
-        ModelDescTemplate path paramsDesc additionalEvents -> do
+        ModelDescTemplate path paramsDesc discoveryRates additionalEvents -> do
             template <- readModelTemplate path theta times
             x' <- getInitialParams template paramsDesc
             modelSpec <- tryRight $ instantiateModel template x' branchNames
+            indexValuePairs <- forM discoveryRates $ \(branchName, rate) -> do
+                k <- tryRight $ substituteBranch branchNames (Right branchName)
+                return (k, rate)
             let e = mEvents modelSpec
-            return $ modelSpec {mEvents = e ++ additionalEvents}
+                d = V.fromList $ mDiscoveryRates modelSpec
+                d' = V.toList $ d V.// indexValuePairs
+            return $ modelSpec {mEvents = e ++ additionalEvents,
+                mDiscoveryRates = d'}
         ModelDescDirect discoveryRates events -> do
             indexValuePairs <- forM discoveryRates $ \(branchName, rate) -> do
                 k <- tryRight $ substituteBranch branchNames (Right branchName)

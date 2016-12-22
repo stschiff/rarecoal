@@ -100,17 +100,21 @@ parseModelDesc :: OP.Parser ModelDesc
 parseModelDesc = parseModelDescTemplate <|> parseModelDescDirect
   where
     parseModelDescDirect = ModelDescDirect <$> many parseDiscoveryRates <*> parseModelEvents
-    parseDiscoveryRates = OP.option (readKeyValuePair <$> OP.str) $
-        OP.long "discoveryRate" <> OP.metavar "POP=VAL" <>
-        OP.help "set the discovery rate for a specific branch. By default, \
-        \all discovery rates are 1, you can use this option to lower them for \
-        \a specific sample/population."
+
+parseDiscoveryRates :: OP.Parser (String, Double)
+parseDiscoveryRates = OP.option (readKeyValuePair <$> OP.str) $
+    OP.long "discoveryRate" <> OP.metavar "POP=VAL" <>
+    OP.help "set the discovery rate for a specific branch. By default, \
+    \all discovery rates are 1, you can use this option to lower them for \
+    \a specific sample/population."
+  where
     readKeyValuePair s =
         let [key, valS] = splitOn "=" s
         in  (key, read valS)
 
 parseModelDescTemplate :: OP.Parser ModelDesc
-parseModelDescTemplate = ModelDescTemplate <$> parseTemplateFilePath <*> parseParamsDesc <*> parseModelEvents
+parseModelDescTemplate = ModelDescTemplate <$> parseTemplateFilePath <*>
+    parseParamsDesc <*> many parseDiscoveryRates <*> parseModelEvents
 
 parseTemplateFilePath :: OP.Parser FilePath
 parseTemplateFilePath = OP.strOption $ OP.short 'T' <> OP.long "template" <>
