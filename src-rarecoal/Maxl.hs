@@ -2,7 +2,7 @@ module Maxl (minFunc, penalty, runMaxl, MaxlOpt(..)) where
 
 import Logl (computeLikelihood)
 import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..))
-import Rarecoal.ModelTemplate (ModelTemplate(..), instantiateModel, readModelTemplate, 
+import Rarecoal.ModelTemplate (ModelTemplate(..), instantiateModel, readModelTemplate,
                                getInitialParams, ParamsDesc)
 import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), loadHistogram)
 
@@ -25,6 +25,7 @@ data MaxlOpt = MaxlOpt {
    maMinAf :: Int,
    maMaxAf :: Int,
    maConditionOn :: [Int],
+   maExcludePatterns :: [[Int]],
    maLinGen :: Int,
    maHistPath :: FilePath,
    maNrThreads :: Int
@@ -33,12 +34,15 @@ data MaxlOpt = MaxlOpt {
 runMaxl :: MaxlOpt -> Script ()
 runMaxl opts = do
     nrProc <- scriptIO getNumProcessors
-    if (maNrThreads opts == 0) then scriptIO $ setNumCapabilities nrProc else scriptIO $ setNumCapabilities (maNrThreads opts)
+    if maNrThreads opts == 0
+        then scriptIO $ setNumCapabilities nrProc
+        else scriptIO $ setNumCapabilities (maNrThreads opts)
     nrThreads <- scriptIO getNumCapabilities
     scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
     let times = getTimeSteps 20000 (maLinGen opts) 20.0
     modelTemplate <- readModelTemplate (maTemplatePath opts) (maTheta opts) times
-    hist <- loadHistogram (maMinAf opts) (maMaxAf opts) (maConditionOn opts) (maHistPath opts)
+    hist <- loadHistogram (maMinAf opts) (maMaxAf opts) (maConditionOn opts)
+        (maExcludePatterns opts) (maHistPath opts)
     x <- getInitialParams modelTemplate (maParamsDesc opts)
     let extraEvents = maAdditionalEvents opts
     _ <- tryRight $ minFunc modelTemplate extraEvents hist x
@@ -65,7 +69,7 @@ minimizeWithRestarts nrRestarts minimizationRoutine initialParams =
     go 0 _ (res, trace) = return (res, trace)
     go n minR (res, trace) = do
         infoM "rarecoal" $ "minimizing from point " ++ show res
-        let (newRes, newTrace) = minR res 
+        let (newRes, newTrace) = minR res
         go (n - 1) minR (newRes, trace ++ newTrace)
 
 reportMaxResult :: ModelTemplate -> V.Vector Double -> Double -> IO ()
@@ -76,7 +80,7 @@ reportMaxResult modelTemplate result minScore = do
 reportTrace :: ModelTemplate -> [V.Vector Double] -> FilePath -> IO ()
 reportTrace modelTemplate trace path = do
     let header = intercalate "\t" $ ["Nr", "-Log-Likelihood", "Simplex size"] ++ mtParams modelTemplate
-        body = map (intercalate "\t" . map show . V.toList) $ trace
+        body = map (intercalate "\t" . map show . V.toList) trace
     writeFile path . unlines $ header : body
 
 minFunc :: ModelTemplate -> [ModelEvent] -> RareAlleleHistogram -> V.Vector Double -> Either String Double
@@ -92,5 +96,3 @@ minFunc modelTemplate extraEvents hist params = do
 
 penalty :: Double
 penalty = 1.0e20
-
-

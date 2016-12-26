@@ -10,7 +10,7 @@ import           Rarecoal.RareAlleleHistogram (SitePattern (..))
 import           SimCommand                   (SimCommandOpt (..),
                                                runSimCommand)
 
-import           Control.Applicative          (many, (<|>))
+import           Control.Applicative          ((<|>), optional)
 import           Control.Error.Script         (runScript, scriptIO)
 import           Data.List.Split              (splitOn)
 import           Data.Monoid                  ((<>))
@@ -97,9 +97,7 @@ parseTheta = OP.option OP.auto $ OP.short 't' <> OP.long "theta" <> OP.hidden <>
                                 \should rarely be changed from the default."
 
 parseModelDesc :: OP.Parser ModelDesc
-parseModelDesc = parseModelDescTemplate <|> parseModelDescDirect
-  where
-    parseModelDescDirect = ModelDescDirect <$> many parseDiscoveryRates <*> parseModelEvents
+parseModelDesc = ModelDesc <$> OP.many parseDiscoveryRates <*> parseModelEvents <*> optional parseModelDescTemplate
 
 parseDiscoveryRates :: OP.Parser (String, Double)
 parseDiscoveryRates = OP.option (readKeyValuePair <$> OP.str) $
@@ -112,9 +110,8 @@ parseDiscoveryRates = OP.option (readKeyValuePair <$> OP.str) $
         let [key, valS] = splitOn "=" s
         in  (key, read valS)
 
-parseModelDescTemplate :: OP.Parser ModelDesc
-parseModelDescTemplate = ModelDescTemplate <$> parseTemplateFilePath <*>
-    parseParamsDesc <*> many parseDiscoveryRates <*> parseModelEvents
+parseModelDescTemplate :: OP.Parser (FilePath, ParamsDesc)
+parseModelDescTemplate = (,) <$> parseTemplateFilePath <*> parseParamsDesc
 
 parseTemplateFilePath :: OP.Parser FilePath
 parseTemplateFilePath = OP.strOption $ OP.short 'T' <> OP.long "template" <>
@@ -134,7 +131,7 @@ parseInitialParamsFile = OP.strOption $ OP.long "paramsFile" <> OP.metavar "FILE
                          \by maxl"
 
 parseAdditionalParams :: OP.Parser [(String, Double)]
-parseAdditionalParams = many parseAdditionalParam
+parseAdditionalParams = OP.many parseAdditionalParam
   where
     parseAdditionalParam = OP.option (parseOptionString <$> OP.str) $ OP.long "setParam" <>
                            OP.short 'X' <>
@@ -159,7 +156,7 @@ parseInitialParamsList = OP.option OP.auto $ OP.short 'x' <> OP.long "params" <>
                          \the number of parameters in the model template file."
 
 parseModelEvents :: OP.Parser [ModelEvent]
-parseModelEvents = many parseEvent
+parseModelEvents = OP.many parseEvent
 
 parseEvent :: OP.Parser ModelEvent
 parseEvent = parseJoin <|> parseSplit <|> parseSetP <|> parseSetR <|> parseSetM <|> parseSetFreeze
@@ -249,9 +246,9 @@ parseLogl = CmdLogl <$> parseLoglOpt
 
 parseLoglOpt :: OP.Parser LoglOpt
 parseLoglOpt = LoglOpt <$> parseTheta <*> parseModelDesc <*>
-                           parseLinGen <*> parseMinAf <*> parseMaxAf <*>
-                           parseConditioning <*> parseHistPath <*>
-                           parseNrThreads
+    parseLinGen <*> parseMinAf <*> parseMaxAf <*>
+    parseConditioning <*> OP.many parseExcludePattern <*>
+    parseHistPath <*> parseNrThreads
 
 parseMinAf :: OP.Parser Int
 parseMinAf = OP.option OP.auto $ OP.long "minAf" <> OP.metavar "INT" <> OP.hidden
@@ -278,11 +275,11 @@ parseMaxl :: OP.Parser Command
 parseMaxl = CmdMaxl <$> parseMaxlOpt
 
 parseMaxlOpt :: OP.Parser MaxlOpt
-parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*> parseModelEvents <*>
-                          parseParamsDesc
-                       <*> parseMaxCycles <*> parseNrRestarts
-                       <*> parseTraceFilePath  <*> parseMinAf <*> parseMaxAf <*> parseConditioning
-                       <*> parseLinGen <*> parseHistPath <*> parseNrThreads
+parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*>
+    parseModelEvents <*> parseParamsDesc <*> parseMaxCycles <*>
+    parseNrRestarts <*> parseTraceFilePath  <*> parseMinAf <*> parseMaxAf <*>
+    parseConditioning <*> OP.many parseExcludePattern <*> parseLinGen <*>
+    parseHistPath <*> parseNrThreads
   where
     parseMaxCycles = OP.option OP.auto $ OP.short 'c' <> OP.long "maxCycles"
                     <> OP.metavar "INT" <> OP.hidden
@@ -306,12 +303,11 @@ parseMcmc :: OP.Parser Command
 parseMcmc = CmdMcmc <$> parseMcmcOpt
 
 parseMcmcOpt :: OP.Parser McmcOpt
-parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*> parseModelEvents <*>
-                           parseParamsDesc <*>
-                           parseNrCycles <*> parseTraceFilePath <*>
-                           parseMinAf <*> parseMaxAf <*> parseConditioning <*>
-                           parseLinGen <*> parseHistPath <*>
-                           parseRandomSeed <*> parseNrThreads
+parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*>
+    parseModelEvents <*> parseParamsDesc <*> parseNrCycles <*>
+    parseTraceFilePath <*> parseMinAf <*> parseMaxAf <*> parseConditioning <*>
+    OP.many parseExcludePattern <*> parseLinGen <*> parseHistPath <*>
+    parseRandomSeed <*> parseNrThreads
   where
     parseRandomSeed = OP.option OP.auto $ OP.short 'S' <> OP.long "seed" <> OP.metavar "INT" <>
                       OP.value 0 <> OP.hidden <>
@@ -340,16 +336,22 @@ parseConditioning = OP.option OP.auto $ OP.long "conditionOn" <> OP.metavar "[IN
                                         \This is useful for mapping ancient samples onto a tree" <>
                                         OP.value [] <> OP.hidden
 
+parseExcludePattern :: OP.Parser [Int]
+parseExcludePattern = OP.option OP.auto $ OP.long "excludePatterns" <>
+    OP.metavar "[INT,INT,...]" <> OP.help "a comma-separated list without \
+    \spaces and surrounded by square-brackets. Gives a pattern to exclude from \
+    \fitting. Can be given multiple times" <> OP.hidden
+
 parseFind :: OP.Parser Command
 parseFind = CmdFind <$> parseFindOpt
 
 parseFindOpt :: OP.Parser FindOpt
-parseFindOpt = FindOpt <$> parseQueryBranch <*> parseEvalFile <*> parseBranchAge <*>
-                           parseDeltaTime <*> parseMaxTime <*> parseTheta <*>
-                           parseModelDesc <*> parseMinAf <*>
-                           parseMaxAf <*> parseConditioning <*>
-                           parseLinGen <*> parseIgnoreList <*> parseHistPath <*>
-                           parseNoShortcut <*> parseNrThreads
+parseFindOpt = FindOpt <$> parseQueryBranch <*> parseEvalFile <*>
+    parseBranchAge <*> parseDeltaTime <*> parseMaxTime <*> parseTheta <*>
+    parseModelDesc <*> parseMinAf <*>
+    parseMaxAf <*> parseConditioning <*> OP.many parseExcludePattern <*>
+    parseLinGen <*> parseIgnoreList <*> parseHistPath <*>
+    parseNoShortcut <*> parseNrThreads
   where
     parseQueryBranch = (Left <$> parseQueryIndex) <|> (Right <$> parseQueryName)
     -- parseBranchPopSize = OP.option OP.auto $ OP.long "branchPopSize" <> OP.metavar "FLOAT"
@@ -384,7 +386,7 @@ parseFitTable = CmdFitTable <$> parseFitTableOpt
 
 parseFitTableOpt :: OP.Parser FitTableOpt
 parseFitTableOpt = FitTableOpt <$> parseModelDesc <*> parseTheta <*> parseLinGen <*> parseMaxAf <*>
-                                parseHistPath
+                                parseMinAf <*> parseConditioning <*> OP.many parseExcludePattern <*> parseHistPath
 
 parseSimCommand :: OP.Parser Command
 parseSimCommand = CmdSimCommand <$> parseSimCommandOpts

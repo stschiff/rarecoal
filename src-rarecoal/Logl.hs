@@ -1,8 +1,9 @@
-module Logl (LoglOpt(..), runLogl, computeLikelihood) where
+module Logl (LoglOpt(..), runLogl, computeLikelihood,
+    computeStandardOrder) where
 
 import Rarecoal.Core (getProb, ModelSpec(..))
-import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..), loadHistogram)
-import Rarecoal.Utils (computeAllConfigs)
+import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..),
+    loadHistogram, computeStandardOrder)
 import Rarecoal.ModelTemplate (getModelSpec, ModelDesc)
 
 import Control.Error (Script, scriptIO, assertErr, tryRight, err)
@@ -18,6 +19,7 @@ data LoglOpt = LoglOpt {
    loMinAf :: Int,
    loMaxAf :: Int,
    loConditionOn :: [Int],
+   loExcludePatterns :: [[Int]],
    loHistPath :: FilePath,
    loNrThreads :: Int
 }
@@ -25,34 +27,32 @@ data LoglOpt = LoglOpt {
 runLogl :: LoglOpt -> Script ()
 runLogl opts = do
     nrProc <- scriptIO getNumProcessors
-    if (loNrThreads opts == 0)
+    if loNrThreads opts == 0
     then scriptIO $ setNumCapabilities nrProc
     else scriptIO $ setNumCapabilities (loNrThreads opts)
     nrThreads <- scriptIO getNumCapabilities
     scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
-    hist <- loadHistogram (loMinAf opts) (loMaxAf opts) (loConditionOn opts) (loHistPath opts)
-    modelSpec <- getModelSpec (loModelDesc opts) (raNames hist) (loTheta opts) (loLinGen opts)
+    hist <- loadHistogram (loMinAf opts) (loMaxAf opts) (loConditionOn opts)
+        (loExcludePatterns opts) (loHistPath opts)
+    modelSpec <- getModelSpec (loModelDesc opts) (raNames hist) (loTheta opts)
+        (loLinGen opts)
     standardOrder <- tryRight $ computeStandardOrder hist
     let nVec = raNVec hist
     patternProbs <- tryRight . sequence $
             parMap rdeepseq (getProb modelSpec nVec False) standardOrder
     let patternCounts = map (defaultLookup hist . Pattern) standardOrder
-        ll = sum $ zipWith (\p c -> log p * fromIntegral c) patternProbs patternCounts
+        ll = sum $ zipWith (\p c -> log p * fromIntegral c) patternProbs
+            patternCounts
         otherCounts = defaultLookup hist Higher
-    let totalLogLikelihood = ll + fromIntegral otherCounts * log (1.0 - sum patternProbs)
+    let totalLogLikelihood =
+            ll + fromIntegral otherCounts * log (1.0 - sum patternProbs)
     scriptIO . putStrLn $ "Log Likelihood:" ++ "\t" ++ show totalLogLikelihood
     scriptIO . mapM_ putStrLn $
-        zipWith (\p val -> show (Pattern p) ++ "\t" ++ show val) standardOrder patternProbs
+        zipWith (\p val -> show (Pattern p) ++ "\t" ++ show val) standardOrder
+        patternProbs
 
-computeStandardOrder :: RareAlleleHistogram -> Either String [[Int]]
-computeStandardOrder histogram =
-    let nrPop = length $ raNVec histogram
-        nVec = raNVec histogram
-    in  Right $ filter (\p -> sum p >= raMinAf histogram && hasConditioning (raConditionOn histogram) p) $ computeAllConfigs nrPop (raMaxAf histogram) nVec
-  where
-    hasConditioning indices pat = all (\i -> pat !! i > 0) indices
-
-computeLikelihood :: ModelSpec -> RareAlleleHistogram -> Bool -> Either String Double
+computeLikelihood :: ModelSpec -> RareAlleleHistogram -> Bool ->
+    Either String Double
 computeLikelihood modelSpec histogram noShortcut = do
     assertErr "minFreq must be greater than 0" $ raMinAf histogram > 0
     standardOrder <- computeStandardOrder histogram

@@ -2,7 +2,7 @@ module Mcmc (runMcmc, McmcOpt(..)) where
 
 import Maxl (minFunc, penalty)
 import Rarecoal.ModelTemplate (ModelTemplate(..), readModelTemplate, getInitialParams, ParamsDesc)
-import Rarecoal.Core (getTimeSteps, ModelEvent(..), EventType(..)) 
+import Rarecoal.Core (getTimeSteps, ModelEvent(..), EventType(..))
 import Rarecoal.RareAlleleHistogram (loadHistogram)
 
 import qualified Data.Vector.Unboxed as V
@@ -17,7 +17,7 @@ import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
 import System.Log.Logger (infoM)
 import Control.Monad.Loops (whileM)
 
-(!) :: V.Vector Double -> Int -> Double 
+(!) :: V.Vector Double -> Int -> Double
 (!) = (V.!)
 (//) :: V.Vector Double -> [(Int, Double)] -> V.Vector Double
 (//) = (V.//)
@@ -32,6 +32,7 @@ data McmcOpt = McmcOpt {
    mcMinAf :: Int,
    mcMaxAf :: Int,
    mcConditionOn :: [Int],
+   mcExcludePatterns :: [[Int]],
    mcLinGen :: Int,
    mcHistPath :: FilePath,
    mcRandomSeed :: Int,
@@ -53,14 +54,15 @@ data MCMCstate = MCMCstate {
 runMcmc :: McmcOpt -> Script ()
 runMcmc opts = do
     nrProc <- scriptIO getNumProcessors
-    if   (mcNrThreads opts == 0)
+    if   mcNrThreads opts == 0
     then scriptIO $ setNumCapabilities nrProc
     else scriptIO $ setNumCapabilities (mcNrThreads opts)
     nrThreads <- scriptIO getNumCapabilities
     scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
     let times = getTimeSteps 20000 (mcLinGen opts) 20.0
     modelTemplate <- readModelTemplate (mcTemplatePath opts) (mcTheta opts) times
-    hist <- loadHistogram (mcMinAf opts) (mcMaxAf opts) (mcConditionOn opts) (mcHistPath opts)
+    hist <- loadHistogram (mcMinAf opts) (mcMaxAf opts) (mcConditionOn opts)
+        (mcExcludePatterns opts) (mcHistPath opts)
     -- let extraEvents = concat $ do
             -- (t, k) <- zip (mcBranchAges opts) [0..]
             -- True <- return $ t > 0
@@ -113,7 +115,7 @@ mcmcCycle posterior = do
     when ((c + 1) `mod` 10 == 0) $ do
         liftIO (infoM "rarecoal" $ showStateLog state)
         forM_ [0..k-1] adaptStepWidths
-    get 
+    get
 
 shuffle :: R.StdGen -> [Int] -> ([Int], R.StdGen)
 shuffle rng [] = ([], rng)
@@ -136,7 +138,7 @@ updateMCMC posterior i = do
         newState = state {mcmcNrSteps = steps + 1}
     put newState
     return newState
-    
+
 propose :: Int -> StateT MCMCstate Script (V.Vector Double)
 propose i = do
     state <- get
@@ -185,7 +187,7 @@ adaptStepWidths i = do
         put state {mcmcStepWidths = newStepWidths}
 
 showStateLog :: MCMCstate -> String
-showStateLog state = 
+showStateLog state =
     "Cycle: " ++ show (mcmcNrCycles state) ++
     "; Value: " ++ show (mcmcCurrentValue state) ++
     "; Point: " ++ show (mcmcCurrentPoint state)
@@ -194,9 +196,9 @@ reportPosteriorStats :: [String] -> [MCMCstate] -> IO ()
 reportPosteriorStats paramNames states = do
     let dim = V.length $ mcmcCurrentPoint (head states)
         allScores = map mcmcCurrentValue states
-        nrBurninCycles = computeBurninCycles allScores 
+        nrBurninCycles = computeBurninCycles allScores
         points = map mcmcCurrentPoint . drop nrBurninCycles $ states
-        scores = drop nrBurninCycles allScores 
+        scores = drop nrBurninCycles allScores
         minIndex = snd $ minimumBy (comparing fst) $ zip scores [0..]
         orderStats = [getOrderStats minIndex $ map (!i) points | i <- [0..dim-1]]
         orderStatsScore = getOrderStats minIndex scores
@@ -211,13 +213,13 @@ reportPosteriorStats paramNames states = do
         let nPoints = fromIntegral $ length vals :: Double
             [lowCIindex, midIndex, highCIindex] = map (floor . (*nPoints)) [0.025, 0.5, 0.975]
             sortedVals = sort vals
-        in  vals!!minI : map (sortedVals!!) [lowCIindex, midIndex, highCIindex] 
-    
+        in  vals!!minI : map (sortedVals!!) [lowCIindex, midIndex, highCIindex]
+
 reportTrace :: [String] -> [MCMCstate] -> FilePath -> IO ()
 reportTrace paramNames states traceFilePath = do
     let body = do
             s <- states
-            let l = [V.singleton (mcmcCurrentValue s), mcmcCurrentPoint s, mcmcStepWidths s, 
+            let l = [V.singleton (mcmcCurrentValue s), mcmcCurrentPoint s, mcmcStepWidths s,
                      mcmcSuccesRate s]
             return . intercalate "\t" . map show . V.toList . V.concat $ l
         headerLine = intercalate "\t" $ ["Score"] ++ paramNames ++ map (++"_delta") paramNames ++

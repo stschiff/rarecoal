@@ -5,7 +5,7 @@ import Rarecoal.RareAlleleHistogram (loadHistogram, RareAlleleHistogram(..), Sit
 import Rarecoal.ModelTemplate (getModelSpec, ModelDesc, BranchSpec)
 
 import Control.Error (Script, scriptIO, tryAssert, tryRight, err, tryJust)
-import Data.List (sortBy)
+import Data.List (sortBy, maximumBy, elemIndex)
 import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
 import Logl (computeLikelihood)
 import System.IO (stderr, hPutStrLn, openFile, IOMode(..), hClose)
@@ -22,6 +22,7 @@ data FindOpt = FindOpt {
     fiMinAf :: Int,
     fiMaxAf :: Int,
     fiConditionOn :: [Int],
+    fiExcludePatterns :: [[Int]],
     fiLinGen :: Int,
     fiIgnoreList :: [SitePattern],
     fiHistPath :: FilePath,
@@ -32,15 +33,16 @@ data FindOpt = FindOpt {
 runFind :: FindOpt -> Script ()
 runFind opts = do
     nrProc <- scriptIO getNumProcessors
-    if   (fiNrThreads opts == 0)
+    if   fiNrThreads opts == 0
     then scriptIO $ setNumCapabilities nrProc
     else scriptIO $ setNumCapabilities (fiNrThreads opts)
     nrThreads <- scriptIO getNumCapabilities
     scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
-    hist <- loadHistogram (fiMinAf opts) (fiMaxAf opts) (fiConditionOn opts) (fiHistPath opts)
+    hist <- loadHistogram (fiMinAf opts) (fiMaxAf opts) (fiConditionOn opts)
+        (fiExcludePatterns opts) (fiHistPath opts)
     modelSpec <- getModelSpec (fiModelDesc opts) (raNames hist) (fiTheta opts) (fiLinGen opts)
     l <- findQueryIndex (raNames hist) (fiQueryBranch opts)
-    let modelSpec' = 
+    let modelSpec' =
             if fiBranchAge opts > 0.0
             then
                 let events = ModelEvent 0.0 (SetFreeze l True) : mEvents modelSpec
@@ -55,14 +57,14 @@ runFind opts = do
             branch <- [0..(nrPops - 1)]
             False <- return $ branch == l
             False <- return $ isEmptyBranch modelSpec' branch (fiBranchAge opts)
-            time <- getJoinTimes modelSpec' (fiDeltaTime opts) (fiMaxTime opts) (fiBranchAge opts) 
+            time <- getJoinTimes modelSpec' (fiDeltaTime opts) (fiMaxTime opts) (fiBranchAge opts)
                                   branch
             return (branch, time)
     allLikelihoods <- do
-            let f = (\(k, t) -> computeLikelihoodIO hist modelSpec' k l t (fiNoShortcut opts))
+            let f (k, t) = computeLikelihoodIO hist modelSpec' k l t (fiNoShortcut opts)
             mapM f allParamPairs
     scriptIO $ writeResult (fiEvalPath opts) allParamPairs allLikelihoods
-    let ((minBranch, minTime), minLL) = last . sortBy (\(_, ll1) (_, ll2) -> ll1 `compare` ll2) $
+    let ((minBranch, minTime), minLL) = maximumBy (\(_, ll1) (_, ll2) -> ll1 `compare` ll2) $
                                         zip allParamPairs allLikelihoods
     scriptIO . putStrLn $ "highest likelihood point:\nbranch " ++ show minBranch ++
                           "\ntime " ++ show minTime ++ "\nlog-likelihood " ++ show minLL
@@ -73,7 +75,7 @@ runFind opts = do
         in  queryBranch `notElem` jIndices
     findQueryIndex _ (Left i) = return i
     findQueryIndex names (Right branchName) =
-        tryJust ("could not find branch name " ++ branchName) $ lookup branchName (zip names [0..])
+        tryJust ("could not find branch name " ++ branchName) $ elemIndex branchName names
 
 isEmptyBranch :: ModelSpec -> Int -> Double -> Bool
 isEmptyBranch modelSpec l t = not $ null previousJoins
@@ -100,7 +102,7 @@ writeResult :: FilePath -> [(Int, Double)] -> [Double] -> IO ()
 writeResult fp paramPairs allLikelihoods = do
     h <- openFile fp WriteMode
     hPutStrLn h "Branch\tTime\tLikelihood"
-    let f = (\(k, t) l -> show k ++ "\t" ++ show t ++ "\t" ++ show l)
+    let f (k, t) l = show k ++ "\t" ++ show t ++ "\t" ++ show l
         l_ = zipWith f paramPairs allLikelihoods
     mapM_ (hPutStrLn h) l_
     hClose h

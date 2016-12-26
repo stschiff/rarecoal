@@ -2,7 +2,8 @@ module FitTable (runFitTable, FitTableOpt(..)) where
 
 import Rarecoal.Core (getProb)
 import Rarecoal.ModelTemplate (ModelDesc, getModelSpec)
-import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), loadHistogram, SitePattern(..))
+import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), loadHistogram,
+    SitePattern(..), computeStandardOrder)
 
 import Control.Error (Script, tryRight, scriptIO)
 import qualified Control.Foldl as F
@@ -15,31 +16,45 @@ data FitTableOpt = FitTableOpt {
     _ftTheta :: Double,
     _ftLinGen :: Int,
     _ftMaxAf :: Int,
+    _ftMinAf :: Int,
+    _ftConditionOn :: [Int],
+    _ftExcludePatterns :: [[Int]],
     _ftHistPath :: FilePath
 }
 
 runFitTable :: FitTableOpt -> Script ()
-runFitTable (FitTableOpt modelDesc theta linGen maxAf histPath) = do
-    RareAlleleHistogram names nVec _ _ _ countMap <- loadHistogram 1 maxAf [] histPath
+runFitTable opts = do
+    let FitTableOpt modelDesc theta linGen maxAf minAf conditionOn
+            excludePatterns histPath = opts
+    hist <- loadHistogram minAf maxAf conditionOn excludePatterns histPath
+    standardOrder <- tryRight $ computeStandardOrder hist
+    let RareAlleleHistogram names nVec _ _ _ _ countMap = hist
     modelSpec <- getModelSpec modelDesc names theta linGen
-    let rawCountList = [(p, fromIntegral c) | (p, c) <- M.toList countMap]
-    probList <- tryRight . sequence $ [(\prob -> (p, prob)) <$> getProb modelSpec nVec False pat |
-                                       (p@(Pattern pat), _) <- rawCountList]
-    let combinedFold = (,,) <$> singletonProbsF nVec <*> sharingProbsF nVec <*> normFactorF
-        combinedFoldTheory = (,) <$> singletonProbsF nVec <*> sharingProbsF nVec
-        (singletonProbs, sharingProbs, normFactor) = F.fold combinedFold rawCountList
-        (singletonProbsTheory, sharingProbsTheory) = F.fold combinedFoldTheory probList
+    let totalCounts = fromIntegral $ M.foldl' (+) 0 countMap
+    let realFreqs = do
+            pat <- standardOrder
+            let count = M.findWithDefault 0 (Pattern pat) countMap
+            return (Pattern pat, fromIntegral count / fromIntegral totalCounts)
+    let theoryFreqs = do
+            pat <- standardOrder
+            let Right p = getProb modelSpec nVec False pat
+            return (Pattern pat, p)
+    let combinedFold = (,) <$> singletonProbsF nVec <*> sharingProbsF nVec
+        (singletonProbs, sharingProbs) = F.fold combinedFold realFreqs
+        (singletonProbsTheory, sharingProbsTheory) =
+            F.fold combinedFold theoryFreqs
         singletonLabels = map (++ "(singletons)") names
-        sharingLabels = [names!!i ++ "/" ++ names!!j |
-                         i <- [0..(length names - 1)], j <- [i .. (length names - 1)]]
+        sharingLabels =
+            [names!!i ++ "/" ++ names!!j |
+            i <- [0..(length names - 1)], j <- [i .. (length names - 1)]]
         allLabels = singletonLabels ++ sharingLabels
         allProbs = singletonProbs ++ sharingProbs
         allProbsTheory = singletonProbsTheory ++ sharingProbsTheory
-        l = [intercalate "\t" [label, show (real / normFactor), show fit] |
+        l = [intercalate "\t" [label, show real, show fit] |
              (label, real, fit) <- zip3 allLabels allProbs allProbsTheory]
     scriptIO . putStrLn . intercalate "\t" $ ["POP", "REAL", "FIT"]
     scriptIO $ mapM_ putStrLn l
-    
+
 singletonProbsF :: [Int] -> F.Fold (SitePattern, Double) [Double]
 singletonProbsF nVec = F.Fold step initial extract
   where
