@@ -31,7 +31,7 @@ data Command =
     CmdSimCommand SimCommandOpt
 
 main :: IO ()
-main = run =<< OP.execParser (parseOptions `withInfo` "Version 1.2.1. This \
+main = run =<< OP.execParser (parseOptions `withInfo` "Version 1.2.2. This \
     \software implements the Rarecoal algorithm, as described in \
     \doc/rarecoal.pdf. Type -h for getting help")
 
@@ -337,7 +337,7 @@ parseConditioning = OP.option OP.auto $ OP.long "conditionOn" <> OP.metavar "[IN
                                         OP.value [] <> OP.hidden
 
 parseExcludePattern :: OP.Parser [Int]
-parseExcludePattern = OP.option OP.auto $ OP.long "excludePatterns" <>
+parseExcludePattern = OP.option OP.auto $ OP.long "excludePattern" <>
     OP.metavar "[INT,INT,...]" <> OP.help "a comma-separated list without \
     \spaces and surrounded by square-brackets. Gives a pattern to exclude from \
     \fitting. Can be given multiple times" <> OP.hidden
