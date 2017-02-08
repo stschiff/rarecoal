@@ -410,14 +410,18 @@ checkRegularization nPops reg sortedEvents =
             oldP = ps V.! k
         in  if t /= 0.0 && (((oldP / newP) > reg) ||
                             ((oldP / newP) < (1.0 / reg)))
-            then Left "illegal population size change"
+            then Left ("illegal population size change in branch " ++ show k ++
+                       " from " ++ show oldP ++ " to " ++ show newP)
             else go newPs rest
     go ps (ModelEvent t (Join l k):rest) =
         let fromP = ps V.! k
             toP = ps V.! l
         in  if ((fromP / toP) > reg) || ((fromP / toP) < (1.0 / reg))
-            then Left "illegal population size change within join"
+            then Left ("illegal population size change within join from \
+                       \branch " ++ show k ++ " (" ++ show fromP ++
+                       ") to branch " ++ show l ++ " (" ++ show toP ++ ")")
             else go ps rest
+    go ps (_:rest) = go ps rest
 
 
 choose :: Int -> Int -> Double
