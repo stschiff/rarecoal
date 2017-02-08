@@ -78,8 +78,8 @@ parseProb :: OP.Parser Command
 parseProb = CmdProb <$> parseProbOpt
 
 parseProbOpt :: OP.Parser ProbOpt
-parseProbOpt = ProbOpt <$> parseTheta <*> parseModelDesc <*> parseLinGen <*>
-    parseBranchnames <*> parseNVec <*> parseKVec
+parseProbOpt = ProbOpt <$> parseModelDesc <*> parseBranchnames <*>
+    parseNVec <*> parseKVec
   where
     parseNVec = OP.argument OP.auto (OP.metavar "[N1,N2,...]" <> OP.help "number of samples, \
                        \comma-separated, without spaces, and surrounded by square brackets, e.g. \
@@ -90,14 +90,33 @@ parseProbOpt = ProbOpt <$> parseTheta <*> parseModelDesc <*> parseLinGen <*>
                         \population.")
     parseBranchnames = OP.option (splitOn "," <$> OP.str) (OP.help "string of branch names" <> OP.long "branchnames")
 
-parseTheta :: OP.Parser Double
-parseTheta = OP.option OP.auto $ OP.short 't' <> OP.long "theta" <> OP.hidden <> OP.metavar "FLOAT"
-                    <> OP.value 0.0005 <> OP.showDefault
-                    <> OP.help "set the scaled mutation rate. This is only used for scaling and \
-                                \should rarely be changed from the default."
-
 parseModelDesc :: OP.Parser ModelDesc
-parseModelDesc = ModelDesc <$> OP.many parseDiscoveryRates <*> parseModelEvents <*> optional parseModelDescTemplate
+parseModelDesc = ModelDesc <$> OP.many parseDiscoveryRates <*>
+    parseRegularization <*> parseTheta <*> parseLinGen <*> parseModelEvents <*> optional parseModelDescTemplate
+
+parseRegularization :: OP.Parser Double
+parseRegularization = OP.option OP.auto $ OP.long "regularization" <>
+    OP.metavar "FLOAT" <> OP.help "set the regularization parameter for \
+    \population size changes. Population sizes are only allowed to change \
+    \along branches by this factor." <> OP.value 10.0 <> OP.showDefault <>
+    OP.hidden
+
+parseTheta :: OP.Parser Double
+parseTheta = OP.option OP.auto $ OP.short 't' <> OP.long "theta" <>
+    OP.hidden <> OP.metavar "FLOAT" <> OP.value 0.0005 <> OP.showDefault <>
+    OP.help "set the scaled mutation rate. This is only used for scaling \
+    \and should rarely be changed from the default."
+
+parseLinGen :: OP.Parser Int
+parseLinGen = OP.option OP.auto $ OP.long "lingen" <> OP.hidden <>
+    OP.metavar "INT" <> OP.value 400 <> OP.showDefault <> OP.help "set the \
+    \number of approximately linearly spaced time intervals in the \
+    \discretization. This is described in doc/rarecoal.pdf. You can use \
+    \this parameter to speed up the computation at the cost of accuracy. \
+    \For example, set this to 50 and everything will run much faster but \
+    \be less correct. It is useful for example to quickly search for a \
+    \rough estimate of a maximum using maxl, and then rerunning with the \
+    \finer standard discretization (400)."
 
 parseDiscoveryRates :: OP.Parser (String, Double)
 parseDiscoveryRates = OP.option (readKeyValuePair <$> OP.str) $
@@ -229,24 +248,12 @@ parseSetFreeze = OP.option (OP.str >>= readSetFreeze) $ OP.long "freeze" <> OP.m
         let [t, k, b] = splitOn "," s
         return $ ModelEvent (read t) (SetFreeze (read k) (read b))
 
-parseLinGen :: OP.Parser Int
-parseLinGen = OP.option OP.auto $ OP.long "lingen" <> OP.hidden
-                            <> OP.metavar "INT"
-                            <> OP.value 400 <> OP.showDefault
-                            <> OP.help "set the number of approximately linearly spaced time \
-                            \intervals in the  discretization. This is described in \
-                            \doc/rarecoal.pdf. You can use this parameter to speed up the \
-                            \computation at the cost of accuracy. For example, set this to 50 and \
-                            \everything will run much faster but be less correct. It is useful for \
-                            \example to quickly search for a rough estimate of a maximum using \
-                            \maxl, and then rerunning with the finer standard discretization (400)."
-
 parseLogl :: OP.Parser Command
 parseLogl = CmdLogl <$> parseLoglOpt
 
 parseLoglOpt :: OP.Parser LoglOpt
-parseLoglOpt = LoglOpt <$> parseTheta <*> parseModelDesc <*>
-    parseLinGen <*> parseMinAf <*> parseMaxAf <*>
+parseLoglOpt = LoglOpt <$> parseModelDesc <*>
+    parseMinAf <*> parseMaxAf <*>
     parseConditioning <*> OP.many parseExcludePattern <*>
     parseHistPath <*> parseNrThreads
 
@@ -279,7 +286,7 @@ parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*>
     parseModelEvents <*> parseParamsDesc <*> parseMaxCycles <*>
     parseNrRestarts <*> parseTraceFilePath  <*> parseMinAf <*> parseMaxAf <*>
     parseConditioning <*> OP.many parseExcludePattern <*> parseLinGen <*>
-    parseHistPath <*> parseNrThreads
+    parseHistPath <*> parseNrThreads <*> parseRegularization
   where
     parseMaxCycles = OP.option OP.auto $ OP.short 'c' <> OP.long "maxCycles"
                     <> OP.metavar "INT" <> OP.hidden
@@ -307,7 +314,7 @@ parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*>
     parseModelEvents <*> parseParamsDesc <*> parseNrCycles <*>
     parseTraceFilePath <*> parseMinAf <*> parseMaxAf <*> parseConditioning <*>
     OP.many parseExcludePattern <*> parseLinGen <*> parseHistPath <*>
-    parseRandomSeed <*> parseNrThreads
+    parseRandomSeed <*> parseNrThreads <*> parseRegularization
   where
     parseRandomSeed = OP.option OP.auto $ OP.short 'S' <> OP.long "seed" <> OP.metavar "INT" <>
                       OP.value 0 <> OP.hidden <>
@@ -347,10 +354,10 @@ parseFind = CmdFind <$> parseFindOpt
 
 parseFindOpt :: OP.Parser FindOpt
 parseFindOpt = FindOpt <$> parseQueryBranch <*> parseEvalFile <*>
-    parseBranchAge <*> parseDeltaTime <*> parseMaxTime <*> parseTheta <*>
+    parseBranchAge <*> parseDeltaTime <*> parseMaxTime <*>
     parseModelDesc <*> parseMinAf <*>
     parseMaxAf <*> parseConditioning <*> OP.many parseExcludePattern <*>
-    parseLinGen <*> parseIgnoreList <*> parseHistPath <*>
+    parseIgnoreList <*> parseHistPath <*>
     parseNoShortcut <*> parseNrThreads
   where
     parseQueryBranch = (Left <$> parseQueryIndex) <|> (Right <$> parseQueryName)
@@ -385,15 +392,15 @@ parseFitTable :: OP.Parser Command
 parseFitTable = CmdFitTable <$> parseFitTableOpt
 
 parseFitTableOpt :: OP.Parser FitTableOpt
-parseFitTableOpt = FitTableOpt <$> parseModelDesc <*> parseTheta <*> parseLinGen <*> parseMaxAf <*>
+parseFitTableOpt = FitTableOpt <$> parseModelDesc <*> parseMaxAf <*>
                                 parseMinAf <*> parseConditioning <*> OP.many parseExcludePattern <*> parseHistPath
 
 parseSimCommand :: OP.Parser Command
 parseSimCommand = CmdSimCommand <$> parseSimCommandOpts
 
 parseSimCommandOpts :: OP.Parser SimCommandOpt
-parseSimCommandOpts = SimCommandOpt <$> parseModelDesc <*> parseBranchNames <*> parseNrHaps <*>
-                                        parseTheta <*> parseRho <*> parseChromLength
+parseSimCommandOpts = SimCommandOpt <$> parseModelDesc <*> parseBranchNames <*>
+    parseNrHaps <*> parseRho <*> parseChromLength
   where
     parseBranchNames = OP.option (splitOn "," <$> OP.str) $ OP.long "branchNames" <>
                        OP.short 'b' <> OP.metavar "NAME1,NAME2,..." <>

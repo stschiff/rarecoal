@@ -16,21 +16,21 @@ import Test.Tasty (TestTree, testGroup)
 import Test.QuickCheck
 
 tests :: TestTree
-tests = testGroup "Core Tests" [ testProperty "joinPopsA leaves total nr of ancestral alleles \ 
+tests = testGroup "Core Tests" [ testProperty "joinPopsA leaves total nr of ancestral alleles \
                                                \invariant" prop_joinPopsA,
-                                 testProperty "joinPopsB leaves total probabilities invariant" 
+                                 testProperty "joinPopsB leaves total probabilities invariant"
                                               prop_joinPopsB,
-                                 testProperty "splitPopsA leaves total nr of ancestral alleles \ 
+                                 testProperty "splitPopsA leaves total nr of ancestral alleles \
                                                \invariant" prop_splitPopsA,
-                                 testProperty "splitPopsB leaves total probabilities invariant" 
+                                 testProperty "splitPopsB leaves total probabilities invariant"
                                                    prop_splitPopsB,
-                                 testProperty "full split equals join for A" 
+                                 testProperty "full split equals join for A"
                                                prop_fullSplitIsJoinForA,
-                                 testProperty "full split equals join for B" 
+                                 testProperty "full split equals join for B"
                                                prop_fullSplitIsJoinForB,
-                                 testProperty "total probabilities are all positive" 
+                                 testProperty "total probabilities are all positive"
                                               prop_getProbTest,
-                                 testCase "testing consistency with previous versions" 
+                                 testCase "testing consistency with previous versions"
                                            assert_consistentProbs]
 
 prop_joinPopsA :: Property
@@ -110,7 +110,7 @@ prop_fullSplitIsJoinForB = forAll (suchThat gen (\(_, _, k, l) -> k /= l)) go
             nonZeroStatesRef <- newSTRef nonZeroStates
             func bVecM bVecTempM nonZeroStatesRef stateSpace k l
             V.freeze bVecM
-        twoFuncs = [popJoinB, (\b bT nz s k' l' -> popSplitB b bT nz s k' l' 1.0)] 
+        twoFuncs = [popJoinB, (\b bT nz s k' l' -> popSplitB b bT nz s k' l' 1.0)]
 
 prop_fullSplitIsJoinForA :: Property
 prop_fullSplitIsJoinForA = forAll (suchThat gen (\(_, k, l) -> k /= l)) go
@@ -125,10 +125,10 @@ prop_fullSplitIsJoinForA = forAll (suchThat gen (\(_, k, l) -> k /= l)) go
             aVecM <- V.thaw aVec
             func aVecM k l
             V.freeze aVecM
-        twoFuncs = [popJoinA, (\b k' l' -> popSplitA b k' l' 1.0)] 
+        twoFuncs = [popJoinA, (\b k' l' -> popSplitA b k' l' 1.0)]
 
 makeTestModelSpec :: ModelSpec
-makeTestModelSpec = ModelSpec defaultTimes 0.0005 [1,1,1,1,1] events
+makeTestModelSpec = ModelSpec defaultTimes 0.0005 [1,1,1,1,1] 10 events
   where
     events = [ ModelEvent 0.0025 (Join 0 1)
              , ModelEvent 0.006 (Join 2 3)

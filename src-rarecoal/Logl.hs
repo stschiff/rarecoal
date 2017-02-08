@@ -13,9 +13,7 @@ import qualified Data.Map.Strict as Map
 import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
 
 data LoglOpt = LoglOpt {
-   loTheta :: Double,
    loModelDesc :: ModelDesc,
-   loLinGen :: Int,
    loMinAf :: Int,
    loMaxAf :: Int,
    loConditionOn :: [Int],
@@ -34,8 +32,7 @@ runLogl opts = do
     scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
     hist <- loadHistogram (loMinAf opts) (loMaxAf opts) (loConditionOn opts)
         (loExcludePatterns opts) (loHistPath opts)
-    modelSpec <- getModelSpec (loModelDesc opts) (raNames hist) (loTheta opts)
-        (loLinGen opts)
+    modelSpec <- getModelSpec (loModelDesc opts) (raNames hist)
     standardOrder <- tryRight $ computeStandardOrder hist
     let nVec = raNVec hist
     patternProbs <- tryRight . sequence $

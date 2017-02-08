@@ -13,8 +13,6 @@ import qualified Data.Vector.Unboxed as V
 
 data FitTableOpt = FitTableOpt {
     _ftModelDesc :: ModelDesc,
-    _ftTheta :: Double,
-    _ftLinGen :: Int,
     _ftMaxAf :: Int,
     _ftMinAf :: Int,
     _ftConditionOn :: [Int],
@@ -24,12 +22,12 @@ data FitTableOpt = FitTableOpt {
 
 runFitTable :: FitTableOpt -> Script ()
 runFitTable opts = do
-    let FitTableOpt modelDesc theta linGen maxAf minAf conditionOn
+    let FitTableOpt modelDesc maxAf minAf conditionOn
             excludePatterns histPath = opts
     hist <- loadHistogram minAf maxAf conditionOn excludePatterns histPath
     standardOrder <- tryRight $ computeStandardOrder hist
     let RareAlleleHistogram names nVec _ _ _ _ countMap = hist
-    modelSpec <- getModelSpec modelDesc names theta linGen
+    modelSpec <- getModelSpec modelDesc names
     let totalCounts = fromIntegral $ M.foldl' (+) 0 countMap
     let realFreqs = do
             pat <- standardOrder

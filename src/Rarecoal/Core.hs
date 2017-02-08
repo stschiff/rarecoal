@@ -44,6 +44,7 @@ data ModelSpec = ModelSpec {
     mTimeSteps      :: [Double],
     mTheta          :: Double,
     mDiscoveryRates :: [Double],
+    mPopSizeRegularization :: Double,
     mEvents         :: [ModelEvent]
 } deriving (Show)
 
@@ -90,7 +91,7 @@ getProb modelSpec nVec noShortcut config = do
     err = "Overflow Error in getProb for nVec=" ++ show nVec ++ ", kVec=" ++ show config
 
 makeInitModelState :: ModelSpec -> Int -> ST s (ModelState s)
-makeInitModelState (ModelSpec _ _ _ events) nrPop = do
+makeInitModelState (ModelSpec _ _ _ _ events) nrPop = do
     sortedEvents <- newSTRef $ sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) ->
                                        time1 `compare` time2) events
     t <- newSTRef 0.0
@@ -107,7 +108,7 @@ makeInitCoalState nVec config = do
         maxAf = sum config
         nrPop = length nVec
         jointStateSpace = makeJointStateSpace nrPop maxAf
-        initialId = (_jsStateToId jointStateSpace) initialState
+        initialId = _jsStateToId jointStateSpace initialState
     b <- VM.replicate (_jsNrStates jointStateSpace) 0.0
     -- trace (show ("makeInitCoalState", _jsNrStates jointStateSpace, initialState, initialId)) $
     --        return ()
@@ -121,7 +122,7 @@ propagateStates :: ModelState s -> CoalState s -> [Double] -> Bool -> ST s ()
 propagateStates _ _ [] _ = return ()
 propagateStates ms cs (nextTime:restTimes) noShortcut = do
     useShortcut <- canUseShortcut ms cs
-    if (useShortcut && not noShortcut) then propagateStateShortcut ms cs else do
+    if useShortcut && not noShortcut then propagateStateShortcut ms cs else do
         singleStep ms cs nextTime
         propagateStates ms cs restTimes noShortcut
 
@@ -241,11 +242,11 @@ popJoinB bVec bVecTemp nonZeroStateRef stateSpace k l = do
     nonZeroStateIds <- readSTRef nonZeroStateRef
     newNonZeroStateIds <- forM nonZeroStateIds $ \xId -> do
         oldProb <- VM.read bVec xId
-        let xVec = (_jsIdToState stateSpace) xId
+        let xVec = _jsIdToState stateSpace xId
             xl = xVec V.! l
             xk = xVec V.! k
             xVec' = xVec V.// [(k, xk + xl), (l, 0)]
-            xId' = (_jsStateToId stateSpace) xVec'
+            xId' = _jsStateToId stateSpace xVec'
         val <- VM.read bVecTemp xId'
         VM.write bVecTemp xId' (val + oldProb)
         return xId'
@@ -271,12 +272,12 @@ popSplitB bVec bVecTemp nonZeroStateRef stateSpace k l m = do
     nonZeroStateIds <- readSTRef nonZeroStateRef
     newNonZeroStateIds <- fmap concat . forM nonZeroStateIds $ \xId -> do
         oldProb <- VM.read bVec xId
-        let xVec = (_jsIdToState stateSpace) xId
+        let xVec = _jsIdToState stateSpace xId
             xl = xVec V.! l
             xk = xVec V.! k
         forM [0..xl] $ \s -> do
             let xVec' = xVec V.// [(k, xk + s), (l, xl - s)]
-                xId' = (_jsStateToId stateSpace) xVec'
+                xId' = _jsStateToId stateSpace xVec'
             val <- VM.read bVecTemp xId'
             let binomialFactor = m ^ s * (1.0 - m) ^ (xl - s) * choose xl s
             VM.write bVecTemp xId' (val + oldProb * binomialFactor)
@@ -311,8 +312,8 @@ updateB ms cs deltaT = do
         nrPop = _jsNrPop stateSpace
     VM.set (_csBtemp cs) 0.0
     forM_ nonZeroStateIds $ \xId -> do
-        let x1ups = (_jsX1up stateSpace) xId
-            x = (_jsIdToState stateSpace) xId
+        let x1ups = _jsX1up stateSpace xId
+            x = _jsIdToState stateSpace xId
             -- explicit definitions to introduce automatic CAFs for profiling
             f1 = foldM (t1TermHelper x (_msPopSize ms) (_csA cs) (_msFreezeState ms)) 0
                        [0..(nrPop - 1)]
@@ -366,12 +367,14 @@ updateModelState ms cs deltaT = do
     modifySTRef (_msT ms) (+deltaT)
 
 validateModel :: ModelSpec -> Either String ()
-validateModel (ModelSpec _ _ dr events) = do
+validateModel (ModelSpec _ _ dr reg events) = do
     when (or [t < 0 | ModelEvent t _ <- events]) $ Left "Negative event times"
     when (or [r <= 0 || r > 1 | r <- dr]) $ Left "illegal discovery Rate"
+    when (reg < 1) $ Left "illegal regularization parameter"
     let sortedEvents =
             sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) -> time1 `compare` time2) events
     checkEvents sortedEvents
+    checkRegularization (length dr) reg sortedEvents
   where
     checkEvents [] = Right ()
     checkEvents (ModelEvent _ (Join k l):rest) = do
@@ -395,6 +398,27 @@ validateModel (ModelSpec _ _ dr events) = do
     checkEvents (ModelEvent _ (Split _ _ m):rest) =
         if m <= 0.0 || m >= 1.0 then Left "Illegal split rate" else checkEvents rest
     checkEvents (ModelEvent _ (SetFreeze _ _):rest) = checkEvents rest
+
+checkRegularization :: Int -> Double -> [ModelEvent] -> Either String ()
+checkRegularization nPops reg sortedEvents =
+    let popSizes = V.replicate nPops 1.0
+    in  go popSizes sortedEvents
+  where
+    go _ [] = Right ()
+    go ps (ModelEvent t (SetPopSize k newP):rest) =
+        let newPs = ps V.// [(k, newP)]
+            oldP = ps V.! k
+        in  if t /= 0.0 && (((oldP / newP) > reg) ||
+                            ((oldP / newP) < (1.0 / reg)))
+            then Left "illegal population size change"
+            else go newPs rest
+    go ps (ModelEvent t (Join l k):rest) =
+        let fromP = ps V.! k
+            toP = ps V.! l
+        in  if ((fromP / toP) > reg) || ((fromP / toP) < (1.0 / reg))
+            then Left "illegal population size change within join"
+            else go ps rest
+
 
 choose :: Int -> Int -> Double
 choose _ 0 = 1

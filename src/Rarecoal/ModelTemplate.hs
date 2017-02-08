@@ -25,6 +25,7 @@ data ModelTemplate = ModelTemplate {
     mtTheta               :: Double,
     mtTimeSteps           :: [Double],
     mtDiscoveryRate       :: [(BranchSpec, ParamSpec)],
+    mtPopSizeReg          :: Double,
     mtEventTemplates      :: [EventTemplate],
     mtConstraintTemplates :: [ConstraintTemplate]
 } deriving (Eq, Show)
@@ -46,9 +47,14 @@ data ConstraintTemplate =
     GreaterConstraintTemplate ParamSpec ParamSpec
     deriving (Eq, Show)
 
-data ModelDesc = ModelDesc [(String, Double)] [ModelEvent] (Maybe (FilePath, ParamsDesc))
-    -- ModelDescTemplate FilePath ParamsDesc [(String, Double)] [ModelEvent] |
-    -- ModelDescDirect [(String, Double)] [ModelEvent]
+data ModelDesc = ModelDesc {
+    mdDiscoveryRates :: [(String, Double)],
+    mdReg :: Double,
+    mdTheta :: Double,
+    mdLinGen :: Int,
+    mdEvents :: [ModelEvent],
+    mdMaybeTemplate :: Maybe (FilePath, ParamsDesc)
+}
 type ParamsDesc = Either (FilePath, [(String, Double)]) [Double]
 
 getInitialParams :: ModelTemplate -> ParamsDesc -> Script (V.Vector Double)
@@ -77,13 +83,15 @@ getInitialParams modelTemplate paramsDesc =
                             " in the Model Template not set"
                     tryJust err' $ p `lookup` dict
 
-readModelTemplate :: FilePath -> Double -> [Double] -> Script ModelTemplate
-readModelTemplate path theta timeSteps = do
+readModelTemplate :: FilePath -> Double -> [Double] -> Double ->
+    Script ModelTemplate
+readModelTemplate path theta timeSteps reg = do
     c <- scriptIO $ T.readFile path
     (names, discoveryRates, events, constraints) <- tryRight $
         A.parseOnly (parseModelTemplate <* A.endOfInput) c
     return $
-        ModelTemplate names theta timeSteps discoveryRates events constraints
+        ModelTemplate names theta timeSteps discoveryRates reg events
+            constraints
 
 parseModelTemplate :: A.Parser ([String], [(BranchSpec, ParamSpec)],
     [EventTemplate], [ConstraintTemplate])
@@ -172,9 +180,9 @@ parseConstraints = A.many' (A.try parseSmallerConstraint <|>
 
 instantiateModel :: ModelTemplate -> V.Vector Double -> [String] ->
     Either String ModelSpec
-instantiateModel (ModelTemplate pNames theta timeSteps drates ets cts) params
-        branchNames = do
-    let params' = V.toList params
+instantiateModel mt params branchNames = do
+    let (ModelTemplate pNames theta timeSteps drates reg ets cts) = mt
+        params' = V.toList params
     dr <- do
         indexValuePairs <-
             mapM (instantiateDiscoveryRates pNames params' branchNames) drates
@@ -182,7 +190,7 @@ instantiateModel (ModelTemplate pNames theta timeSteps drates ets cts) params
             indexValuePairs
     events <- mapM (instantiateEvent pNames params' branchNames) ets
     mapM_ (validateConstraint pNames params') cts
-    return $ ModelSpec timeSteps theta dr (concat events)
+    return $ ModelSpec timeSteps theta dr reg (concat events)
 
 instantiateDiscoveryRates :: [String] -> [Double] -> [String] ->
     (BranchSpec, ParamSpec) -> Either String (Int, Double)
@@ -257,9 +265,10 @@ validateConstraint pNames params ct =
             assertErr ("Constrained failed: " ++ show p1 ++ " > " ++ show p2)
                 (p1 > p2)
 
-getModelSpec :: ModelDesc -> [String] -> Double -> Int -> Script ModelSpec
-getModelSpec modelDesc branchNames theta lingen = do
-    let ModelDesc discoveryRates events maybeTemplate = modelDesc
+getModelSpec :: ModelDesc -> [String] -> Script ModelSpec
+getModelSpec modelDesc branchNames = do
+    let ModelDesc discoveryRates reg theta lingen events maybeTemplate =
+            modelDesc
     indexValuePairs <- forM discoveryRates $ \(branchName, rate) -> do
         k <- tryRight $ substituteBranch branchNames (Right branchName)
         return (k, rate)
@@ -268,34 +277,13 @@ getModelSpec modelDesc branchNames theta lingen = do
     (events', dr') <- case maybeTemplate of
         Nothing -> return (events, dr)
         Just (fp, paramsDesc) -> do
-            template <- readModelTemplate fp theta times
+            template <- readModelTemplate fp theta (times lingen) reg
             x' <- getInitialParams template paramsDesc
             modelSpec <- tryRight $ instantiateModel template x' branchNames
             let e = mEvents modelSpec
                 d = V.fromList $ mDiscoveryRates modelSpec
                 d' = V.toList $ d V.// indexValuePairs
             return (e ++ events, d')
-    return $ ModelSpec times theta dr' events'
-
-    -- case modelDesc of
-    --     ModelDescTemplate path paramsDesc discoveryRates additionalEvents -> do
-    --         template <- readModelTemplate path theta times
-    --         x' <- getInitialParams template paramsDesc
-    --         modelSpec <- tryRight $ instantiateModel template x' branchNames
-    --         indexValuePairs <- forM discoveryRates $ \(branchName, rate) -> do
-    --             k <- tryRight $ substituteBranch branchNames (Right branchName)
-    --             return (k, rate)
-    --         let e = mEvents modelSpec
-    --             d = V.fromList $ mDiscoveryRates modelSpec
-    --             d' = V.toList $ d V.// indexValuePairs
-    --         return $ modelSpec {mEvents = e ++ additionalEvents,
-    --             mDiscoveryRates = d'}
-    --     ModelDescDirect discoveryRates events -> do
-    --         indexValuePairs <- forM discoveryRates $ \(branchName, rate) -> do
-    --             k <- tryRight $ substituteBranch branchNames (Right branchName)
-    --             return (k, rate)
-    --         let dr = V.toList $
-    --                 V.replicate (length branchNames) 1.0 V.// indexValuePairs
-    --         return $ ModelSpec times theta dr events
+    return $ ModelSpec (times lingen) theta dr' reg events'
   where
-    times = getTimeSteps 20000 lingen 20.0
+    times lingen = getTimeSteps 20000 lingen 20.0

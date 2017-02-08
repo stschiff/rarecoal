@@ -23,12 +23,14 @@ template = ModelTemplate {
                        , JoinPopSizeEventTemplate (Right "t24") (Left 2) (Left 4) (Right "p24")
                        , JoinPopSizeEventTemplate (Right "t02") (Left 0) (Left 2) (Right "p02")
                        ],
+    mtPopSizeReg = 10,
     mtConstraintTemplates = []
 }
 
 testLoadTemplate :: Assertion
 testLoadTemplate = do
-    t <- runScript $ readModelTemplate "testData/5popSimTemplate.txt" 0.0005 defaultTimes
+    t <- runScript $ readModelTemplate "testData/5popSimTemplate.txt" 0.0005
+        defaultTimes 10
     assertEqual "testLoadTemplate" t template
 
 -- testGetNewParams :: Assertion

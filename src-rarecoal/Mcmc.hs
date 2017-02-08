@@ -37,7 +37,8 @@ data McmcOpt = McmcOpt {
    mcHistPath :: FilePath,
    mcRandomSeed :: Int,
 --   mcBranchAges :: [Double],
-   mcNrThreads :: Int
+   mcNrThreads :: Int,
+   mcReg :: Double
 }
 
 data MCMCstate = MCMCstate {
@@ -60,7 +61,8 @@ runMcmc opts = do
     nrThreads <- scriptIO getNumCapabilities
     scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
     let times = getTimeSteps 20000 (mcLinGen opts) 20.0
-    modelTemplate <- readModelTemplate (mcTemplatePath opts) (mcTheta opts) times
+    modelTemplate <- readModelTemplate (mcTemplatePath opts) (mcTheta opts)
+        times (mcReg opts)
     hist <- loadHistogram (mcMinAf opts) (mcMaxAf opts) (mcConditionOn opts)
         (mcExcludePatterns opts) (mcHistPath opts)
     -- let extraEvents = concat $ do

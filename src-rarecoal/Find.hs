@@ -17,13 +17,11 @@ data FindOpt = FindOpt {
     fiBranchAge :: Double,
     fiDeltaTime :: Double,
     fiMaxTime :: Double,
-    fiTheta :: Double,
     fiModelDesc :: ModelDesc,
     fiMinAf :: Int,
     fiMaxAf :: Int,
     fiConditionOn :: [Int],
     fiExcludePatterns :: [[Int]],
-    fiLinGen :: Int,
     fiIgnoreList :: [SitePattern],
     fiHistPath :: FilePath,
     fiNoShortcut :: Bool,
@@ -40,7 +38,7 @@ runFind opts = do
     scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
     hist <- loadHistogram (fiMinAf opts) (fiMaxAf opts) (fiConditionOn opts)
         (fiExcludePatterns opts) (fiHistPath opts)
-    modelSpec <- getModelSpec (fiModelDesc opts) (raNames hist) (fiTheta opts) (fiLinGen opts)
+    modelSpec <- getModelSpec (fiModelDesc opts) (raNames hist)
     l <- findQueryIndex (raNames hist) (fiQueryBranch opts)
     let modelSpec' =
             if fiBranchAge opts > 0.0

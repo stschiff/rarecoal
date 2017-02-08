@@ -28,7 +28,8 @@ data MaxlOpt = MaxlOpt {
    maExcludePatterns :: [[Int]],
    maLinGen :: Int,
    maHistPath :: FilePath,
-   maNrThreads :: Int
+   maNrThreads :: Int,
+   maReg :: Double
 }
 
 runMaxl :: MaxlOpt -> Script ()
@@ -40,7 +41,8 @@ runMaxl opts = do
     nrThreads <- scriptIO getNumCapabilities
     scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
     let times = getTimeSteps 20000 (maLinGen opts) 20.0
-    modelTemplate <- readModelTemplate (maTemplatePath opts) (maTheta opts) times
+    modelTemplate <- readModelTemplate (maTemplatePath opts) (maTheta opts)
+        times (maReg opts)
     hist <- loadHistogram (maMinAf opts) (maMaxAf opts) (maConditionOn opts)
         (maExcludePatterns opts) (maHistPath opts)
     x <- getInitialParams modelTemplate (maParamsDesc opts)
