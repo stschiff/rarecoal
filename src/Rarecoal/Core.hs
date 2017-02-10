@@ -374,7 +374,7 @@ validateModel (ModelSpec _ _ dr reg events) = do
     let sortedEvents =
             sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) -> time1 `compare` time2) events
     checkEvents sortedEvents
-    checkRegularization (length dr) reg sortedEvents
+    when (reg > 1.0) $ checkRegularization (length dr) reg sortedEvents
   where
     checkEvents [] = Right ()
     checkEvents (ModelEvent _ (Join k l):rest) = do
