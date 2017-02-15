@@ -49,12 +49,14 @@ runMaxl opts = do
     x <- getInitialParams modelTemplate (maParamsDesc opts)
     modelTemplateWithFixedParams <- tryRight $
         makeFixedParamsTemplate modelTemplate (maFixedParams opts) x
+    xNew <- getInitialParams modelTemplateWithFixedParams (maParamsDesc opts)
     let extraEvents = maAdditionalEvents opts
-    _ <- tryRight $ minFunc modelTemplateWithFixedParams extraEvents hist x
+    _ <- tryRight $ minFunc modelTemplateWithFixedParams extraEvents hist xNew
     let minFunc' = either (const penalty) id . minFunc
             modelTemplateWithFixedParams extraEvents hist
         minimizationRoutine = minimizeV (maMaxCycles opts) minFunc'
-    (minResult, trace) <- scriptIO $ minimizeWithRestarts (maNrRestarts opts) minimizationRoutine x
+    (minResult, trace) <- scriptIO $ minimizeWithRestarts (maNrRestarts opts)
+        minimizationRoutine xNew
     scriptIO $ reportMaxResult modelTemplateWithFixedParams minResult
         (minFunc' minResult)
     scriptIO $ reportTrace modelTemplateWithFixedParams trace (maTracePath opts)

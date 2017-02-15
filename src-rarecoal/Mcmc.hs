@@ -73,16 +73,17 @@ runMcmc opts = do
     x <- getInitialParams modelTemplate (mcParamsDesc opts)
     modelTemplateWithFixedParams <- tryRight $
         makeFixedParamsTemplate modelTemplate (mcFixedParams opts) x
-    _ <- tryRight $ minFunc modelTemplateWithFixedParams extraEvents hist x
+    xNew <- getInitialParams modelTemplateWithFixedParams (mcParamsDesc opts)
+    _ <- tryRight $ minFunc modelTemplateWithFixedParams extraEvents hist xNew
     let minFunc' = either (const penalty) id .
             minFunc modelTemplateWithFixedParams extraEvents hist
-        initV = minFunc' x
-        stepWidths = V.map (max 1.0e-8 . abs . (/100.0)) x
-        successRates = V.replicate (V.length x) 0.44
+        initV = minFunc' xNew
+        stepWidths = V.map (max 1.0e-8 . abs . (/100.0)) xNew
+        successRates = V.replicate (V.length xNew) 0.44
     ranGen <- if   mcRandomSeed opts == 0
               then scriptIO R.getStdGen
               else return $ R.mkStdGen (mcRandomSeed opts)
-    let initState = MCMCstate 0 0 initV x stepWidths successRates ranGen []
+    let initState = MCMCstate 0 0 initV xNew stepWidths successRates ranGen []
         pred_ = mcmcNotDone (mcNrCycles opts)
         act = mcmcCycle minFunc'
     states <- evalStateT (whileM pred_ act) initState
