@@ -33,10 +33,9 @@ runFitTable opts = do
             pat <- standardOrder
             let count = M.findWithDefault 0 (Pattern pat) countMap
             return (Pattern pat, fromIntegral count / fromIntegral totalCounts)
-    let theoryFreqs = do
-            pat <- standardOrder
-            let Right p = getProb modelSpec nVec False pat
-            return (Pattern pat, p)
+    theoryValues <- mapM (tryRight . getProb modelSpec nVec False) standardOrder
+    let theoryFreqs = zipWith (\p v -> (Pattern p, v)) standardOrder
+            theoryValues
     let combinedFold = (,) <$> singletonProbsF nVec <*> sharingProbsF nVec
         (singletonProbs, sharingProbs) = F.fold combinedFold realFreqs
         (singletonProbsTheory, sharingProbsTheory) =

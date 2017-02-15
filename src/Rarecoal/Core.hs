@@ -370,7 +370,6 @@ validateModel :: ModelSpec -> Either String ()
 validateModel (ModelSpec _ _ dr reg events) = do
     when (or [t < 0 | ModelEvent t _ <- events]) $ Left "Negative event times"
     when (or [r <= 0 || r > 1 | r <- dr]) $ Left "illegal discovery Rate"
-    when (reg < 1) $ Left "illegal regularization parameter"
     let sortedEvents =
             sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) -> time1 `compare` time2) events
     checkEvents sortedEvents
