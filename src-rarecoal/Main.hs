@@ -308,9 +308,10 @@ parseTraceFilePath = OP.strOption $ OP.short 'f' <> OP.long "traceFile" <> OP.me
                                \MCMC. Can be useful to check whether parameters are converging."
 
 parseFixedParams :: OP.Parser [String]
-parseFixedParams = OP.option OP.auto $ OP.long "fixedParams" <>
-    OP.metavar "[P1,P2,P3,...]" <> OP.value [] <> OP.help "Give a set of \
-    \parameters that not be estimated, but kept fixed to the initial values."
+parseFixedParams = OP.option (splitOn "," <$> OP.str) $ OP.long "fixedParams" <>
+    OP.metavar "P1,P2,P3,..." <> OP.value [] <> OP.help "Give a list of \
+    \parameters, comma-separated without spaces. Those parameters will not be \
+    \estimated, but kept fixed to the initial values."
 
 parseMcmc :: OP.Parser Command
 parseMcmc = CmdMcmc <$> parseMcmcOpt
