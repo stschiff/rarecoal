@@ -2,8 +2,8 @@ module Maxl (minFunc, penalty, runMaxl, MaxlOpt(..)) where
 
 import Logl (computeLikelihood)
 import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..))
-import Rarecoal.ModelTemplate (ModelTemplate(..), instantiateModel, readModelTemplate,
-                               getInitialParams, ParamsDesc)
+import Rarecoal.ModelTemplate (ModelTemplate(..), instantiateModel,
+    readModelTemplate, getInitialParams, ParamsDesc, makeFixedParamsTemplate)
 import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), loadHistogram)
 
 import Control.Error (Script, scriptIO, assertErr, tryRight, err)
@@ -29,7 +29,8 @@ data MaxlOpt = MaxlOpt {
    maLinGen :: Int,
    maHistPath :: FilePath,
    maNrThreads :: Int,
-   maReg :: Double
+   maReg :: Double,
+   maFixedParams :: [String]
 }
 
 runMaxl :: MaxlOpt -> Script ()
@@ -46,13 +47,17 @@ runMaxl opts = do
     hist <- loadHistogram (maMinAf opts) (maMaxAf opts) (maConditionOn opts)
         (maExcludePatterns opts) (maHistPath opts)
     x <- getInitialParams modelTemplate (maParamsDesc opts)
+    modelTemplateWithFixedParams <- tryRight $
+        makeFixedParamsTemplate modelTemplate (maFixedParams opts) x
     let extraEvents = maAdditionalEvents opts
-    _ <- tryRight $ minFunc modelTemplate extraEvents hist x
-    let minFunc' = either (const penalty) id . minFunc modelTemplate extraEvents hist
+    _ <- tryRight $ minFunc modelTemplateWithFixedParams extraEvents hist x
+    let minFunc' = either (const penalty) id . minFunc
+            modelTemplateWithFixedParams extraEvents hist
         minimizationRoutine = minimizeV (maMaxCycles opts) minFunc'
     (minResult, trace) <- scriptIO $ minimizeWithRestarts (maNrRestarts opts) minimizationRoutine x
-    scriptIO $ reportMaxResult modelTemplate minResult (minFunc' minResult)
-    scriptIO $ reportTrace modelTemplate trace (maTracePath opts)
+    scriptIO $ reportMaxResult modelTemplateWithFixedParams minResult
+        (minFunc' minResult)
+    scriptIO $ reportTrace modelTemplateWithFixedParams trace (maTracePath opts)
 
 minimizeV :: Int -> (V.Vector Double -> Double) -> V.Vector Double -> (V.Vector Double, [V.Vector Double])
 minimizeV nrCycles minFunc' initial =

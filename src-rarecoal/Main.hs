@@ -286,7 +286,8 @@ parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*>
     parseModelEvents <*> parseParamsDesc <*> parseMaxCycles <*>
     parseNrRestarts <*> parseTraceFilePath  <*> parseMinAf <*> parseMaxAf <*>
     parseConditioning <*> OP.many parseExcludePattern <*> parseLinGen <*>
-    parseHistPath <*> parseNrThreads <*> parseRegularization
+    parseHistPath <*> parseNrThreads <*> parseRegularization <*>
+    parseFixedParams
   where
     parseMaxCycles = OP.option OP.auto $ OP.short 'c' <> OP.long "maxCycles"
                     <> OP.metavar "INT" <> OP.hidden
@@ -306,6 +307,11 @@ parseTraceFilePath = OP.strOption $ OP.short 'f' <> OP.long "traceFile" <> OP.me
                                <> OP.help "The file to write the trace of the maximization or the \
                                \MCMC. Can be useful to check whether parameters are converging."
 
+parseFixedParams :: OP.Parser [String]
+parseFixedParams = OP.option OP.auto $ OP.long "fixedParams" <>
+    OP.metavar "[P1,P2,P3,...]" <> OP.value [] <> OP.help "Give a set of \
+    \parameters that not be estimated, but kept fixed to the initial values."
+
 parseMcmc :: OP.Parser Command
 parseMcmc = CmdMcmc <$> parseMcmcOpt
 
@@ -314,7 +320,8 @@ parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*>
     parseModelEvents <*> parseParamsDesc <*> parseNrCycles <*>
     parseTraceFilePath <*> parseMinAf <*> parseMaxAf <*> parseConditioning <*>
     OP.many parseExcludePattern <*> parseLinGen <*> parseHistPath <*>
-    parseRandomSeed <*> parseNrThreads <*> parseRegularization
+    parseRandomSeed <*> parseNrThreads <*> parseRegularization <*>
+    parseFixedParams
   where
     parseRandomSeed = OP.option OP.auto $ OP.short 'S' <> OP.long "seed" <> OP.metavar "INT" <>
                       OP.value 0 <> OP.hidden <>

@@ -1,7 +1,7 @@
 module Mcmc (runMcmc, McmcOpt(..)) where
 
 import Maxl (minFunc, penalty)
-import Rarecoal.ModelTemplate (ModelTemplate(..), readModelTemplate, getInitialParams, ParamsDesc)
+import Rarecoal.ModelTemplate (ModelTemplate(..), readModelTemplate, getInitialParams, ParamsDesc, makeFixedParamsTemplate)
 import Rarecoal.Core (getTimeSteps, ModelEvent(..), EventType(..))
 import Rarecoal.RareAlleleHistogram (loadHistogram)
 
@@ -36,9 +36,9 @@ data McmcOpt = McmcOpt {
    mcLinGen :: Int,
    mcHistPath :: FilePath,
    mcRandomSeed :: Int,
---   mcBranchAges :: [Double],
    mcNrThreads :: Int,
-   mcReg :: Double
+   mcReg :: Double,
+   mcFixedParams :: [String]
 }
 
 data MCMCstate = MCMCstate {
@@ -71,8 +71,11 @@ runMcmc opts = do
             -- return [ModelEvent 0.0 (SetFreeze k True), ModelEvent t (SetFreeze k False)]
     let extraEvents = mcAdditionalEvents opts
     x <- getInitialParams modelTemplate (mcParamsDesc opts)
-    _ <- tryRight $ minFunc modelTemplate extraEvents hist x
-    let minFunc' = either (const penalty) id . minFunc modelTemplate extraEvents hist
+    modelTemplateWithFixedParams <- tryRight $
+        makeFixedParamsTemplate modelTemplate (mcFixedParams opts) x
+    _ <- tryRight $ minFunc modelTemplateWithFixedParams extraEvents hist x
+    let minFunc' = either (const penalty) id .
+            minFunc modelTemplateWithFixedParams extraEvents hist
         initV = minFunc' x
         stepWidths = V.map (max 1.0e-8 . abs . (/100.0)) x
         successRates = V.replicate (V.length x) 0.44
@@ -83,8 +86,10 @@ runMcmc opts = do
         pred_ = mcmcNotDone (mcNrCycles opts)
         act = mcmcCycle minFunc'
     states <- evalStateT (whileM pred_ act) initState
-    scriptIO $ reportPosteriorStats (mtParams modelTemplate) states
-    scriptIO $ reportTrace (mtParams modelTemplate) states (mcTracePath opts)
+    scriptIO $ reportPosteriorStats (mtParams modelTemplateWithFixedParams)
+        states
+    scriptIO $ reportTrace (mtParams modelTemplateWithFixedParams)
+        states (mcTracePath opts)
 
 mcmcNotDone :: Int -> StateT MCMCstate Script Bool
 mcmcNotDone requiredCycles = do

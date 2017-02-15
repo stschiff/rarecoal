@@ -2,7 +2,7 @@ module Rarecoal.ModelTemplate (getInitialParams, ModelTemplate(..),
                                readModelTemplate,
                                instantiateModel, ModelDesc(..),
                                getModelSpec, EventTemplate(..), ParamsDesc,
-                               BranchSpec) where
+                               BranchSpec, makeFixedParamsTemplate) where
 
 import           Rarecoal.Core        (EventType (..), ModelEvent (..),
                                        ModelSpec (..), getTimeSteps)
@@ -287,3 +287,60 @@ getModelSpec modelDesc branchNames = do
     return $ ModelSpec (times lingen) theta dr' reg events'
   where
     times lingen = getTimeSteps 20000 lingen 20.0
+
+makeFixedParamsTemplate :: ModelTemplate -> [String] -> V.Vector Double ->
+    Either String ModelTemplate
+makeFixedParamsTemplate modelTemplate fixedParams initialValues = do
+    let p = mtParams modelTemplate
+        et = mtEventTemplates modelTemplate
+        ct = mtConstraintTemplates modelTemplate
+    newEventTemplates <- mapM convertEventTemplate et
+    newConstraintTemplates <- mapM convertConstraintTemplate ct
+    let newParams = filter (`notElem` fixedParams) p
+    return $ modelTemplate {
+        mtParams = newParams,
+        mtEventTemplates = newEventTemplates,
+        mtConstraintTemplates = newConstraintTemplates
+    }
+  where
+    convertEventTemplate et =
+        case et of
+            PopSizeEventTemplate t k n -> do
+                newT <- maybeFixParam t
+                newN <- maybeFixParam n
+                return $ PopSizeEventTemplate newT k newN
+            JoinEventTemplate t k l -> do
+                newT <- maybeFixParam t
+                return $ JoinEventTemplate newT k l
+            SplitEventTemplate t k l m -> do
+                newT <- maybeFixParam t
+                newM <- maybeFixParam m
+                return $ SplitEventTemplate newT k l newM
+            JoinPopSizeEventTemplate t k l n -> do
+                newT <- maybeFixParam t
+                newN <- maybeFixParam n
+                return $ JoinPopSizeEventTemplate newT k l newN
+            GrowthRateEventTemplate t k r -> do
+                newT <- maybeFixParam t
+                newR <- maybeFixParam r
+                return $ GrowthRateEventTemplate newT k newR
+            MigrationRateEventTemplate t k l r -> do
+                newT <- maybeFixParam t
+                newR <- maybeFixParam r
+                return $ MigrationRateEventTemplate newT k l newR
+    maybeFixParam paramSpec =
+        case paramSpec of
+            Left val -> return paramSpec
+            Right pname ->
+                if   pname `elem` fixedParams
+                then Left <$> substituteParam (mtParams modelTemplate)
+                    (V.toList initialValues) paramSpec
+                else return paramSpec
+    convertConstraintTemplate ct =
+        case ct of
+            SmallerConstraintTemplate ps1 ps2 ->
+                SmallerConstraintTemplate <$> maybeFixParam ps1 <*>
+                    maybeFixParam ps2
+            GreaterConstraintTemplate ps1 ps2 ->
+                GreaterConstraintTemplate <$> maybeFixParam ps1 <*>
+                    maybeFixParam ps2
