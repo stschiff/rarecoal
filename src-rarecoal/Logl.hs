@@ -34,6 +34,9 @@ runLogl opts = do
         (loExcludePatterns opts) (loHistPath opts)
     modelSpec <- getModelSpec (loModelDesc opts) (raNames hist)
     standardOrder <- tryRight $ computeStandardOrder hist
+    scriptIO . putStrLn $
+        "computing probabilities for " ++ show (length standardOrder) ++
+        " patterns"
     let nVec = raNVec hist
     patternProbs <- tryRight . sequence $
             parMap rdeepseq (getProb modelSpec nVec False) standardOrder
