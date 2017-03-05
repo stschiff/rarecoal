@@ -1,0 +1,14 @@
+p_EUR,p_SEA,p_SIB,p_FAM,t_EUR_SIB,t_SEA_FAM,t_EUR_SEA,p_EUR_SIB,p_SEA_FAM,p_EUR_SEA,tAdm_FAM_SIB,pAdm_FAM_SIB,adm_FAM_SIB,adm_EUR_FAM,tAdm_SEA_SIB,pAdm_SEA_SIB,adm_SEA_SIB
+P 0.0,"EUR",<p_EUR>
+P 0.0,"SEA",<p_SEA>
+P 0.0,"SIB",<p_SIB>
+P 0.0,"FAM",<p_FAM>
+K <t_EUR_SIB>,"EUR","SIB",<p_EUR_SIB>
+K <t_SEA_FAM>,"SEA","FAM",<p_SEA_FAM>
+K <t_EUR_SEA>,"EUR","SEA",<p_EUR_SEA>
+S <tAdm_FAM_SIB>,"FAM","SIB",<adm_FAM_SIB>
+P <tAdm_FAM_SIB>,"FAM",<pAdm_FAM_SIB>
+S <tAdm_SEA_SIB>,"SEA","SIB",<adm_SEA_SIB>
+P <tAdm_SEA_SIB>,"SEA",<pAdm_SEA_SIB>
+S 0.00022,"EUR","FAM",<adm_EUR_FAM>
+C <tAdm_FAM_SIB>>0.00022

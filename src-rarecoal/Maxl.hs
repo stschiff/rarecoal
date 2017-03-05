@@ -94,7 +94,8 @@ reportTrace modelTemplate trace path = do
 
 minFunc :: ModelTemplate -> [ModelEvent] -> RareAlleleHistogram -> V.Vector Double -> Either String Double
 minFunc modelTemplate extraEvents hist params = do
-    modelSpec <- instantiateModel modelTemplate params (raNames hist)
+    let names = raNames hist
+    modelSpec <- instantiateModel modelTemplate params names (length names)
     let events = mEvents modelSpec
         events' = extraEvents ++ events
         modelSpec' = modelSpec {mEvents = events'}

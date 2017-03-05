@@ -31,7 +31,7 @@ data Command =
     CmdSimCommand SimCommandOpt
 
 main :: IO ()
-main = run =<< OP.execParser (parseOptions `withInfo` "Version 1.2.2. This \
+main = run =<< OP.execParser (parseOptions `withInfo` "Version 1.3.0. This \
     \software implements the Rarecoal algorithm, as described in \
     \doc/rarecoal.pdf. Type -h for getting help")
 
@@ -78,7 +78,7 @@ parseProb :: OP.Parser Command
 parseProb = CmdProb <$> parseProbOpt
 
 parseProbOpt :: OP.Parser ProbOpt
-parseProbOpt = ProbOpt <$> parseModelDesc <*> parseBranchnames <*>
+parseProbOpt = ProbOpt <$> parseModelDesc <*> parseBranchNames <*>
     parseNVec <*> parseKVec
   where
     parseNVec = OP.argument OP.auto (OP.metavar "[N1,N2,...]" <> OP.help "number of samples, \
@@ -88,7 +88,9 @@ parseProbOpt = ProbOpt <$> parseModelDesc <*> parseBranchnames <*>
                        \alleles in each population, same format as for NVec, e.g. [1,2] for allele \
                         \count 3 shared with one sample from the first and two from the second \
                         \population.")
-    parseBranchnames = OP.option (splitOn "," <$> OP.str) (OP.help "string of branch names" <> OP.long "branchnames")
+
+parseBranchNames :: OP.Parser [String]
+parseBranchNames = OP.option (splitOn "," <$> OP.str) (OP.metavar "POP1,POP2,..." <> OP.value [] <> OP.help "string of branch names" <> OP.long "branchNames")
 
 parseModelDesc :: OP.Parser ModelDesc
 parseModelDesc = ModelDesc <$> OP.many parseDiscoveryRates <*>
@@ -123,7 +125,8 @@ parseDiscoveryRates = OP.option (readKeyValuePair <$> OP.str) $
     OP.long "discoveryRate" <> OP.metavar "POP=VAL" <>
     OP.help "set the discovery rate for a specific branch. By default, \
     \all discovery rates are 1, you can use this option to lower them for \
-    \a specific sample/population."
+    \a specific sample/population. Note that you have to use named branches if \
+    \you want to use this option."
   where
     readKeyValuePair s =
         let [key, valS] = splitOn "=" s
@@ -407,14 +410,9 @@ parseSimCommand :: OP.Parser Command
 parseSimCommand = CmdSimCommand <$> parseSimCommandOpts
 
 parseSimCommandOpts :: OP.Parser SimCommandOpt
-parseSimCommandOpts = SimCommandOpt <$> parseModelDesc <*> parseBranchNames <*>
-    parseNrHaps <*> parseRho <*> parseChromLength
+parseSimCommandOpts = SimCommandOpt <$> parseModelDesc <*>
+    parseBranchNames <*> parseNrHaps <*> parseRho <*> parseChromLength
   where
-    parseBranchNames = OP.option (splitOn "," <$> OP.str) $ OP.long "branchNames" <>
-                       OP.short 'b' <> OP.metavar "NAME1,NAME2,..." <>
-                       OP.help "specify the branch names as a comma-separated string. This is \
-                                \needed because the model template may contain branch names \
-                                \instead of numbers."
     parseNrHaps = OP.option (map read . splitOn "," <$> OP.str) $ OP.long "nrHaps" <>
                     OP.short 'n' <>
                     OP.metavar "N1,N2,..." <>

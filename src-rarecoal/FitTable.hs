@@ -27,8 +27,8 @@ runFitTable opts = do
     hist <- loadHistogram minAf maxAf conditionOn excludePatterns histPath
     standardOrder <- tryRight $ computeStandardOrder hist
     let RareAlleleHistogram names nVec _ _ _ _ countMap = hist
-    modelSpec <- getModelSpec modelDesc names
-    let totalCounts = fromIntegral $ M.foldl' (+) 0 countMap
+    modelSpec <- getModelSpec modelDesc names (length names)
+    let totalCounts = fromIntegral $ M.foldl' (+) 0 countMap :: Int
     let realFreqs = do
             pat <- standardOrder
             let count = M.findWithDefault 0 (Pattern pat) countMap
@@ -84,9 +84,9 @@ sharingProbsF nVec = F.Fold step initial extract
     initial = V.replicate (length nVec * (length nVec + 1) `div` 2) 0.0
     extract = V.toList
 
-normFactorF :: F.Fold (SitePattern, Double) Double
-normFactorF = F.Fold step initial extract
-  where
-    step count (_, val) = count + val
-    initial = 0
-    extract = id
+-- normFactorF :: F.Fold (SitePattern, Double) Double
+-- normFactorF = F.Fold step initial extract
+--   where
+--     step count (_, val) = count + val
+--     initial = 0
+--     extract = id

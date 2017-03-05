@@ -178,15 +178,15 @@ parseConstraints = A.many' (A.try parseSmallerConstraint <|>
         A.space *> parseEitherParam) <* A.char '>' <*> parseEitherParam <*
         A.endOfLine
 
-instantiateModel :: ModelTemplate -> V.Vector Double -> [String] ->
+instantiateModel :: ModelTemplate -> V.Vector Double -> [String] -> Int ->
     Either String ModelSpec
-instantiateModel mt params branchNames = do
+instantiateModel mt params branchNames nrPops = do
     let (ModelTemplate pNames theta timeSteps drates reg ets cts) = mt
         params' = V.toList params
     dr <- do
         indexValuePairs <-
             mapM (instantiateDiscoveryRates pNames params' branchNames) drates
-        return . V.toList $ V.replicate (length branchNames) 1.0 V.//
+        return . V.toList $ V.replicate nrPops 1.0 V.//
             indexValuePairs
     events <- mapM (instantiateEvent pNames params' branchNames) ets
     mapM_ (validateConstraint pNames params') cts
@@ -265,21 +265,22 @@ validateConstraint pNames params ct =
             assertErr ("Constrained failed: " ++ show p1 ++ " > " ++ show p2)
                 (p1 > p2)
 
-getModelSpec :: ModelDesc -> [String] -> Script ModelSpec
-getModelSpec modelDesc branchNames = do
+getModelSpec :: ModelDesc -> [String] -> Int -> Script ModelSpec
+getModelSpec modelDesc branchNames nrPops = do
     let ModelDesc discoveryRates reg theta lingen events maybeTemplate =
             modelDesc
     indexValuePairs <- forM discoveryRates $ \(branchName, rate) -> do
         k <- tryRight $ substituteBranch branchNames (Right branchName)
         return (k, rate)
     let dr = V.toList $
-            V.replicate (length branchNames) 1.0 V.// indexValuePairs
+            V.replicate nrPops 1.0 V.// indexValuePairs
     (events', dr') <- case maybeTemplate of
         Nothing -> return (events, dr)
         Just (fp, paramsDesc) -> do
             template <- readModelTemplate fp theta (times lingen) reg
             x' <- getInitialParams template paramsDesc
-            modelSpec <- tryRight $ instantiateModel template x' branchNames
+            modelSpec <-
+                tryRight $ instantiateModel template x' branchNames nrPops
             let e = mEvents modelSpec
                 d = V.fromList $ mDiscoveryRates modelSpec
                 d' = V.toList $ d V.// indexValuePairs

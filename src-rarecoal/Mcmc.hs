@@ -2,7 +2,7 @@ module Mcmc (runMcmc, McmcOpt(..)) where
 
 import Maxl (minFunc, penalty)
 import Rarecoal.ModelTemplate (ModelTemplate(..), readModelTemplate, getInitialParams, ParamsDesc, makeFixedParamsTemplate)
-import Rarecoal.Core (getTimeSteps, ModelEvent(..), EventType(..))
+import Rarecoal.Core (getTimeSteps, ModelEvent(..))
 import Rarecoal.RareAlleleHistogram (loadHistogram)
 
 import qualified Data.Vector.Unboxed as V

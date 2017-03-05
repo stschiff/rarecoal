@@ -5,7 +5,7 @@ import Rarecoal.RareAlleleHistogram (loadHistogram, RareAlleleHistogram(..), Sit
 import Rarecoal.ModelTemplate (getModelSpec, ModelDesc, BranchSpec)
 
 import Control.Error (Script, scriptIO, tryAssert, tryRight, err, tryJust)
-import Data.List (sortBy, maximumBy, elemIndex)
+import Data.List (maximumBy, elemIndex)
 import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
 import Logl (computeLikelihood)
 import System.IO (stderr, hPutStrLn, openFile, IOMode(..), hClose)
@@ -38,7 +38,8 @@ runFind opts = do
     scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
     hist <- loadHistogram (fiMinAf opts) (fiMaxAf opts) (fiConditionOn opts)
         (fiExcludePatterns opts) (fiHistPath opts)
-    modelSpec <- getModelSpec (fiModelDesc opts) (raNames hist)
+    let names = raNames hist
+    modelSpec <- getModelSpec (fiModelDesc opts) names (length names)
     l <- findQueryIndex (raNames hist) (fiQueryBranch opts)
     let modelSpec' =
             if fiBranchAge opts > 0.0

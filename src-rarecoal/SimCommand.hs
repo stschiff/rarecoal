@@ -21,7 +21,8 @@ data SimCommandOpt = SimCommandOpt {
 
 runSimCommand :: SimCommandOpt -> Script ()
 runSimCommand (SimCommandOpt modelDesc names nrHaps rho chromLength) = do
-    (ModelSpec _ theta _ _ events) <- getModelSpec modelDesc names
+    (ModelSpec _ theta _ _ events) <-
+        getModelSpec modelDesc names (length nrHaps)
     let thetaL = 2.0 * theta * fromIntegral chromLength
     echo $ format ("scrm "%d%" 1 -t "%g%" -r "%g%" "%d%" -l 100000 "%s%" "%s)
         nSamples thetaL rhoL chromLength (makeSubPopSpec nrHaps)

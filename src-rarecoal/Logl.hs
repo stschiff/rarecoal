@@ -32,7 +32,8 @@ runLogl opts = do
     scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
     hist <- loadHistogram (loMinAf opts) (loMaxAf opts) (loConditionOn opts)
         (loExcludePatterns opts) (loHistPath opts)
-    modelSpec <- getModelSpec (loModelDesc opts) (raNames hist)
+    let nrPops = length $ raNames hist
+    modelSpec <- getModelSpec (loModelDesc opts) (raNames hist) nrPops
     standardOrder <- tryRight $ computeStandardOrder hist
     scriptIO . putStrLn $
         "computing probabilities for " ++ show (length standardOrder) ++
