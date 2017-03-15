@@ -33,7 +33,7 @@ runLogl opts = do
     hist <- loadHistogram (loMinAf opts) (loMaxAf opts) (loConditionOn opts)
         (loExcludePatterns opts) (loHistPath opts)
     let nrPops = length $ raNames hist
-    modelSpec <- getModelSpec (loModelDesc opts) (raNames hist) nrPops
+    modelSpec <- getModelSpec (loModelDesc opts) (raNames hist)
     standardOrder <- tryRight $ computeStandardOrder hist
     scriptIO . putStrLn $
         "computing probabilities for " ++ show (length standardOrder) ++
@@ -58,9 +58,11 @@ computeLikelihood modelSpec histogram noShortcut = do
     assertErr "minFreq must be greater than 0" $ raMinAf histogram > 0
     standardOrder <- computeStandardOrder histogram
     let nVec = raNVec histogram
-    patternProbs <- sequence $ parMap rdeepseq (getProb modelSpec nVec noShortcut) standardOrder
+    patternProbs <- sequence $
+        parMap rdeepseq (getProb modelSpec nVec noShortcut) standardOrder
     let patternCounts = map (defaultLookup histogram . Pattern) standardOrder
-        ll = sum $ zipWith (\p c -> log p * fromIntegral c) patternProbs patternCounts
+        ll = sum $
+            zipWith (\p c -> log p * fromIntegral c) patternProbs patternCounts
         otherCounts = defaultLookup histogram Higher
     return $ ll + fromIntegral otherCounts * log (1.0 - sum patternProbs)
 

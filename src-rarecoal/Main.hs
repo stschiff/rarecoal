@@ -184,50 +184,46 @@ parseEvent :: OP.Parser ModelEvent
 parseEvent = parseJoin <|> parseSplit <|> parseSetP <|> parseSetFreeze
 
 parseJoin :: OP.Parser ModelEvent
-parseJoin = OP.option (OP.str >>= readJoin) $ OP.short 'j' <> OP.long "join" <> OP.hidden
-                                              <> OP.metavar "FLOAT,INT,INT"
-                                              <> OP.help "Specify a join event at time t from l \
-                                              \into k. Can be given multiple times. Ignored if a \
-                                              \model template file is given. Example: -j 0.1,0,1 \
-                                              \specifies a join from branch 1 into branch 0 at \
-                                              \time 0.1.  You can give this option multiple times"
+parseJoin = OP.option (OP.str >>= readJoin) $ OP.short 'j' <> OP.long "join" <>
+    OP.hidden <> OP.metavar "FLOAT,INT,INT" <> OP.help "Specify a join event \
+    \at time t from l into k. Can be given multiple times. Ignored if a \
+    \model template file is given. Example: -j 0.1,0,1 specifies a join from \
+    \branch 1 into branch 0 at time 0.1.  You can give this option multiple \
+    \times"
   where
     readJoin s = do
         let [t, k, l] = splitOn "," s
         return $ ModelEvent (read t) (Join (read k) (read l))
 
 parseSplit :: OP.Parser ModelEvent
-parseSplit = OP.option (OP.str >>= readSplit) $ OP.long "split" <> OP.metavar "FLOAT,INT,INT,FLOAT"
-                                              <> OP.help "Specify a split event at time t from l \
-                                              \into k with probability m. Can be given multiple \
-                                              \times. Ignored if a \
-                                              \model template file is given. Example: -s \
-                                              \0.1,0,1,0.2 \
-                                              \specifies a split from branch 1 into branch 0 at \
-                                              \time 0.1 with probability 0.2. You can give this \
-                                              \option multiple times" <> OP.hidden
+parseSplit = OP.option (OP.str >>= readSplit) $ OP.long "split" <>
+    OP.metavar "FLOAT,INT,INT,FLOAT" <> OP.help "Specify a split event at \
+    \time t from l into k with probability m. Can be given multiple times. \
+    \Ignored if a model template file is given. Example: -s 0.1,0,1,0.2 \
+    \specifies a split from branch 1 into branch 0 at time 0.1 with \
+    \probability 0.2. You can give this option multiple times" <> OP.hidden
   where
     readSplit s = do
         let [t, k, l, m] = splitOn "," s
         return $ ModelEvent (read t) (Split (read k) (read l) (read m))
 
 parseSetP :: OP.Parser ModelEvent
-parseSetP = OP.option (OP.str >>= readSetP) $ OP.short 'p' <> OP.long "popSize"
-                    <> OP.metavar "FLOAT,INT,FLOAT" <> OP.hidden
-                    <> OP.help "Specify a population size change event at time t in branch k to \
-                    \population size p. Can be given multiple times. Ignored if a model template \
-                    \file is given. Example: -p 0.1,0,2.2 specifies that at time 0.1 the \
-                    \population size in branch 0 should be set to 2.2. You can give this option \
-                    \multiple times"
+parseSetP = OP.option (OP.str >>= readSetP) $ OP.short 'p' <>
+    OP.long "popSize" <> OP.metavar "FLOAT,INT,FLOAT" <>
+    OP.hidden <> OP.help "Specify a population size change event at time t in \
+    \branch k to population size p. Can be given multiple times. Ignored if a \
+    \model template file is given. Example: -p 0.1,0,2.2 specifies that at \
+    \time 0.1 the population size in branch 0 should be set to 2.2. You can \
+    \give this option multiple times"
   where
     readSetP s = do
         let [t, k, p] = splitOn "," s
         return $ ModelEvent (read t) (SetPopSize (read k) (read p))
 
 parseSetFreeze :: OP.Parser ModelEvent
-parseSetFreeze = OP.option (OP.str >>= readSetFreeze) $ OP.long "freeze" <> OP.metavar "FLOAT,INT,BOOL"
-                                              <> OP.help "At time t, set or unset freeze at branch k"
-                                              <> OP.hidden
+parseSetFreeze = OP.option (OP.str >>= readSetFreeze) $ OP.long "freeze" <>
+    OP.metavar "FLOAT,INT,BOOL" <> OP.help "At time t, set or unset freeze \
+    \at branch k" <> OP.hidden
   where
     readSetFreeze s = do
         let [t, k, b] = splitOn "," s

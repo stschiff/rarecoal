@@ -39,7 +39,7 @@ runFind opts = do
     hist <- loadHistogram (fiMinAf opts) (fiMaxAf opts) (fiConditionOn opts)
         (fiExcludePatterns opts) (fiHistPath opts)
     let names = raNames hist
-    modelSpec <- getModelSpec (fiModelDesc opts) names (length names)
+    modelSpec <- getModelSpec (fiModelDesc opts) names
     l <- findQueryIndex (raNames hist) (fiQueryBranch opts)
     let modelSpec' =
             if fiBranchAge opts > 0.0

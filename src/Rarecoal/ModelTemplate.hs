@@ -5,7 +5,8 @@ module Rarecoal.ModelTemplate (getInitialParams, ModelTemplate(..),
                                BranchSpec, makeFixedParamsTemplate) where
 
 import           Rarecoal.Core        (EventType (..), ModelEvent (..),
-                                       ModelSpec (..), getTimeSteps)
+                                       ModelSpec (..), getTimeSteps,
+                                       getNrOfPops)
 
 import           Control.Applicative  ((<|>))
 import           Control.Error        (Script, assertErr, justErr, scriptIO,
@@ -164,19 +165,20 @@ parseConstraints = A.many' (A.try parseSmallerConstraint <|>
         A.space *> parseEitherParam) <* A.char '>' <*> parseEitherParam <*
         A.endOfLine
 
-instantiateModel :: ModelTemplate -> V.Vector Double -> [String] -> Int ->
+instantiateModel :: ModelTemplate -> V.Vector Double -> [String] ->
     Either String ModelSpec
-instantiateModel mt params branchNames nrPops = do
+instantiateModel mt params branchNames = do
     let (ModelTemplate pNames theta timeSteps drates reg ets cts) = mt
         params' = V.toList params
+    events <- concat <$> mapM (instantiateEvent pNames params' branchNames) ets
+    let nrPops = getNrOfPops events
     dr <- do
         indexValuePairs <-
             mapM (instantiateDiscoveryRates pNames params' branchNames) drates
         return . V.toList $ V.replicate nrPops 1.0 V.//
             indexValuePairs
-    events <- mapM (instantiateEvent pNames params' branchNames) ets
     mapM_ (validateConstraint pNames params') cts
-    return $ ModelSpec timeSteps theta dr reg (concat events)
+    return $ ModelSpec timeSteps theta dr reg events
 
 instantiateDiscoveryRates :: [String] -> [Double] -> [String] ->
     (BranchSpec, ParamSpec) -> Either String (Int, Double)
@@ -243,22 +245,24 @@ validateConstraint pNames params ct =
             assertErr ("Constrained failed: " ++ show p1 ++ " > " ++ show p2)
                 (p1 > p2)
 
-getModelSpec :: ModelDesc -> [String] -> Int -> Script ModelSpec
-getModelSpec modelDesc branchNames nrPops = do
+getModelSpec :: ModelDesc -> [String] -> Script ModelSpec
+getModelSpec modelDesc branchNames = do
     let ModelDesc discoveryRates reg theta lingen events maybeTemplate =
             modelDesc
     indexValuePairs <- forM discoveryRates $ \(branchName, rate) -> do
         k <- tryRight $ substituteBranch branchNames (Right branchName)
         return (k, rate)
-    let dr = V.toList $
-            V.replicate nrPops 1.0 V.// indexValuePairs
     (events', dr') <- case maybeTemplate of
-        Nothing -> return (events, dr)
+        Nothing -> do
+            let nrPops = getNrOfPops events
+            let dr = V.toList $
+                    V.replicate nrPops 1.0 V.// indexValuePairs
+            return (events, dr)
         Just (fp, paramsDesc) -> do
             template <- readModelTemplate fp theta (times lingen) reg
             x' <- getInitialParams template paramsDesc
             modelSpec <-
-                tryRight $ instantiateModel template x' branchNames nrPops
+                tryRight $ instantiateModel template x' branchNames
             let e = mEvents modelSpec
                 d = V.fromList $ mDiscoveryRates modelSpec
                 d' = V.toList $ d V.// indexValuePairs

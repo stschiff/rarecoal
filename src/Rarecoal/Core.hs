@@ -1,6 +1,6 @@
 module Rarecoal.Core (defaultTimes, getTimeSteps, getProb, validateModel,
     choose, ModelEvent(..), EventType(..), ModelSpec(..), popJoinA,
-    popJoinB, popSplitA, popSplitB) where
+    popJoinB, popSplitA, popSplitB, getNrOfPops) where
 
 import           Rarecoal.StateSpace         (JointStateSpace (..),
                                               getNonZeroStates,
@@ -70,21 +70,29 @@ getTimeSteps n0 lingen tMax =
 getProb :: ModelSpec -> [Int] -> Bool -> [Int] -> Either String Double
 getProb modelSpec nVec noShortcut config = do
     validateModel modelSpec
+    let nVec' = padGhostPops nVec
+        config' = padGhostPops config
     let timeSteps = mTimeSteps modelSpec
         d = runST $ do
-            ms <- makeInitModelState modelSpec (length nVec)
-            cs <- makeInitCoalState nVec config
+            ms <- makeInitModelState modelSpec nrPops
+            cs <- makeInitCoalState nVec' config'
             propagateStates ms cs timeSteps noShortcut
             readSTRef (_csD cs)
-        combFac = product $ zipWith choose nVec config
+        combFac = product $ zipWith choose nVec' config'
         discoveryRateFactor =
             product [if c > 0 then d else 1.0 |
-                (c, d) <- zip config (mDiscoveryRates modelSpec)]
+                (c, d) <- zip config' (mDiscoveryRates modelSpec)]
     assertErr err $ combFac > 0
     --trace (show $ combFac) $ return ()
     return $ d * mTheta modelSpec * combFac * discoveryRateFactor
   where
-    err = "Overflow Error in getProb for nVec=" ++ show nVec ++ ", kVec=" ++ show config
+    err = "Overflow Error in getProb for nVec=" ++ show nVec ++ ", kVec=" ++
+        show config
+    padGhostPops a =
+        let d = nrPops - length a
+        in  a ++ replicate d 0
+    nrPops = length . mDiscoveryRates $ modelSpec
+
 
 makeInitModelState :: ModelSpec -> Int -> ST s (ModelState s)
 makeInitModelState (ModelSpec _ _ _ _ events) nrPop = do
@@ -216,8 +224,8 @@ popJoinA aVec k l = do
     VM.write aVec l 0.0
     VM.write aVec k (al + ak)
 
-popJoinB :: VM.MVector s Double -> VM.MVector s Double -> STRef s [Int] -> JointStateSpace ->
-            Int -> Int -> ST s ()
+popJoinB :: VM.MVector s Double -> VM.MVector s Double -> STRef s [Int] ->
+    JointStateSpace -> Int -> Int -> ST s ()
 popJoinB bVec bVecTemp nonZeroStateRef stateSpace k l = do
     VM.set bVecTemp 0.0
     nonZeroStateIds <- readSTRef nonZeroStateRef
@@ -384,7 +392,6 @@ checkRegularization nPops reg sortedEvents =
             else go ps rest
     go ps (_:rest) = go ps rest
 
-
 choose :: Int -> Int -> Double
 choose _ 0 = 1
 choose n k = product [fromIntegral (n + 1 - j) / fromIntegral j | j <- [1..k]]
@@ -393,3 +400,12 @@ choose n k = product [fromIntegral (n + 1 - j) / fromIntegral j | j <- [1..k]]
 chooseCont :: Double -> Int -> Double
 chooseCont _ 0 = 1
 chooseCont n k = product [(n + 1.0 - fromIntegral j) / fromIntegral j | j <- [1..k]]
+
+getNrOfPops :: [ModelEvent] -> Int
+getNrOfPops modelEvents = maximum $ do
+    ModelEvent t e <- modelEvents
+    case e of
+        Join k l -> [k, l]
+        Split k l _ -> [k, l]
+        SetPopSize k _ -> [k]
+        SetFreeze k _ -> [k]
