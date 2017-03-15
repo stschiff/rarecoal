@@ -37,9 +37,7 @@ data EventTemplate =
     JoinEventTemplate ParamSpec BranchSpec BranchSpec |
     SplitEventTemplate ParamSpec BranchSpec BranchSpec ParamSpec |
     PopSizeEventTemplate ParamSpec BranchSpec ParamSpec |
-    JoinPopSizeEventTemplate ParamSpec BranchSpec BranchSpec ParamSpec |
-    GrowthRateEventTemplate ParamSpec BranchSpec ParamSpec |
-    MigrationRateEventTemplate ParamSpec BranchSpec BranchSpec ParamSpec
+    JoinPopSizeEventTemplate ParamSpec BranchSpec BranchSpec ParamSpec
     deriving (Eq, Show)
 
 data ConstraintTemplate =
@@ -123,8 +121,7 @@ parseDiscoveryRate = do
 
 parseEvents :: A.Parser [EventTemplate]
 parseEvents = A.many' (parsePopSizeEvent <|> parseJoinEvent <|>
-    parseSplitEvent <|> parseJoinPopSizeEvent <|> parseGrowthRateEvent <|>
-    parseMigrationRateEvent)
+    parseSplitEvent <|> parseJoinPopSizeEvent)
 
 parsePopSizeEvent :: A.Parser EventTemplate
 parsePopSizeEvent = PopSizeEventTemplate <$> (A.char 'P' *> A.space *>
@@ -155,17 +152,6 @@ parseJoinPopSizeEvent :: A.Parser EventTemplate
 parseJoinPopSizeEvent = JoinPopSizeEventTemplate <$> (A.char 'K' *> A.space *>
     parseEitherParam) <* A.char ',' <*> parseEitherBranch <* A.char ',' <*>
     parseEitherBranch <* A.char ',' <*> parseEitherParam <* A.endOfLine
-
-parseGrowthRateEvent :: A.Parser EventTemplate
-parseGrowthRateEvent = GrowthRateEventTemplate <$> (A.char 'R' *> A.space *>
-    parseEitherParam) <* A.char ',' <*> parseEitherBranch <* A.char ',' <*>
-    parseEitherParam <* A.endOfLine
-
-parseMigrationRateEvent :: A.Parser EventTemplate
-parseMigrationRateEvent = MigrationRateEventTemplate <$> (A.char 'M' *>
-    A.space *> parseEitherParam) <* A.char ',' <*> parseEitherBranch <*
-    A.char ',' <*> parseEitherBranch <* A.char ',' <*> parseEitherParam <*
-    A.endOfLine
 
 parseConstraints :: A.Parser [ConstraintTemplate]
 parseConstraints = A.many' (A.try parseSmallerConstraint <|>
@@ -220,14 +206,6 @@ instantiateEvent pnames params branchNames et =
                 getEitherBranch k <*> getEitherBranch l <*> getEitherParam n
             return [ModelEvent t' (Join k' l'),
                 ModelEvent t' (SetPopSize k' n')]
-        GrowthRateEventTemplate t k r -> do
-            (t', k', r') <- (,,) <$> getEitherParam t <*> getEitherBranch k <*>
-                getEitherParam r
-            return [ModelEvent t' (SetGrowthRate k' r')]
-        MigrationRateEventTemplate t k l r -> do
-            (t', k', l', r') <- (,,,) <$> getEitherParam t <*>
-                getEitherBranch k <*> getEitherBranch l <*> getEitherParam r
-            return [ModelEvent t' (SetMigration k' l' r')]
   where
     getEitherParam = substituteParam pnames params
     getEitherBranch = substituteBranch branchNames
@@ -321,14 +299,6 @@ makeFixedParamsTemplate modelTemplate fixedParams initialValues = do
                 newT <- maybeFixParam t
                 newN <- maybeFixParam n
                 return $ JoinPopSizeEventTemplate newT k l newN
-            GrowthRateEventTemplate t k r -> do
-                newT <- maybeFixParam t
-                newR <- maybeFixParam r
-                return $ GrowthRateEventTemplate newT k newR
-            MigrationRateEventTemplate t k l r -> do
-                newT <- maybeFixParam t
-                newR <- maybeFixParam r
-                return $ MigrationRateEventTemplate newT k l newR
     maybeFixParam paramSpec =
         case paramSpec of
             Left val -> return paramSpec

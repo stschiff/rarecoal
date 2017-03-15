@@ -1,6 +1,6 @@
-module Rarecoal.Core (defaultTimes, getTimeSteps, getProb, validateModel, choose,
-                      ModelEvent(..), EventType(..), ModelSpec(..), popJoinA,
-                      popJoinB, popSplitA, popSplitB) where
+module Rarecoal.Core (defaultTimes, getTimeSteps, getProb, validateModel,
+    choose, ModelEvent(..), EventType(..), ModelSpec(..), popJoinA,
+    popJoinB, popSplitA, popSplitB) where
 
 import           Rarecoal.StateSpace         (JointStateSpace (..),
                                               getNonZeroStates,
@@ -35,9 +35,7 @@ data ModelEvent = ModelEvent {
 data EventType = Join Int Int
                | Split Int Int Double
                | SetPopSize Int Double
-               | SetGrowthRate Int Double
                | SetFreeze Int Bool
-               | SetMigration Int Int Double
                deriving (Show, Read)
 
 data ModelSpec = ModelSpec {
@@ -52,9 +50,7 @@ data ModelState s = ModelState {
     _msT              :: STRef s Double,
     _msEventQueue     :: STRef s [ModelEvent],
     _msPopSize        :: VM.MVector s Double,
-    _msGrowthRates    :: VM.MVector s Double,
-    _msFreezeState    :: VM.MVector s Bool,
-    _msMigrationRates :: STRef s [(Int, Int, Double)]
+    _msFreezeState    :: VM.MVector s Bool
 }
 
 defaultTimes :: [Double]
@@ -92,14 +88,13 @@ getProb modelSpec nVec noShortcut config = do
 
 makeInitModelState :: ModelSpec -> Int -> ST s (ModelState s)
 makeInitModelState (ModelSpec _ _ _ _ events) nrPop = do
-    sortedEvents <- newSTRef $ sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) ->
-                                       time1 `compare` time2) events
+    sortedEvents <- newSTRef $
+        sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) ->
+                time1 `compare` time2) events
     t <- newSTRef 0.0
     popSize <- VM.replicate nrPop 1.0
-    growthRates <- VM.replicate nrPop 0.0
     freezeState <- VM.replicate nrPop False
-    migrationMatrix <- newSTRef []
-    return $ ModelState t sortedEvents popSize growthRates freezeState migrationMatrix
+    return $ ModelState t sortedEvents popSize freezeState
 
 makeInitCoalState :: [Int] -> [Int] -> ST s (CoalState s)
 makeInitCoalState nVec config = do
@@ -134,9 +129,8 @@ canUseShortcut ms cs = do
             and [(V.length . V.filter (>0)) (idToState xId) == 1 | xId <- nonZeroStates]
     a <- V.freeze $ _csA cs
     let allAncestralHaveCoalesced = (V.length . V.filter (>0.0)) a == 1
-    r <- V.freeze $ _msGrowthRates ms
     e <- readSTRef $ _msEventQueue ms
-    return $ allDerivedHaveCoalesced && allAncestralHaveCoalesced && V.all (==0.0) r && null e
+    return $ allDerivedHaveCoalesced && allAncestralHaveCoalesced && null e
 
 propagateStateShortcut :: ModelState s -> CoalState s -> ST s ()
 propagateStateShortcut ms cs = do
@@ -177,14 +171,11 @@ singleStep ms cs nextTime = do
         singleStep ms cs nextTime
     else do
         deltaT <- (nextTime-) <$> readSTRef (_msT ms)
-        when (deltaT > 0) $ do
+        when (deltaT > 0) $
             -- t <- use $ _1 . msT
             -- trace ("time: " ++ show t ++ ": stepping forward with deltaT=" ++
             --        show deltaT) $ return ()
             updateCoalState ms cs deltaT
-            migrations <- readSTRef (_msMigrationRates ms)
-            mapM_ (updateCoalStateMig cs deltaT) migrations
-            updateModelState ms cs deltaT
 
 -- debugOutput :: ModelState s -> CoalState s -> Double -> ST s ()
 -- debugOutput ms cs nextTime = do
@@ -205,28 +196,18 @@ performEvent ms cs = do
     case e of
         Join k l -> popJoin ms cs k l
         Split k l m -> popSplit cs k l m
-        SetPopSize k p -> do
-            VM.write (_msPopSize ms) k p
-            VM.write (_msGrowthRates ms) k 0.0
-        SetGrowthRate k r -> VM.write (_msGrowthRates ms) k r
+        SetPopSize k p -> VM.write (_msPopSize ms) k p
         SetFreeze k b -> VM.write (_msFreezeState ms) k b
-        SetMigration k l m -> do
-            migrations <- readSTRef (_msMigrationRates ms)
-            let cleanedMigrations = [triple | triple@(k', l', _) <- migrations, k' /= k, l' /= l']
-                newMigrations =
-                    if m > 0.0 then (k, l, m) : cleanedMigrations else cleanedMigrations
-            writeSTRef (_msMigrationRates ms) newMigrations
     writeSTRef (_msEventQueue ms) $ tail events
 
 popJoin :: ModelState s -> CoalState s -> Int -> Int -> ST s ()
 popJoin ms cs k l = do
     popJoinA (_csA cs) k l
-    popJoinB (_csB cs) (_csBtemp cs) (_csNonZeroStates cs) (_csStateSpace cs) k l
-    migrations <- readSTRef (_msMigrationRates ms)
-    let newMigrations = deleteMigrations l migrations
-    writeSTRef (_msMigrationRates ms) newMigrations
+    popJoinB (_csB cs) (_csBtemp cs) (_csNonZeroStates cs) (_csStateSpace cs)
+        k l
   where
-    deleteMigrations pop list = [mig | mig@(k', l', _) <- list, k' /= pop, l' /= pop]
+    deleteMigrations pop list =
+        [mig | mig@(k', l', _) <- list, k' /= pop, l' /= pop]
 
 popJoinA :: VM.MVector s Double -> Int -> Int -> ST s ()
 popJoinA aVec k l = do
@@ -353,19 +334,6 @@ updateD cs deltaT = do
     b1s <- mapM (VM.read (_csB cs)) x1s
     modifySTRef (_csD cs) (\v -> v + deltaT * sum b1s)
 
-updateCoalStateMig :: CoalState s -> Double -> (Int, Int, Double) -> ST s ()
-updateCoalStateMig cs deltaT (k, l, m) = popSplit cs k l (deltaT * m)
-
-updateModelState :: ModelState s -> CoalState s -> Double -> ST s ()
-updateModelState ms cs deltaT = do
-    let nrPop = _jsNrPop (_csStateSpace cs)
-    forM_ [0 .. (nrPop - 1)] $ \k -> do
-        popSize <- VM.read (_msPopSize ms) k
-        growthRate <- VM.read (_msGrowthRates ms) k
-        let newPopSize = popSize * exp (-(growthRate * deltaT))
-        VM.write (_msPopSize ms) k newPopSize
-    modifySTRef (_msT ms) (+deltaT)
-
 validateModel :: ModelSpec -> Either String ()
 validateModel (ModelSpec _ _ dr reg events) = do
     when (or [t < 0 | ModelEvent t _ <- events]) $ Left "Negative event times"
@@ -383,17 +351,11 @@ validateModel (ModelSpec _ _ dr reg events) = do
                     Join k' l'           -> return $ k' == l || l' == l
                     Split k' l' _        -> return $ k' == l || l' == l
                     SetPopSize k' _      -> return $ k' == l
-                    SetGrowthRate k' _   -> return $ k' == l
-                    SetMigration k' l' _ -> return $ k' == l || l' == l
                     SetFreeze k' _       -> return $ k' == l
         if k == l || illegalEvents then Left "Illegal joins" else checkEvents rest
     checkEvents (ModelEvent _ (SetPopSize _ p):rest) =
         if p < 0.001 || p > 1000 then Left $ "Illegal population size: " ++ show p else
             checkEvents rest
-    checkEvents (ModelEvent _ (SetGrowthRate _ r):rest) =
-        if abs r > 10000.0 then Left "Illegal growth rates" else checkEvents rest
-    checkEvents (ModelEvent _ (SetMigration _ _ r):rest) =
-        if r < 0.0 || r > 10000.0 then Left "Illegal migration rate" else checkEvents rest
     checkEvents (ModelEvent _ (Split _ _ m):rest) =
         if m <= 0.0 || m >= 1.0 then Left "Illegal split rate" else checkEvents rest
     checkEvents (ModelEvent _ (SetFreeze _ _):rest) = checkEvents rest

@@ -181,7 +181,7 @@ parseModelEvents :: OP.Parser [ModelEvent]
 parseModelEvents = OP.many parseEvent
 
 parseEvent :: OP.Parser ModelEvent
-parseEvent = parseJoin <|> parseSplit <|> parseSetP <|> parseSetR <|> parseSetM <|> parseSetFreeze
+parseEvent = parseJoin <|> parseSplit <|> parseSetP <|> parseSetFreeze
 
 parseJoin :: OP.Parser ModelEvent
 parseJoin = OP.option (OP.str >>= readJoin) $ OP.short 'j' <> OP.long "join" <> OP.hidden
@@ -223,24 +223,6 @@ parseSetP = OP.option (OP.str >>= readSetP) $ OP.short 'p' <> OP.long "popSize"
     readSetP s = do
         let [t, k, p] = splitOn "," s
         return $ ModelEvent (read t) (SetPopSize (read k) (read p))
-
-parseSetR :: OP.Parser ModelEvent
-parseSetR = OP.option (OP.str >>= readSetR) $ OP.short 'r' <> OP.internal <> OP.long "growthRate"
-                                              <> OP.metavar "FLAOT,INT,FLOAT"
-                                              <> OP.help "At time t, set growth rate in k to r"
-  where
-    readSetR s = do
-        let [t, k, r] = splitOn "," s
-        return $ ModelEvent (read t) (SetGrowthRate (read k) (read r))
-
-parseSetM :: OP.Parser ModelEvent
-parseSetM = OP.option (OP.str >>= readSetM) $ OP.long "mig" <> OP.metavar "FLAOT,INT,INT,FLOAT"
-                                              <> OP.internal
-                                              <> OP.help "At time t, set migration rate m from l to k"
-  where
-    readSetM s = do
-        let [t, k, l, m] = splitOn "," s
-        return $ ModelEvent (read t) (SetMigration (read k) (read l) (read m))
 
 parseSetFreeze :: OP.Parser ModelEvent
 parseSetFreeze = OP.option (OP.str >>= readSetFreeze) $ OP.long "freeze" <> OP.metavar "FLOAT,INT,BOOL"
