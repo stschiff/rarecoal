@@ -402,7 +402,7 @@ chooseCont _ 0 = 1
 chooseCont n k = product [(n + 1.0 - fromIntegral j) / fromIntegral j | j <- [1..k]]
 
 getNrOfPops :: [ModelEvent] -> Int
-getNrOfPops modelEvents = maximum $ do
+getNrOfPops modelEvents = (1+) . maximum $ do
     ModelEvent t e <- modelEvents
     case e of
         Join k l -> [k, l]
