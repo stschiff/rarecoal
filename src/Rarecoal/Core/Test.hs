@@ -16,22 +16,20 @@ import Test.Tasty (TestTree, testGroup)
 import Test.QuickCheck
 
 tests :: TestTree
-tests = testGroup "Core Tests" [ testProperty "joinPopsA leaves total nr of ancestral alleles \
-                                               \invariant" prop_joinPopsA,
-                                 testProperty "joinPopsB leaves total probabilities invariant"
-                                              prop_joinPopsB,
-                                 testProperty "splitPopsA leaves total nr of ancestral alleles \
-                                               \invariant" prop_splitPopsA,
-                                 testProperty "splitPopsB leaves total probabilities invariant"
-                                                   prop_splitPopsB,
-                                 testProperty "full split equals join for A"
-                                               prop_fullSplitIsJoinForA,
-                                 testProperty "full split equals join for B"
-                                               prop_fullSplitIsJoinForB,
-                                 testProperty "total probabilities are all positive"
-                                              prop_getProbTest,
-                                 testCase "testing consistency with previous versions"
-                                           assert_consistentProbs]
+tests = testGroup "Core Tests" [
+    testProperty "joinPopsA leaves total nr of ancestral alleles invariant"
+        prop_joinPopsA,
+    testProperty "joinPopsB leaves total probabilities invariant"
+        prop_joinPopsB,
+    testProperty "splitPopsA leaves total nr of ancestral alleles invariant"
+        prop_splitPopsA,
+    testProperty "splitPopsB leaves total probabilities invariant"
+        prop_splitPopsB,
+    testProperty "full split equals join for A" prop_fullSplitIsJoinForA,
+    testProperty "full split equals join for B" prop_fullSplitIsJoinForB,
+    testProperty "total probabilities are all positive" prop_getProbTest,
+    testCase "testing consistency with previous versions"
+        assert_consistentProbs]
 
 prop_joinPopsA :: Property
 prop_joinPopsA = forAll (suchThat gen (\(_, k, l) -> k /= l)) go

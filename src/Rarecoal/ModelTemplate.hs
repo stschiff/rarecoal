@@ -3,7 +3,7 @@ module Rarecoal.ModelTemplate (getInitialParams, ModelTemplate(..),
                                instantiateModel, ModelDesc(..),
                                getModelSpec, EventTemplate(..), ParamsDesc,
                                BranchSpec, makeFixedParamsTemplate,
-                               reportGhostPops) where
+                               reportGhostPops, ConstraintTemplate(..)) where
 
 import           Rarecoal.Core        (EventType (..), ModelEvent (..),
                                        ModelSpec (..), getTimeSteps,
@@ -96,7 +96,7 @@ readModelTemplate path theta timeSteps reg = do
 reportGhostPops :: ModelTemplate -> [String] -> V.Vector Double -> Script ()
 reportGhostPops modelTemplate branchNames x = do
     modelSpec <- tryRight $ instantiateModel modelTemplate x branchNames
-    let nrPops = getNrOfPops (mEvents modelSpec)
+    nrPops <- tryRight $ getNrOfPops (mEvents modelSpec)
     when (length branchNames /= nrPops) . scriptIO $
         err ("found " ++ show (nrPops - length branchNames) ++
         " ghost populations\n")
@@ -180,7 +180,7 @@ instantiateModel mt params branchNames = do
     let (ModelTemplate pNames theta timeSteps drates reg ets cts) = mt
         params' = V.toList params
     events <- concat <$> mapM (instantiateEvent pNames params' branchNames) ets
-    let nrPops = getNrOfPops events
+    nrPops <- getNrOfPops events
     dr <- do
         indexValuePairs <-
             mapM (instantiateDiscoveryRates pNames params' branchNames) drates
@@ -263,7 +263,7 @@ getModelSpec modelDesc branchNames = do
         return (k, rate)
     (events', dr') <- case maybeTemplate of
         Nothing -> do
-            let nrPops = getNrOfPops events
+            nrPops <- tryRight $ getNrOfPops events
             let dr = V.toList $
                     V.replicate nrPops 1.0 V.// indexValuePairs
             return (events, dr)
@@ -277,7 +277,7 @@ getModelSpec modelDesc branchNames = do
                 d' = V.toList $ d V.// indexValuePairs
             return (e ++ events, d')
     let modelSpec = ModelSpec (times lingen) theta dr' reg events'
-    let nrPops = getNrOfPops (mEvents modelSpec)
+    nrPops <- tryRight $ getNrOfPops (mEvents modelSpec)
     when (nrPops /= length branchNames) . scriptIO $
         err ("found " ++ show (nrPops - length branchNames) ++
             " ghost populations\n")

@@ -1,7 +1,7 @@
 module Rarecoal.ModelTemplate.Test (tests) where
 
 import Rarecoal.Core (defaultTimes)
-import Rarecoal.ModelTemplate (ModelTemplate(..), EventTemplate(..), readModelTemplate)
+import Rarecoal.ModelTemplate (ModelTemplate(..), EventTemplate(..), readModelTemplate, ConstraintTemplate(..))
 
 import Control.Error (runScript)
 import Test.Tasty
@@ -9,27 +9,42 @@ import Test.Tasty.HUnit (testCase, Assertion, assertEqual)
 
 template :: ModelTemplate
 template = ModelTemplate {
-    mtParams = ["p0","p1","p2","p3","p4","t01","t23","t24","t02","p01","p23","p24","p02"],
+    mtParams = ["p_EUR", "p_SEA", "p_SIB", "p_FAM", "t_EUR_SIB", "t_SEA_FAM",
+        "t_EUR_SEA", "p_EUR_SIB", "p_SEA_FAM", "p_EUR_SEA", "tAdm_FAM_SIB",
+        "pAdm_FAM_SIB", "adm_FAM_SIB", "adm_EUR_FAM", "tAdm_SEA_SIB",
+        "pAdm_SEA_SIB", "adm_SEA_SIB"],
     mtTheta = 0.0005,
     mtTimeSteps = defaultTimes,
     mtDiscoveryRate = [],
-    mtEventTemplates = [ PopSizeEventTemplate (Left 0.0) (Left 0) (Right "p0")
-                       , PopSizeEventTemplate (Left 0.0) (Left 1) (Right "p1")
-                       , PopSizeEventTemplate (Left 0.0) (Left 2) (Right "p2")
-                       , PopSizeEventTemplate (Left 0.0) (Left 3) (Right "p3")
-                       , PopSizeEventTemplate (Left 0.0) (Left 4) (Right "p4")
-                       , JoinPopSizeEventTemplate (Right "t01") (Left 0) (Left 1) (Right "p01")
-                       , JoinPopSizeEventTemplate (Right "t23") (Left 2) (Left 3) (Right "p23")
-                       , JoinPopSizeEventTemplate (Right "t24") (Left 2) (Left 4) (Right "p24")
-                       , JoinPopSizeEventTemplate (Right "t02") (Left 0) (Left 2) (Right "p02")
-                       ],
+    mtEventTemplates = [
+        PopSizeEventTemplate (Left 0.0) (Right "EUR") (Right "p_EUR"),
+        PopSizeEventTemplate (Left 0.0) (Right "SEA") (Right "p_SEA"),
+        PopSizeEventTemplate (Left 0.0) (Right "SIB") (Right "p_SIB"),
+        PopSizeEventTemplate (Left 0.0) (Right "FAM") (Right "p_FAM"),
+        JoinPopSizeEventTemplate (Right "t_EUR_SIB") (Right "EUR")
+            (Right "SIB") (Right "p_EUR_SIB"),
+        JoinPopSizeEventTemplate (Right "t_SEA_FAM") (Right "SEA")
+            (Right "FAM") (Right "p_SEA_FAM"),
+        JoinPopSizeEventTemplate (Right "t_EUR_SEA") (Right "EUR")
+            (Right "SEA") (Right "p_EUR_SEA"),
+        SplitEventTemplate (Right "tAdm_FAM_SIB") (Right "FAM") (Right "SIB")
+            (Right "adm_FAM_SIB"),
+        PopSizeEventTemplate (Right "tAdm_FAM_SIB") (Right "FAM")
+            (Right "pAdm_FAM_SIB"),
+        SplitEventTemplate (Right "tAdm_SEA_SIB") (Right "SEA") (Right "SIB")
+            (Right "adm_SEA_SIB"),
+        PopSizeEventTemplate (Right "tAdm_SEA_SIB") (Right "SEA")
+            (Right "pAdm_SEA_SIB"),
+        SplitEventTemplate (Left 0.00022) (Right "EUR") (Right "FAM")
+            (Right "adm_EUR_FAM")],
     mtPopSizeReg = 10,
-    mtConstraintTemplates = []
+    mtConstraintTemplates = [
+        GreaterConstraintTemplate (Right "tAdm_FAM_SIB") (Left 0.00022)]
 }
 
 testLoadTemplate :: Assertion
 testLoadTemplate = do
-    t <- runScript $ readModelTemplate "testData/5popSimTemplate.txt" 0.0005
+    t <- runScript $ readModelTemplate "exampleData/fourPop.template.txt" 0.0005
         defaultTimes 10
     assertEqual "testLoadTemplate" t template
 
