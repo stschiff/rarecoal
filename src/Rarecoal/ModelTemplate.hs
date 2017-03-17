@@ -2,7 +2,8 @@ module Rarecoal.ModelTemplate (getInitialParams, ModelTemplate(..),
                                readModelTemplate,
                                instantiateModel, ModelDesc(..),
                                getModelSpec, EventTemplate(..), ParamsDesc,
-                               BranchSpec, makeFixedParamsTemplate) where
+                               BranchSpec, makeFixedParamsTemplate,
+                               reportGhostPops) where
 
 import           Rarecoal.Core        (EventType (..), ModelEvent (..),
                                        ModelSpec (..), getTimeSteps,
@@ -10,7 +11,7 @@ import           Rarecoal.Core        (EventType (..), ModelEvent (..),
 
 import           Control.Applicative  ((<|>))
 import           Control.Error        (Script, assertErr, justErr, scriptIO,
-                                       tryJust, tryRight)
+                                       tryJust, tryRight, err)
 import           Control.Monad        (forM, when)
 import qualified Data.Attoparsec.Text as A
 import           Data.Char            (isAlphaNum)
@@ -91,6 +92,14 @@ readModelTemplate path theta timeSteps reg = do
     return $
         ModelTemplate names theta timeSteps discoveryRates reg events
             constraints
+
+reportGhostPops :: ModelTemplate -> [String] -> V.Vector Double -> Script ()
+reportGhostPops modelTemplate branchNames x = do
+    modelSpec <- tryRight $ instantiateModel modelTemplate x branchNames
+    let nrPops = getNrOfPops (mEvents modelSpec)
+    when (length branchNames /= nrPops) . scriptIO $
+        err ("found " ++ show (nrPops - length branchNames) ++
+        " ghost populations\n")
 
 parseModelTemplate :: A.Parser ([String], [(BranchSpec, ParamSpec)],
     [EventTemplate], [ConstraintTemplate])
@@ -267,7 +276,12 @@ getModelSpec modelDesc branchNames = do
                 d = V.fromList $ mDiscoveryRates modelSpec
                 d' = V.toList $ d V.// indexValuePairs
             return (e ++ events, d')
-    return $ ModelSpec (times lingen) theta dr' reg events'
+    let modelSpec = ModelSpec (times lingen) theta dr' reg events'
+    let nrPops = getNrOfPops (mEvents modelSpec)
+    when (nrPops /= length branchNames) . scriptIO $
+        err ("found " ++ show (nrPops - length branchNames) ++
+            " ghost populations\n")
+    return modelSpec
   where
     times lingen = getTimeSteps 20000 lingen 20.0
 

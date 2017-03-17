@@ -1,9 +1,9 @@
 module Mcmc (runMcmc, McmcOpt(..)) where
 
 import Maxl (minFunc, penalty)
-import Rarecoal.ModelTemplate (ModelTemplate(..), readModelTemplate, getInitialParams, ParamsDesc, makeFixedParamsTemplate)
+import Rarecoal.ModelTemplate (ModelTemplate(..), readModelTemplate, getInitialParams, ParamsDesc, makeFixedParamsTemplate, reportGhostPops)
 import Rarecoal.Core (getTimeSteps, ModelEvent(..))
-import Rarecoal.RareAlleleHistogram (loadHistogram)
+import Rarecoal.RareAlleleHistogram (loadHistogram, RareAlleleHistogram(..))
 
 import qualified Data.Vector.Unboxed as V
 import qualified System.Random as R
@@ -71,6 +71,7 @@ runMcmc opts = do
             -- return [ModelEvent 0.0 (SetFreeze k True), ModelEvent t (SetFreeze k False)]
     let extraEvents = mcAdditionalEvents opts
     x <- getInitialParams modelTemplate (mcParamsDesc opts)
+    reportGhostPops modelTemplate (raNames hist) x
     modelTemplateWithFixedParams <- tryRight $
         makeFixedParamsTemplate modelTemplate (mcFixedParams opts) x
     xNew <- getInitialParams modelTemplateWithFixedParams (mcParamsDesc opts)

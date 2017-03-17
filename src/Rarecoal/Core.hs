@@ -401,11 +401,21 @@ chooseCont :: Double -> Int -> Double
 chooseCont _ 0 = 1
 chooseCont n k = product [(n + 1.0 - fromIntegral j) / fromIntegral j | j <- [1..k]]
 
-getNrOfPops :: [ModelEvent] -> Int
-getNrOfPops modelEvents = (1+) . maximum $ do
-    ModelEvent t e <- modelEvents
-    case e of
-        Join k l -> [k, l]
-        Split k l _ -> [k, l]
-        SetPopSize k _ -> [k]
-        SetFreeze k _ -> [k]
+getNrOfPops :: [ModelEvent] -> Either String Int
+getNrOfPops modelEvents =
+    let maxBranch = maximum allBranches
+        nrBranches = length . nub $ allBranches
+    in  if maxBranch + 1 /= nrBranches
+        then Left "Error: Branch indices are not consecutive. Ghost branch \
+            \indices have to be zero-indexed and start with one higher than \
+            \the last named branch. Example with four named populations and 1 \
+            \ghost populations: the ghost population should have index 4."
+        else Right nrBranches
+  where
+      allBranches = do
+          ModelEvent t e <- modelEvents
+          case e of
+              Join k l -> [k, l]
+              Split k l _ -> [k, l]
+              SetPopSize k _ -> [k]
+              SetFreeze k _ -> [k]

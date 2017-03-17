@@ -1,12 +1,14 @@
 module Maxl (minFunc, penalty, runMaxl, MaxlOpt(..)) where
 
 import Logl (computeLikelihood)
-import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..))
+import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..), getNrOfPops)
 import Rarecoal.ModelTemplate (ModelTemplate(..), instantiateModel,
-    readModelTemplate, getInitialParams, ParamsDesc, makeFixedParamsTemplate)
+    readModelTemplate, getInitialParams, ParamsDesc, makeFixedParamsTemplate,
+    reportGhostPops)
 import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), loadHistogram)
 
 import Control.Error (Script, scriptIO, assertErr, tryRight, err)
+import Control.Monad (when)
 import Data.List (intercalate)
 import qualified Data.Vector.Unboxed as V
 import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
@@ -47,6 +49,7 @@ runMaxl opts = do
     hist <- loadHistogram (maMinAf opts) (maMaxAf opts) (maConditionOn opts)
         (maExcludePatterns opts) (maHistPath opts)
     x <- getInitialParams modelTemplate (maParamsDesc opts)
+    reportGhostPops modelTemplate (raNames hist) x
     modelTemplateWithFixedParams <- tryRight $
         makeFixedParamsTemplate modelTemplate (maFixedParams opts) x
     xNew <- getInitialParams modelTemplateWithFixedParams (maParamsDesc opts)
