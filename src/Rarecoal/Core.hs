@@ -179,11 +179,12 @@ singleStep ms cs nextTime = do
         singleStep ms cs nextTime
     else do
         deltaT <- (nextTime-) <$> readSTRef (_msT ms)
-        when (deltaT > 0) $
+        when (deltaT > 0) $ do
             -- t <- use $ _1 . msT
             -- trace ("time: " ++ show t ++ ": stepping forward with deltaT=" ++
             --        show deltaT) $ return ()
             updateCoalState ms cs deltaT
+            modifySTRef (_msT ms) (+deltaT)
 
 -- debugOutput :: ModelState s -> CoalState s -> Double -> ST s ()
 -- debugOutput ms cs nextTime = do
