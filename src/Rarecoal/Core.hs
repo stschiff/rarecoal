@@ -1,6 +1,6 @@
 module Rarecoal.Core (defaultTimes, getTimeSteps, getProb, validateModel,
     choose, ModelEvent(..), EventType(..), ModelSpec(..), popJoinA,
-    popJoinB, popSplitA, popSplitB, getNrOfPops) where
+    popJoinB, popSplitA, popSplitB, getNrOfPops, getRegularizationPrior) where
 
 import           Rarecoal.StateSpace         (JointStateSpace (..),
                                               getNonZeroStates,
@@ -350,7 +350,7 @@ validateModel (ModelSpec _ _ dr reg events) = do
     let sortedEvents =
             sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) -> time1 `compare` time2) events
     checkEvents sortedEvents
-    when (reg > 1.0) $ checkRegularization (length dr) reg sortedEvents
+    -- when (reg > 1.0) $ checkRegularization (length dr) reg sortedEvents
   where
     checkEvents [] = Right ()
     checkEvents (ModelEvent _ (Join k l):rest) = do
@@ -363,35 +363,57 @@ validateModel (ModelSpec _ _ dr reg events) = do
                     SetFreeze k' _       -> return $ k' == l
         if k == l || illegalEvents then Left "Illegal joins" else checkEvents rest
     checkEvents (ModelEvent _ (SetPopSize _ p):rest) =
-        if p < 0.001 || p > 1000 then Left $ "Illegal population size: " ++ show p else
-            checkEvents rest
+        if p <= 0 then Left $ "Illegal population size: " ++ show p else checkEvents rest
     checkEvents (ModelEvent _ (Split _ _ m):rest) =
         if m <= 0.0 || m >= 1.0 then Left "Illegal split rate" else checkEvents rest
     checkEvents (ModelEvent _ (SetFreeze _ _):rest) = checkEvents rest
 
-checkRegularization :: Int -> Double -> [ModelEvent] -> Either String ()
-checkRegularization nPops reg sortedEvents =
-    let popSizes = V.replicate nPops 1.0
-    in  go popSizes sortedEvents
+-- checkRegularization :: Int -> Double -> [ModelEvent] -> Either String ()
+-- checkRegularization nPops reg sortedEvents =
+--     let popSizes = V.replicate nPops 1.0
+--     in  go popSizes sortedEvents
+--   where
+--     go _ [] = Right ()
+--     go ps (ModelEvent t (SetPopSize k newP):rest) =
+--         let newPs = ps V.// [(k, newP)]
+--             oldP = ps V.! k
+--         in  if t /= 0.0 && (((oldP / newP) > reg) ||
+--                             ((oldP / newP) < (1.0 / reg)))
+--             then Left ("illegal population size change in branch " ++ show k ++
+--                        " from " ++ show oldP ++ " to " ++ show newP)
+--             else go newPs rest
+--     go ps (ModelEvent t (Join l k):rest) =
+--         let fromP = ps V.! k
+--             toP = ps V.! l
+--         in  if ((fromP / toP) > reg) || ((fromP / toP) < (1.0 / reg))
+--             then Left ("illegal population size change within join from \
+--                        \branch " ++ show k ++ " (" ++ show fromP ++
+--                        ") to branch " ++ show l ++ " (" ++ show toP ++ ")")
+--             else go ps rest
+--     go ps (_:rest) = go ps rest
+
+getRegularizationPrior :: ModelSpec -> Either String Double
+getRegularizationPrior ms = do
+    nPops <- getNrOfPops (mEvents ms)
+    let initialPopSizes = V.replicate nPops 1.0
+    return $ if reg > 1.0 then go 1.0 initialPopSizes sortedEvents else 1.0
   where
-    go _ [] = Right ()
-    go ps (ModelEvent t (SetPopSize k newP):rest) =
+    go res _ [] = res
+    go res ps (ModelEvent t (SetPopSize k newP):rest) =
         let newPs = ps V.// [(k, newP)]
             oldP = ps V.! k
-        in  if t /= 0.0 && (((oldP / newP) > reg) ||
-                            ((oldP / newP) < (1.0 / reg)))
-            then Left ("illegal population size change in branch " ++ show k ++
-                       " from " ++ show oldP ++ " to " ++ show newP)
-            else go newPs rest
-    go ps (ModelEvent t (Join l k):rest) =
+            newRes = if t /= 0.0 then res * logNormalDist 0 reg (newP / oldP) else res
+        in  go newRes newPs rest
+    go res ps (ModelEvent t (Join l k):rest) =
         let fromP = ps V.! k
             toP = ps V.! l
-        in  if ((fromP / toP) > reg) || ((fromP / toP) < (1.0 / reg))
-            then Left ("illegal population size change within join from \
-                       \branch " ++ show k ++ " (" ++ show fromP ++
-                       ") to branch " ++ show l ++ " (" ++ show toP ++ ")")
-            else go ps rest
-    go ps (_:rest) = go ps rest
+            newRes = res * logNormalDist 0 reg (toP / fromP)
+        in  go newRes ps rest
+    go res ps (_:rest) = go res ps rest
+    sortedEvents = sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) -> time1 `compare` time2)
+        (mEvents ms)
+    reg = mPopSizeRegularization ms
+    logNormalDist mu sigma x = 1.0 / (x * sigma * sqrt (2.0 * pi)) * exp ((-(log x - mu)^2) / (2.0 * sigma^2))
 
 choose :: Int -> Int -> Double
 choose _ 0 = 1

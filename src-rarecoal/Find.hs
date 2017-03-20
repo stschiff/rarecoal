@@ -7,7 +7,7 @@ import Rarecoal.ModelTemplate (getModelSpec, ModelDesc, BranchSpec)
 import Control.Error (Script, scriptIO, tryAssert, tryRight, err, tryJust)
 import Data.List (maximumBy, elemIndex)
 import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
-import Logl (computeLikelihood)
+import Logl (computeLogLikelihood)
 import System.IO (stderr, hPutStrLn, openFile, IOMode(..), hClose)
 
 data FindOpt = FindOpt {
@@ -60,7 +60,7 @@ runFind opts = do
                                   branch
             return (branch, time)
     allLikelihoods <- do
-            let f (k, t) = computeLikelihoodIO hist modelSpec' k l t (fiNoShortcut opts)
+            let f (k, t) = computeLogLikelihoodIO hist modelSpec' k l t (fiNoShortcut opts)
             mapM f allParamPairs
     scriptIO $ writeResult (fiEvalPath opts) allParamPairs allLikelihoods
     let ((minBranch, minTime), minLL) = maximumBy (\(_, ll1) (_, ll2) -> ll1 `compare` ll2) $
@@ -87,13 +87,13 @@ getJoinTimes modelSpec deltaT maxT branchAge k =
         leaveTimes = [t | ModelEvent t (Join _ l) <- mEvents modelSpec, k == l]
     in  if null leaveTimes then allTimes else filter (<head leaveTimes) allTimes
 
-computeLikelihoodIO :: RareAlleleHistogram -> ModelSpec -> Int -> Int -> Double -> Bool ->
+computeLogLikelihoodIO :: RareAlleleHistogram -> ModelSpec -> Int -> Int -> Double -> Bool ->
                        Script Double
-computeLikelihoodIO hist modelSpec k l t noShortcut = do
+computeLogLikelihoodIO hist modelSpec k l t noShortcut = do
     let e = mEvents modelSpec
         newE = ModelEvent t (Join k l)
         modelSpec' = modelSpec {mEvents = newE : e}
-    ll <- tryRight $ computeLikelihood modelSpec' hist noShortcut
+    ll <- tryRight $ computeLogLikelihood modelSpec' hist noShortcut
     scriptIO $ hPutStrLn stderr ("branch=" ++ show k ++ ", time=" ++ show t ++ ", ll=" ++ show ll)
     return ll
 

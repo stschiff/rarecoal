@@ -1,7 +1,8 @@
 module Maxl (minFunc, penalty, runMaxl, MaxlOpt(..)) where
 
-import Logl (computeLikelihood)
-import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..), getNrOfPops)
+import Logl (computeLogLikelihood)
+import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..), getNrOfPops,
+    getRegularizationPrior)
 import Rarecoal.ModelTemplate (ModelTemplate(..), instantiateModel,
     readModelTemplate, getInitialParams, ParamsDesc, makeFixedParamsTemplate,
     reportGhostPops)
@@ -99,13 +100,14 @@ minFunc :: ModelTemplate -> [ModelEvent] -> RareAlleleHistogram -> V.Vector Doub
 minFunc modelTemplate extraEvents hist params = do
     let names = raNames hist
     modelSpec <- instantiateModel modelTemplate params names
+    regPrior <- getRegularizationPrior modelSpec
     let events = mEvents modelSpec
         events' = extraEvents ++ events
         modelSpec' = modelSpec {mEvents = events'}
-    val <- computeLikelihood modelSpec' hist False
+    val <- computeLogLikelihood modelSpec' hist False
     assertErr ("likelihood infinite for params " ++ show params) $ not (isInfinite val)
     assertErr ("likelihood NaN for params " ++ show params) $ not (isNaN val)
-    return (-val)
+    return (-val - log regPrior)
 
 penalty :: Double
 penalty = 1.0e20

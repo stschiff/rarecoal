@@ -1,4 +1,4 @@
-module Logl (LoglOpt(..), runLogl, computeLikelihood,
+module Logl (LoglOpt(..), runLogl, computeLogLikelihood,
     computeStandardOrder) where
 
 import Rarecoal.Core (getProb, ModelSpec(..))
@@ -52,9 +52,9 @@ runLogl opts = do
         zipWith (\p val -> show (Pattern p) ++ "\t" ++ show val) standardOrder
         patternProbs
 
-computeLikelihood :: ModelSpec -> RareAlleleHistogram -> Bool ->
+computeLogLikelihood :: ModelSpec -> RareAlleleHistogram -> Bool ->
     Either String Double
-computeLikelihood modelSpec histogram noShortcut = do
+computeLogLikelihood modelSpec histogram noShortcut = do
     assertErr "minFreq must be greater than 0" $ raMinAf histogram > 0
     standardOrder <- computeStandardOrder histogram
     let nVec = raNVec histogram
