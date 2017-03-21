@@ -1,6 +1,6 @@
 module Rarecoal.Core (defaultTimes, getTimeSteps, getProb, validateModel,
     choose, ModelEvent(..), EventType(..), ModelSpec(..), popJoinA,
-    popJoinB, popSplitA, popSplitB, getNrOfPops, getRegularizationPrior) where
+    popJoinB, popSplitA, popSplitB, getNrOfPops, getRegularizationPenalty) where
 
 import           Rarecoal.StateSpace         (JointStateSpace (..),
                                               getNonZeroStates,
@@ -350,7 +350,7 @@ validateModel (ModelSpec _ _ dr reg events) = do
     let sortedEvents =
             sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) -> time1 `compare` time2) events
     checkEvents sortedEvents
-    when (reg > 1.0) $ checkRegularization (length dr) reg sortedEvents
+    -- when (reg > 1.0) $ checkRegularization (length dr) reg sortedEvents
   where
     checkEvents [] = Right ()
     checkEvents (ModelEvent _ (Join k l):rest) = do
@@ -392,8 +392,8 @@ checkRegularization nPops reg sortedEvents =
             else go ps rest
     go ps (_:rest) = go ps rest
 
-getRegularizationPrior :: ModelSpec -> Either String Double
-getRegularizationPrior ms = do
+getRegularizationPenalty :: ModelSpec -> Either String Double
+getRegularizationPenalty ms = do
     nPops <- getNrOfPops (mEvents ms)
     let initialPopSizes = V.replicate nPops 1.0
     return $ if reg > 1.0 then go 1.0 initialPopSizes sortedEvents else 1.0
@@ -414,9 +414,8 @@ getRegularizationPrior ms = do
         (mEvents ms)
     reg = mPopSizeRegularization ms
     regFunc reg oldP newP = if newP > oldP
-                            then normalDist 0 reg (newP / oldP - 1.0)
-                            else normalDist 0 reg (oldP / newP - 1.0)
-    normalDist mu sigma x = 1.0 / sqrt (2.0 * pi * sigma^2) * exp ((-(x - mu)^2) / (2.0 * sigma^2))
+                            then reg * (newP / oldP - 1.0)^2
+                            else reg * (oldP / newP - 1.0)^2
 
 choose :: Int -> Int -> Double
 choose _ 0 = 1
