@@ -402,18 +402,21 @@ getRegularizationPrior ms = do
     go res ps (ModelEvent t (SetPopSize k newP):rest) =
         let newPs = ps V.// [(k, newP)]
             oldP = ps V.! k
-            newRes = if t /= 0.0 then res * logNormalDist 0 reg (newP / oldP) else res
+            newRes = if t /= 0.0 then res * regFunc reg oldP newP else res
         in  go newRes newPs rest
     go res ps (ModelEvent t (Join l k):rest) =
         let fromP = ps V.! k
             toP = ps V.! l
-            newRes = res * logNormalDist 0 reg (toP / fromP)
+            newRes = res * regFunc reg fromP toP
         in  go newRes ps rest
     go res ps (_:rest) = go res ps rest
     sortedEvents = sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) -> time1 `compare` time2)
         (mEvents ms)
     reg = mPopSizeRegularization ms
-    logNormalDist mu sigma x = 1.0 / (x * sigma * sqrt (2.0 * pi)) * exp ((-(log x - mu)^2) / (2.0 * sigma^2))
+    regFunc reg oldP newP = if newP > oldP
+                            then normalDist 0 reg (newP / oldP - 1.0)
+                            else normalDist 0 reg (oldP / newP - 1.0)
+    normalDist mu sigma x = 1.0 / sqrt (2.0 * pi * sigma^2) * exp ((-(x - mu)^2) / (2.0 * sigma^2))
 
 choose :: Int -> Int -> Double
 choose _ 0 = 1
