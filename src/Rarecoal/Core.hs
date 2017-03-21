@@ -396,18 +396,18 @@ getRegularizationPenalty :: ModelSpec -> Either String Double
 getRegularizationPenalty ms = do
     nPops <- getNrOfPops (mEvents ms)
     let initialPopSizes = V.replicate nPops 1.0
-    return $ if reg > 1.0 then go 1.0 initialPopSizes sortedEvents else 1.0
+    return $ go 0 initialPopSizes sortedEvents
   where
     go res _ [] = res
     go res ps (ModelEvent t (SetPopSize k newP):rest) =
         let newPs = ps V.// [(k, newP)]
             oldP = ps V.! k
-            newRes = if t /= 0.0 then res * regFunc reg oldP newP else res
+            newRes = if t /= 0.0 then res + regFunc reg oldP newP else res
         in  go newRes newPs rest
     go res ps (ModelEvent t (Join l k):rest) =
         let fromP = ps V.! k
             toP = ps V.! l
-            newRes = res * regFunc reg fromP toP
+            newRes = res + regFunc reg fromP toP
         in  go newRes ps rest
     go res ps (_:rest) = go res ps rest
     sortedEvents = sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) -> time1 `compare` time2)

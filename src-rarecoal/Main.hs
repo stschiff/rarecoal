@@ -99,9 +99,8 @@ parseModelDesc = ModelDesc <$> OP.many parseDiscoveryRates <*>
 parseRegularization :: OP.Parser Double
 parseRegularization = OP.option OP.auto $ OP.long "regularization" <>
     OP.metavar "FLOAT" <> OP.help "set the regularization parameter for \
-    \population size changes. Population sizes are only allowed to change \
-    \along branches by this factor. Set to any value below 1.0 to switch \
-    \off." <> OP.value 10.0 <> OP.showDefault <> OP.hidden
+    \population size changes. This is a penalty factor for fold-changes in population size. Set to \
+    \0 to switch off." <> OP.value 10.0 <> OP.showDefault <> OP.hidden
 
 parseTheta :: OP.Parser Double
 parseTheta = OP.option OP.auto $ OP.short 't' <> OP.long "theta" <>
