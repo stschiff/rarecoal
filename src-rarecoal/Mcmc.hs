@@ -1,7 +1,9 @@
 module Mcmc (runMcmc, McmcOpt(..)) where
 
 import Maxl (minFunc, penalty)
-import Rarecoal.ModelTemplate (ModelTemplate(..), readModelTemplate, getInitialParams, ParamsDesc, makeFixedParamsTemplate, reportGhostPops)
+import FitTable (writeFitTables)
+import Rarecoal.ModelTemplate (ModelTemplate(..), readModelTemplate, getInitialParams, ParamsDesc, 
+    makeFixedParamsTemplate, reportGhostPops, instantiateModel)
 import Rarecoal.Core (getTimeSteps, ModelEvent(..))
 import Rarecoal.RareAlleleHistogram (loadHistogram, RareAlleleHistogram(..))
 
@@ -10,12 +12,13 @@ import qualified System.Random as R
 import Control.Monad.Trans.State.Lazy (StateT, get, gets, put, evalStateT, modify)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad (when, forM_)
+import Control.Monad.Loops (whileM)
 import Data.List (intercalate, sort, minimumBy)
 import Control.Error (Script, scriptIO, tryRight, err)
 import Data.Ord (comparing)
 import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
+import System.IO (withFile, Handle, IOMode(..), withFile, hPutStr, hPutStrLn)
 import System.Log.Logger (infoM)
-import Control.Monad.Loops (whileM)
 
 (!) :: V.Vector Double -> Int -> Double
 (!) = (V.!)
@@ -28,7 +31,7 @@ data McmcOpt = McmcOpt {
    mcAdditionalEvents :: [ModelEvent],
    mcParamsDesc :: ParamsDesc,
    mcNrCycles :: Int,
-   mcTracePath :: FilePath,
+   mcOutPrefix :: FilePath,
    mcMinAf :: Int,
    mcMaxAf :: Int,
    mcConditionOn :: [Int],
@@ -65,10 +68,6 @@ runMcmc opts = do
         times (mcReg opts)
     hist <- loadHistogram (mcMinAf opts) (mcMaxAf opts) (mcConditionOn opts)
         (mcExcludePatterns opts) (mcHistPath opts)
-    -- let extraEvents = concat $ do
-            -- (t, k) <- zip (mcBranchAges opts) [0..]
-            -- True <- return $ t > 0
-            -- return [ModelEvent 0.0 (SetFreeze k True), ModelEvent t (SetFreeze k False)]
     let extraEvents = mcAdditionalEvents opts
     x <- getInitialParams modelTemplate (mcParamsDesc opts)
     reportGhostPops modelTemplate (raNames hist) x
@@ -88,10 +87,18 @@ runMcmc opts = do
         pred_ = mcmcNotDone (mcNrCycles opts)
         act = mcmcCycle minFunc'
     states <- evalStateT (whileM pred_ act) initState
-    scriptIO $ reportPosteriorStats (mtParams modelTemplateWithFixedParams)
-        states
-    scriptIO $ reportTrace (mtParams modelTemplateWithFixedParams)
-        states (mcTracePath opts)
+
+    let outMcmcFN = mcOutPrefix opts ++ ".paramEstimates.txt"
+        outTraceFN = mcOutPrefix opts ++ ".trace.txt"
+        outFullFitTableFN = mcOutPrefix opts ++ ".frequencyFitTable.txt"
+        outSummaryTableFN = mcOutPrefix opts ++ ".summaryFitTable.txt"
+    minPoint <- scriptIO . withFile outMcmcFN WriteMode $ \h ->
+        reportPosteriorStats (mtParams modelTemplateWithFixedParams) states h
+    scriptIO . withFile outTraceFN WriteMode $ \h ->
+        reportTrace (mtParams modelTemplateWithFixedParams) states h
+    finalModelSpec <- tryRight $ instantiateModel modelTemplate minPoint (raNames hist)
+    writeFitTables outFullFitTableFN outSummaryTableFN hist finalModelSpec
+
 
 mcmcNotDone :: Int -> StateT MCMCstate Script Bool
 mcmcNotDone requiredCycles = do
@@ -201,8 +208,8 @@ showStateLog state =
     "; Value: " ++ show (mcmcCurrentValue state) ++
     "; Point: " ++ show (mcmcCurrentPoint state)
 
-reportPosteriorStats :: [String] -> [MCMCstate] -> IO ()
-reportPosteriorStats paramNames states = do
+reportPosteriorStats :: [String] -> [MCMCstate] -> Handle -> IO (V.Vector Double)
+reportPosteriorStats paramNames states h = do
     let dim = V.length $ mcmcCurrentPoint (head states)
         allScores = map mcmcCurrentValue states
         nrBurninCycles = computeBurninCycles allScores
@@ -214,9 +221,10 @@ reportPosteriorStats paramNames states = do
         paramLines = zipWith (\n s -> intercalate "\t" (n:map show s)) paramNames orderStats
         scoreLine = intercalate "\t" ("Score":map show orderStatsScore)
         headerLine = "Param\tMaxL\tLowerCI\tMedian\tUpperCI"
-    putStrLn $ "# Nr Burnin Cycles: " ++ show nrBurninCycles
-    putStrLn $ "# Nr Main Cycles: " ++ show (length states - nrBurninCycles)
-    putStr $ unlines (headerLine:scoreLine:paramLines)
+    hPutStrLn h $ "# Nr Burnin Cycles: " ++ show nrBurninCycles
+    hPutStrLn h $ "# Nr Main Cycles: " ++ show (length states - nrBurninCycles)
+    hPutStr h $ unlines (headerLine:scoreLine:paramLines)
+    return $ points !! minIndex
   where
    getOrderStats minI vals =
         let nPoints = fromIntegral $ length vals :: Double
@@ -224,8 +232,8 @@ reportPosteriorStats paramNames states = do
             sortedVals = sort vals
         in  vals!!minI : map (sortedVals!!) [lowCIindex, midIndex, highCIindex]
 
-reportTrace :: [String] -> [MCMCstate] -> FilePath -> IO ()
-reportTrace paramNames states traceFilePath = do
+reportTrace :: [String] -> [MCMCstate] -> Handle -> IO ()
+reportTrace paramNames states h = do
     let body = do
             s <- states
             let l = [V.singleton (mcmcCurrentValue s), mcmcCurrentPoint s, mcmcStepWidths s,
@@ -233,4 +241,4 @@ reportTrace paramNames states traceFilePath = do
             return . intercalate "\t" . map show . V.toList . V.concat $ l
         headerLine = intercalate "\t" $ ["Score"] ++ paramNames ++ map (++"_delta") paramNames ++
                      map (++"_success") paramNames
-    writeFile traceFilePath $ unlines (headerLine:body)
+    hPutStr h $ unlines (headerLine:body)

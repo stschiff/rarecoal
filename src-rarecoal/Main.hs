@@ -264,7 +264,7 @@ parseMaxl = CmdMaxl <$> parseMaxlOpt
 parseMaxlOpt :: OP.Parser MaxlOpt
 parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*>
     parseModelEvents <*> parseParamsDesc <*> parseMaxCycles <*>
-    parseNrRestarts <*> parseTraceFilePath  <*> parseMinAf <*> parseMaxAf <*>
+    parseNrRestarts <*> parseOutPrefix  <*> parseMinAf <*> parseMaxAf <*>
     parseConditioning <*> OP.many parseExcludePattern <*> parseLinGen <*>
     parseHistPath <*> parseNrThreads <*> parseRegularization <*>
     parseFixedParams
@@ -281,12 +281,6 @@ parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*>
                       \From experience, five restarts are typically enough to get close to the \
                       \true maximum."
 
-parseTraceFilePath :: OP.Parser FilePath
-parseTraceFilePath = OP.strOption $ OP.short 'f' <> OP.long "traceFile" <> OP.metavar "FILE"
-                               <> OP.value "/dev/null"
-                               <> OP.help "The file to write the trace of the maximization or the \
-                               \MCMC. Can be useful to check whether parameters are converging."
-
 parseFixedParams :: OP.Parser [String]
 parseFixedParams = OP.option (splitOn "," <$> OP.str) $ OP.long "fixedParams" <>
     OP.metavar "P1,P2,P3,..." <> OP.value [] <> OP.help "Give a list of \
@@ -299,7 +293,7 @@ parseMcmc = CmdMcmc <$> parseMcmcOpt
 parseMcmcOpt :: OP.Parser McmcOpt
 parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*>
     parseModelEvents <*> parseParamsDesc <*> parseNrCycles <*>
-    parseTraceFilePath <*> parseMinAf <*> parseMaxAf <*> parseConditioning <*>
+    parseOutPrefix <*> parseMinAf <*> parseMaxAf <*> parseConditioning <*>
     OP.many parseExcludePattern <*> parseLinGen <*> parseHistPath <*>
     parseRandomSeed <*> parseNrThreads <*> parseRegularization <*>
     parseFixedParams
@@ -381,7 +375,7 @@ parseFitTable = CmdFitTable <$> parseFitTableOpt
 
 parseFitTableOpt :: OP.Parser FitTableOpt
 parseFitTableOpt = FitTableOpt <$> parseModelDesc <*> parseMaxAf <*>
-                                parseMinAf <*> parseConditioning <*> OP.many parseExcludePattern <*> parseHistPath
+                                parseMinAf <*> parseConditioning <*> OP.many parseExcludePattern <*> parseHistPath <*> parseOutPrefix
 
 parseSimCommand :: OP.Parser Command
 parseSimCommand = CmdSimCommand <$> parseSimCommandOpts
@@ -402,3 +396,7 @@ parseSimCommandOpts = SimCommandOpt <$> parseModelDesc <*>
     parseChromLength = OP.option OP.auto $ OP.short 'L' <> OP.long "chromLength" <>
                        OP.metavar "INT" <> OP.value 100000000 <>
                        OP.help "specify the length of the simulated chromosomes in basepairs"
+
+parseOutPrefix :: OP.Parser FilePath
+parseOutPrefix = OP.strOption $ OP.short 'o' <> OP.long "prefix" <> OP.metavar "PREFIX" <>
+    OP.help "give the prefix for the output files."

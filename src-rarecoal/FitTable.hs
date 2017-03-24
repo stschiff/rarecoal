@@ -1,15 +1,18 @@
-module FitTable (runFitTable, FitTableOpt(..)) where
+module FitTable (runFitTable, FitTableOpt(..), writeFitTables) where
 
-import Rarecoal.Core (getProb)
+import Rarecoal.Core (getProb, ModelSpec)
 import Rarecoal.ModelTemplate (ModelDesc, getModelSpec)
 import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), loadHistogram,
     SitePattern(..), computeStandardOrder)
 
 import Control.Error (Script, tryRight, scriptIO)
 import qualified Control.Foldl as F
+import Control.Monad (forM_)
+import Data.Int (Int64)
 import Data.List (intercalate)
 import qualified Data.Map.Strict as M
 import qualified Data.Vector.Unboxed as V
+import System.IO (withFile, IOMode(..), hPutStrLn)
 
 data FitTableOpt = FitTableOpt {
     _ftModelDesc :: ModelDesc,
@@ -17,26 +20,76 @@ data FitTableOpt = FitTableOpt {
     _ftMinAf :: Int,
     _ftConditionOn :: [Int],
     _ftExcludePatterns :: [[Int]],
-    _ftHistPath :: FilePath
+    _ftHistPath :: FilePath,
+    _ftOutPrefix :: FilePath
 }
 
 runFitTable :: FitTableOpt -> Script ()
 runFitTable opts = do
     let FitTableOpt modelDesc maxAf minAf conditionOn
-            excludePatterns histPath = opts
+            excludePatterns histPath outPrefix = opts
+    
+    let outFullTable = outPrefix ++ ".frequencyFitTable.txt"
+        summaryTable = outPrefix ++ ".summaryFitTable.txt"
+    
     hist <- loadHistogram minAf maxAf conditionOn excludePatterns histPath
+    modelSpec <- getModelSpec modelDesc (raNames hist)
+    writeFitTables outFullTable summaryTable hist modelSpec
+
+writeFitTables :: FilePath -> FilePath -> RareAlleleHistogram -> ModelSpec -> 
+    Script ()
+writeFitTables outFullTable outSummaryTable hist modelSpec = do
     standardOrder <- tryRight $ computeStandardOrder hist
+    theoryValues <- mapM (tryRight . getProb modelSpec (raNVec hist) False) standardOrder
+
+    scriptIO $ do
+        writeFullTable outFullTable standardOrder hist theoryValues
+        writeSummaryTable outSummaryTable standardOrder hist theoryValues
+
+writeFullTable :: FilePath -> [[Int]] -> RareAlleleHistogram -> [Double] -> IO ()
+writeFullTable outFN standardOrder hist theoryValues = do
+    let countMap = raCounts hist
+        totalCounts = M.foldl' (+) 0 countMap
+    withFile outFN WriteMode $ \outF -> do
+        hPutStrLn outF $ "Pattern\tCount\tFreq\tTheoryFreq\trelDev%"
+        forM_ (zip standardOrder theoryValues) $ \(p, theoryFreq) -> do
+            let realCount = M.findWithDefault 0 (Pattern p) countMap
+                realFreq = fromIntegral realCount / fromIntegral totalCounts
+                fitDev = if realCount == 0
+                         then "n/a"
+                         else show . round $ 100.0 * (theoryFreq - realFreq) / realFreq
+                (mean, lower, upper) = wilsonScoreInterval totalCounts realCount
+                -- stdErr = upper - lower
+                -- zScore = (theoryFreq - realFreq) / stdErr
+                patternString = "(" ++ intercalate "," (map show p) ++ ")"
+            hPutStrLn outF . intercalate "\t" $ [patternString, show realCount, show realFreq,
+                show theoryFreq, fitDev]
+
+-- https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval
+-- not used at the moment
+wilsonScoreInterval :: Int64 -> Int64 -> (Double, Double, Double)
+wilsonScoreInterval n ns = (mean, lowerCI, upperCI)
+  where
+    mean = fromIntegral ns / fromIntegral n
+    lowerCI = term1 * (term2 - term3)
+    upperCI = term1 * (term2 + term3)
+    term1 = 1.0 / (fromIntegral n + z^2)
+    z = 1.96
+    term2 = fromIntegral ns + 0.5 * z^2
+    term3 = z * sqrt (1.0 / fromIntegral n * fromIntegral ns * fromIntegral nf + 0.25 * z^2)
+    nf = n - ns
+
+writeSummaryTable :: FilePath -> [[Int]] -> RareAlleleHistogram -> [Double] -> IO ()
+writeSummaryTable outFN standardOrder hist theoryValues = do
     let RareAlleleHistogram names nVec _ _ _ _ countMap = hist
-    modelSpec <- getModelSpec modelDesc names
     let totalCounts = fromIntegral $ M.foldl' (+) 0 countMap :: Int
-    let realFreqs = do
+        realFreqs = do
             pat <- standardOrder
             let count = M.findWithDefault 0 (Pattern pat) countMap
             return (Pattern pat, fromIntegral count / fromIntegral totalCounts)
-    theoryValues <- mapM (tryRight . getProb modelSpec nVec False) standardOrder
-    let theoryFreqs = zipWith (\p v -> (Pattern p, v)) standardOrder
+        theoryFreqs = zipWith (\p v -> (Pattern p, v)) standardOrder
             theoryValues
-    let combinedFold = (,) <$> singletonProbsF nVec <*> sharingProbsF nVec
+        combinedFold = (,) <$> singletonProbsF nVec <*> sharingProbsF nVec
         (singletonProbs, sharingProbs) = F.fold combinedFold realFreqs
         (singletonProbsTheory, sharingProbsTheory) =
             F.fold combinedFold theoryFreqs
@@ -47,10 +100,12 @@ runFitTable opts = do
         allLabels = singletonLabels ++ sharingLabels
         allProbs = singletonProbs ++ sharingProbs
         allProbsTheory = singletonProbsTheory ++ sharingProbsTheory
-        l = [intercalate "\t" [label, show real, show fit] |
+        l = [intercalate "\t" [label, show real, show fit,
+                if real > 0 then show . round $ 100.0 * (fit - real) / real else "n/a"] |
              (label, real, fit) <- zip3 allLabels allProbs allProbsTheory]
-    scriptIO . putStrLn . intercalate "\t" $ ["POP", "REAL", "FIT"]
-    scriptIO $ mapM_ putStrLn l
+    withFile outFN WriteMode $ \h -> do
+        hPutStrLn h . intercalate "\t" $ ["Populations", "AlleleSharing", "Predicted", "relDev%"]
+        mapM_ (hPutStrLn h) l
 
 singletonProbsF :: [Int] -> F.Fold (SitePattern, Double) [Double]
 singletonProbsF nVec = F.Fold step initial extract
