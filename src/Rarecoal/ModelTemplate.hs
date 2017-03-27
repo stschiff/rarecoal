@@ -1,7 +1,7 @@
 module Rarecoal.ModelTemplate (getInitialParams, ModelTemplate(..),
                                readModelTemplate,
                                instantiateModel, ModelDesc(..),
-                               getModelSpec, EventTemplate(..), ParamsDesc,
+                               getModelSpec, EventTemplate(..),
                                BranchSpec, makeFixedParamsTemplate,
                                reportGhostPops, ConstraintTemplate(..)) where
 
@@ -11,8 +11,9 @@ import           Rarecoal.Core        (EventType (..), ModelEvent (..),
 
 import           Control.Applicative  ((<|>))
 import           Control.Error        (Script, assertErr, justErr, scriptIO,
-                                       tryJust, tryRight, errLn)
+                                       tryRight, errLn)
 import           Control.Monad        (forM, when)
+import           Control.Monad.Except (throwError)
 import qualified Data.Attoparsec.Text as A
 import           Data.Char            (isAlphaNum)
 -- import Debug.Trace (trace)
@@ -53,36 +54,53 @@ data ModelDesc = ModelDesc {
     mdTheta :: Double,
     mdLinGen :: Int,
     mdEvents :: [ModelEvent],
-    mdMaybeTemplate :: Maybe (FilePath, ParamsDesc)
+    mdMaybeTemplate :: Maybe (FilePath, Maybe FilePath, [(String, Double)])
 }
-type ParamsDesc = Either (FilePath, [(String, Double)]) [Double]
 
-getInitialParams :: ModelTemplate -> ParamsDesc -> Script (V.Vector Double)
-getInitialParams modelTemplate paramsDesc =
-    case paramsDesc of
-        Left (paramsFile, additionalParams) -> do
+-- type ParamsDesc = Either (FilePath, [(String, Double)]) [Double]
+
+getInitialParams :: ModelTemplate -> Maybe FilePath -> [(String, Double)] ->
+    Script (V.Vector Double)
+getInitialParams modelTemplate maybeInputFile paramsList =
+    case maybeInputFile of
+        Just paramsFile -> do
             l <- lines <$> (scriptIO . readFile $ paramsFile)
             ret <- if (head . head $ l) == '#'
                 then -- aha, have rarecoal mcmc output file
                     loadFromDict
                         [(k, read $ v !! 2) | (k : v) <- map words . drop 3 $ l]
-                        additionalParams
                 else -- aha, have rarecoal maxl output file
                     loadFromDict
-                        [(k, read v) | [k, v] <- map words l] additionalParams
+                        [(k, read v) | [k, v] <- map words l]
             scriptIO . infoM "rarecoal" $ "initial parameters: " ++ show ret
             return ret
-        Right x -> return . V.fromList $ x
+        Nothing -> loadFromDict []
   where
-    loadFromDict dict additionalParams =
-        fmap V.fromList . forM (mtParams modelTemplate) $ \p ->
-            case p `lookup` additionalParams of
-                Just x -> return x
-                Nothing -> do
-                    let err' = "parameter " ++ show p ++
-                            " in the Model Template not set"
-                    tryJust err' $ p `lookup` dict
-
+    loadFromDict :: [(String, Double)] -> Script (V.Vector Double)
+    loadFromDict dict = V.fromList <$> mapM (paramLookup dict) (mtParams modelTemplate)
+    paramLookup :: [(String, Double)] -> String -> Script Double
+    paramLookup dict p =
+        case p `lookup` paramsList of
+            Just x -> return x
+            Nothing -> do
+                case p `lookup` dict of
+                    Just v -> return v
+                    Nothing -> do
+                        if head p == 'p'
+                        then do
+                            scriptIO $ errLn $ "assuming " ++ p ++
+                                " denotes a population size. Initializing to 1"
+                            return 1.0
+                        else
+                            if take 3 p == "adm"
+                            then do
+                                scriptIO $ errLn $ "assuming " ++ p ++
+                                    " denotes an admixture rate. Initializing to 0.05"
+                                return 0.05
+                            else
+                                throwError $ "Don't know how to initialize parameter " ++ p ++
+                                    ". Please provide initial value via -X " ++ p ++ "=?"
+                            
 readModelTemplate :: FilePath -> Double -> [Double] -> Double ->
     Script ModelTemplate
 readModelTemplate path theta timeSteps reg = do
@@ -286,9 +304,9 @@ getModelSpec modelDesc branchNames = do
             let dr = V.toList $
                     V.replicate nrPops 1.0 V.// indexValuePairs
             return (events, dr)
-        Just (fp, paramsDesc) -> do
-            template <- readModelTemplate fp theta (times lingen) reg
-            x' <- getInitialParams template paramsDesc
+        Just (mtF, iF, params) -> do
+            template <- readModelTemplate mtF theta (times lingen) reg
+            x' <- getInitialParams template iF params
             modelSpec <-
                 tryRight $ instantiateModel template x' branchNames
             let e = mEvents modelSpec
@@ -338,7 +356,7 @@ makeFixedParamsTemplate modelTemplate fixedParams initialValues = do
                 return $ JoinPopSizeEventTemplate newT k l newN
     maybeFixParam paramSpec =
         case paramSpec of
-            Left val -> return paramSpec
+            Left _ -> return paramSpec
             Right pname ->
                 if   pname `elem` fixedParams
                 then Left <$> substituteParam (mtParams modelTemplate)

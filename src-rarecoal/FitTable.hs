@@ -8,7 +8,7 @@ import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), loadHistogram,
 import Control.Error (Script, tryRight, scriptIO)
 import qualified Control.Foldl as F
 import Control.Monad (forM_)
-import Data.Int (Int64)
+-- import Data.Int (Int64)
 import Data.List (intercalate)
 import qualified Data.Map.Strict as M
 import qualified Data.Vector.Unboxed as V
@@ -57,8 +57,11 @@ writeFullTable outFN standardOrder hist theoryValues = do
                 realFreq = fromIntegral realCount / fromIntegral totalCounts
                 fitDev = if realCount == 0
                          then "n/a"
-                         else show . round $ 100.0 * (theoryFreq - realFreq) / realFreq
-                (mean, lower, upper) = wilsonScoreInterval totalCounts realCount
+                         else
+                             let val = round $ 100.0 * (theoryFreq - realFreq) / realFreq :: Int
+                             in show val
+                         
+                -- (mean, lower, upper) = wilsonScoreInterval totalCounts realCount
                 -- stdErr = upper - lower
                 -- zScore = (theoryFreq - realFreq) / stdErr
                 patternString = "(" ++ intercalate "," (map show p) ++ ")"
@@ -67,17 +70,17 @@ writeFullTable outFN standardOrder hist theoryValues = do
 
 -- https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval
 -- not used at the moment
-wilsonScoreInterval :: Int64 -> Int64 -> (Double, Double, Double)
-wilsonScoreInterval n ns = (mean, lowerCI, upperCI)
-  where
-    mean = fromIntegral ns / fromIntegral n
-    lowerCI = term1 * (term2 - term3)
-    upperCI = term1 * (term2 + term3)
-    term1 = 1.0 / (fromIntegral n + z^2)
-    z = 1.96
-    term2 = fromIntegral ns + 0.5 * z^2
-    term3 = z * sqrt (1.0 / fromIntegral n * fromIntegral ns * fromIntegral nf + 0.25 * z^2)
-    nf = n - ns
+-- wilsonScoreInterval :: Int64 -> Int64 -> (Double, Double, Double)
+-- wilsonScoreInterval n ns = (mean, lowerCI, upperCI)
+--   where
+--     mean = fromIntegral ns / fromIntegral n
+--     lowerCI = term1 * (term2 - term3)
+--     upperCI = term1 * (term2 + term3)
+--     term1 = 1.0 / (fromIntegral n + z^2)
+--     z = 1.96
+--     term2 = fromIntegral ns + 0.5 * z^2
+--     term3 = z * sqrt (1.0 / fromIntegral n * fromIntegral ns * fromIntegral nf + 0.25 * z^2)
+--     nf = n - ns
 
 writeSummaryTable :: FilePath -> [[Int]] -> RareAlleleHistogram -> [Double] -> IO ()
 writeSummaryTable outFN standardOrder hist theoryValues = do
@@ -100,9 +103,14 @@ writeSummaryTable outFN standardOrder hist theoryValues = do
         allLabels = singletonLabels ++ sharingLabels
         allProbs = singletonProbs ++ sharingProbs
         allProbsTheory = singletonProbsTheory ++ sharingProbsTheory
-        l = [intercalate "\t" [label, show real, show fit,
-                if real > 0 then show . round $ 100.0 * (fit - real) / real else "n/a"] |
-             (label, real, fit) <- zip3 allLabels allProbs allProbsTheory]
+        l = do
+            (label, real, fit) <- zip3 allLabels allProbs allProbsTheory
+            let fitDev = if real > 0
+                         then
+                             let val = round $ 100.0 * (fit - real) / real :: Int
+                             in  show val
+                             else "n/a"
+            return $ intercalate "\t" [label, show real, show fit, fitDev]
     withFile outFN WriteMode $ \h -> do
         hPutStrLn h . intercalate "\t" $ ["Populations", "AlleleSharing", "Predicted", "relDev%"]
         mapM_ (hPutStrLn h) l

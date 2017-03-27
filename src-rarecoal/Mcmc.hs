@@ -2,7 +2,7 @@ module Mcmc (runMcmc, McmcOpt(..)) where
 
 import Maxl (minFunc, penalty)
 import FitTable (writeFitTables)
-import Rarecoal.ModelTemplate (ModelTemplate(..), readModelTemplate, getInitialParams, ParamsDesc, 
+import Rarecoal.ModelTemplate (ModelTemplate(..), readModelTemplate, getInitialParams, 
     makeFixedParamsTemplate, reportGhostPops, instantiateModel)
 import Rarecoal.Core (getTimeSteps, ModelEvent(..))
 import Rarecoal.RareAlleleHistogram (loadHistogram, RareAlleleHistogram(..))
@@ -29,7 +29,8 @@ data McmcOpt = McmcOpt {
    mcTheta :: Double,
    mcTemplatePath :: FilePath,
    mcAdditionalEvents :: [ModelEvent],
-   mcParamsDesc :: ParamsDesc,
+   mcMaybeInputFile :: Maybe FilePath,
+   mcInitialValues :: [(String, Double)],
    mcNrCycles :: Int,
    mcOutPrefix :: FilePath,
    mcMinAf :: Int,
@@ -69,11 +70,12 @@ runMcmc opts = do
     hist <- loadHistogram (mcMinAf opts) (mcMaxAf opts) (mcConditionOn opts)
         (mcExcludePatterns opts) (mcHistPath opts)
     let extraEvents = mcAdditionalEvents opts
-    x <- getInitialParams modelTemplate (mcParamsDesc opts)
+    x <- getInitialParams modelTemplate (mcMaybeInputFile opts) (mcInitialValues opts)
     reportGhostPops modelTemplate (raNames hist) x
     modelTemplateWithFixedParams <- tryRight $
         makeFixedParamsTemplate modelTemplate (mcFixedParams opts) x
-    xNew <- getInitialParams modelTemplateWithFixedParams (mcParamsDesc opts)
+    xNew <- getInitialParams modelTemplateWithFixedParams (mcMaybeInputFile opts)
+        (mcInitialValues opts)
     _ <- tryRight $ minFunc modelTemplateWithFixedParams extraEvents hist xNew
     let minFunc' = either (const penalty) id .
             minFunc modelTemplateWithFixedParams extraEvents hist

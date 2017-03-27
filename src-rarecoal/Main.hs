@@ -5,7 +5,7 @@ import           Maxl                         (MaxlOpt (..), runMaxl)
 import           Mcmc                         (McmcOpt (..), runMcmc)
 import           Prob                         (ProbOpt (..), runProb)
 import           Rarecoal.Core                (EventType (..), ModelEvent (..))
-import           Rarecoal.ModelTemplate       (ModelDesc (..), ParamsDesc)
+import           Rarecoal.ModelTemplate       (ModelDesc (..))
 import           Rarecoal.RareAlleleHistogram (SitePattern (..))
 import           SimCommand                   (SimCommandOpt (..),
                                                runSimCommand)
@@ -131,19 +131,14 @@ parseDiscoveryRates = OP.option (readKeyValuePair <$> OP.str) $
         let [key, valS] = splitOn "=" s
         in  (key, read valS)
 
-parseModelDescTemplate :: OP.Parser (FilePath, ParamsDesc)
-parseModelDescTemplate = (,) <$> parseTemplateFilePath <*> parseParamsDesc
+parseModelDescTemplate :: OP.Parser (FilePath, Maybe FilePath, [(String, Double)])
+parseModelDescTemplate = (,,) <$> parseTemplateFilePath <*> optional parseInitialParamsFile <*> 
+    parseInitialParams
 
 parseTemplateFilePath :: OP.Parser FilePath
 parseTemplateFilePath = OP.strOption $ OP.short 'T' <> OP.long "template" <>
                                        OP.metavar "FILE" <>
                                        OP.help "the model template file"
-
-parseParamsDesc :: OP.Parser ParamsDesc
-parseParamsDesc = (Left <$> parseInitialParamsFromFile) <|> (Right <$> parseInitialParamsList)
-
-parseInitialParamsFromFile :: OP.Parser (FilePath, [(String, Double)])
-parseInitialParamsFromFile = (,) <$> parseInitialParamsFile <*> parseAdditionalParams
 
 parseInitialParamsFile :: OP.Parser FilePath
 parseInitialParamsFile = OP.strOption $ OP.long "paramsFile" <> OP.metavar "FILE" <>
@@ -151,14 +146,12 @@ parseInitialParamsFile = OP.strOption $ OP.long "paramsFile" <> OP.metavar "FILE
                          \output file from either the maxl or the mcmc commands. This is useful for continuing an optimization from a previous run, or for starting an MCMC run from the maximum found \
                          \by maxl"
 
-parseAdditionalParams :: OP.Parser [(String, Double)]
-parseAdditionalParams = OP.many parseAdditionalParam
+parseInitialParams :: OP.Parser [(String, Double)]
+parseInitialParams = OP.many parseInitialParam
   where
-    parseAdditionalParam = OP.option (parseOptionString <$> OP.str) $ OP.long "setParam" <>
+    parseInitialParam = OP.option (parseOptionString <$> OP.str) $ OP.long "setParam" <>
                            OP.short 'X' <>
-                           OP.hidden <> OP.help "set parameter in addition to parameters read \
-                           \from the given parameter file. If the parameter is also found in \
-                           \the file, it is overwritten. Should be given in format PARAM=VALUE. \
+                           OP.hidden <> OP.help "set parameter. If parameters are also given via an input file, this setting takes precedence. Should be given in format PARAM=VALUE. \
                            \Can be given multiple times."
     parseOptionString s =
         let fields = splitOn "=" s
@@ -168,13 +161,6 @@ parseAdditionalParams = OP.many parseAdditionalParam
                let [param, valueS] = fields
                in  (param, read valueS)
 
-parseInitialParamsList :: OP.Parser [Double]
-parseInitialParamsList = OP.option OP.auto $ OP.short 'x' <> OP.long "params" <>
-                         OP.metavar "[x1,x2,...]" <>
-                         OP.help "initial parameters for the template, given as comma-separated \
-                         \list without spaces and surrounded by square-brackets, e.g. \
-                         \[1.0,1.0,0.1,0,1] for four parameters. The number given here must match \
-                         \the number of parameters in the model template file."
 
 parseModelEvents :: OP.Parser [ModelEvent]
 parseModelEvents = OP.many parseEvent
@@ -263,7 +249,8 @@ parseMaxl = CmdMaxl <$> parseMaxlOpt
 
 parseMaxlOpt :: OP.Parser MaxlOpt
 parseMaxlOpt = MaxlOpt <$> parseTheta <*> parseTemplateFilePath <*>
-    parseModelEvents <*> parseParamsDesc <*> parseMaxCycles <*>
+    parseModelEvents <*> optional parseInitialParamsFile <*> parseInitialParams <*>
+    parseMaxCycles <*>
     parseNrRestarts <*> parseOutPrefix  <*> parseMinAf <*> parseMaxAf <*>
     parseConditioning <*> OP.many parseExcludePattern <*> parseLinGen <*>
     parseHistPath <*> parseNrThreads <*> parseRegularization <*>
@@ -292,7 +279,8 @@ parseMcmc = CmdMcmc <$> parseMcmcOpt
 
 parseMcmcOpt :: OP.Parser McmcOpt
 parseMcmcOpt = McmcOpt <$> parseTheta <*> parseTemplateFilePath <*>
-    parseModelEvents <*> parseParamsDesc <*> parseNrCycles <*>
+    parseModelEvents <*> optional parseInitialParamsFile <*> parseInitialParams <*>
+    parseNrCycles <*>
     parseOutPrefix <*> parseMinAf <*> parseMaxAf <*> parseConditioning <*>
     OP.many parseExcludePattern <*> parseLinGen <*> parseHistPath <*>
     parseRandomSeed <*> parseNrThreads <*> parseRegularization <*>
