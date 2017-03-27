@@ -11,7 +11,7 @@ import           Rarecoal.Core        (EventType (..), ModelEvent (..),
 
 import           Control.Applicative  ((<|>))
 import           Control.Error        (Script, assertErr, justErr, scriptIO,
-                                       tryJust, tryRight, err)
+                                       tryJust, tryRight, errLn)
 import           Control.Monad        (forM, when)
 import qualified Data.Attoparsec.Text as A
 import           Data.Char            (isAlphaNum)
@@ -89,6 +89,8 @@ readModelTemplate path theta timeSteps reg = do
     c <- scriptIO $ T.readFile path
     (names, discoveryRates, events, constraints) <- tryRight $
         A.parseOnly (parseModelTemplate <* A.endOfInput) c
+    scriptIO $ errLn "found the following parameters in the model template:"
+    scriptIO $ mapM_ errLn names
     return $
         ModelTemplate names theta timeSteps discoveryRates reg events
             constraints
@@ -98,26 +100,40 @@ reportGhostPops modelTemplate branchNames x = do
     modelSpec <- tryRight $ instantiateModel modelTemplate x branchNames
     nrPops <- tryRight $ getNrOfPops (mEvents modelSpec)
     when (length branchNames /= nrPops) . scriptIO $
-        err ("found " ++ show (nrPops - length branchNames) ++
-        " ghost populations\n")
+        errLn ("found " ++ show (nrPops - length branchNames) ++
+        " ghost populations")
 
 parseModelTemplate :: A.Parser ([String], [(BranchSpec, ParamSpec)],
     [EventTemplate], [ConstraintTemplate])
 parseModelTemplate = do
-    params <- parseParams
     discoveryRates <- A.many' parseDiscoveryRate
     events <- parseEvents
     constraints <- parseConstraints
-    return (params, discoveryRates, events, constraints)
+    let names = pullOutAllParamNames discoveryRates events
+    return (names, discoveryRates, events, constraints)
 
-parseParams :: A.Parser [String]
-parseParams = do
-    names <- A.sepBy parseParamName (A.char ',')
-    A.endOfLine
-    return names
-
-parseParamName :: A.Parser String
-parseParamName = unpack <$> A.takeWhile (\c -> isAlphaNum c || c == '_')
+pullOutAllParamNames :: [(BranchSpec, ParamSpec)] -> [EventTemplate] -> [String]
+pullOutAllParamNames dRates eTemplates = go [] dRates eTemplates
+  where
+    go res (dR:dRs) ets = case dR of
+        (_, Left _) -> go res dRs ets
+        (_, Right n) -> go (n:res) dRs ets
+    go res [] (et:ets) = case et of
+        JoinEventTemplate (Left _) _ _                     -> go res [] ets
+        JoinEventTemplate (Right n) _ _                    -> go (n:res) [] ets
+        SplitEventTemplate (Left _) _ _ (Left _)           -> go res [] ets
+        SplitEventTemplate (Left _) _ _ (Right n)          -> go (n:res) [] ets
+        SplitEventTemplate (Right n) _ _ (Left _)          -> go (n:res) [] ets
+        SplitEventTemplate (Right n1) _ _ (Right n2)       -> go (n1:n2:res) [] ets
+        PopSizeEventTemplate (Left _) _ (Left _)           -> go res [] ets 
+        PopSizeEventTemplate (Left _) _ (Right n)          -> go (n:res) [] ets 
+        PopSizeEventTemplate (Right n) _ (Left _)          -> go (n:res) [] ets 
+        PopSizeEventTemplate (Right n1) _ (Right n2)       -> go (n1:n2:res) [] ets 
+        JoinPopSizeEventTemplate (Left _) _ _ (Left _)     -> go res [] ets
+        JoinPopSizeEventTemplate (Left _) _ _ (Right n)    -> go (n:res) [] ets
+        JoinPopSizeEventTemplate (Right n) _ _ (Left _)    -> go (n:res) [] ets
+        JoinPopSizeEventTemplate (Right n1) _ _ (Right n2) -> go (n1:n2:res) [] ets
+    go res [] [] = res
 
 parseDiscoveryRate :: A.Parser (BranchSpec, ParamSpec)
 parseDiscoveryRate = do
@@ -128,6 +144,9 @@ parseDiscoveryRate = do
     d <- parseEitherParam
     A.endOfLine
     return (k, d)
+
+parseParamName :: A.Parser String
+parseParamName = unpack <$> A.takeWhile (\c -> isAlphaNum c || c == '_')
 
 parseEvents :: A.Parser [EventTemplate]
 parseEvents = A.many' (parsePopSizeEvent <|> parseJoinEvent <|>
@@ -279,8 +298,8 @@ getModelSpec modelDesc branchNames = do
     let modelSpec = ModelSpec (times lingen) theta dr' reg events'
     nrPops <- tryRight $ getNrOfPops (mEvents modelSpec)
     when (nrPops /= length branchNames) . scriptIO $
-        err ("found " ++ show (nrPops - length branchNames) ++
-            " ghost populations\n")
+        errLn ("found " ++ show (nrPops - length branchNames) ++
+            " ghost populations")
     return modelSpec
   where
     times lingen = getTimeSteps 20000 lingen 20.0
