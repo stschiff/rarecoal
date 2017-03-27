@@ -14,7 +14,7 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad (when, forM_)
 import Control.Monad.Loops (whileM)
 import Data.List (intercalate, sort, minimumBy)
-import Control.Error (Script, scriptIO, tryRight, err)
+import Control.Error (Script, scriptIO, tryRight, errLn)
 import Data.Ord (comparing)
 import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
 import System.IO (withFile, Handle, IOMode(..), withFile, hPutStr, hPutStrLn)
@@ -63,7 +63,7 @@ runMcmc opts = do
     then scriptIO $ setNumCapabilities nrProc
     else scriptIO $ setNumCapabilities (mcNrThreads opts)
     nrThreads <- scriptIO getNumCapabilities
-    scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
+    scriptIO $ errLn ("running on " ++ show nrThreads ++ " processors")
     let times = getTimeSteps 20000 (mcLinGen opts) 20.0
     modelTemplate <- readModelTemplate (mcTemplatePath opts) (mcTheta opts)
         times (mcReg opts)
@@ -72,10 +72,15 @@ runMcmc opts = do
     let extraEvents = mcAdditionalEvents opts
     x <- getInitialParams modelTemplate (mcMaybeInputFile opts) (mcInitialValues opts)
     reportGhostPops modelTemplate (raNames hist) x
-    modelTemplateWithFixedParams <- tryRight $
-        makeFixedParamsTemplate modelTemplate (mcFixedParams opts) x
-    xNew <- getInitialParams modelTemplateWithFixedParams (mcMaybeInputFile opts)
-        (mcInitialValues opts)
+    (modelTemplateWithFixedParams, xNew) <-
+        if length (mcFixedParams opts) > 0
+        then do
+            scriptIO $ errLn "loading modified model template with fixed parameters"
+            mt <- tryRight $ makeFixedParamsTemplate modelTemplate (mcFixedParams opts) x
+            xNew <- getInitialParams mt (mcMaybeInputFile opts) (mcInitialValues opts)
+            return (mt, xNew)
+        else
+            return (modelTemplate, x)
     _ <- tryRight $ minFunc modelTemplateWithFixedParams extraEvents hist xNew
     let minFunc' = either (const penalty) id .
             minFunc modelTemplateWithFixedParams extraEvents hist

@@ -8,7 +8,7 @@ import Rarecoal.ModelTemplate (ModelTemplate(..), instantiateModel,
 import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), loadHistogram)
 import FitTable (writeFitTables)
 
-import Control.Error (Script, scriptIO, assertErr, tryRight, err)
+import Control.Error (Script, scriptIO, assertErr, tryRight, errLn)
 import Data.List (intercalate)
 import qualified Data.Vector.Unboxed as V
 import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
@@ -44,7 +44,7 @@ runMaxl opts = do
         then scriptIO $ setNumCapabilities nrProc
         else scriptIO $ setNumCapabilities (maNrThreads opts)
     nrThreads <- scriptIO getNumCapabilities
-    scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
+    scriptIO $ errLn ("running on " ++ show nrThreads ++ " processors")
     let times = getTimeSteps 20000 (maLinGen opts) 20.0
     modelTemplate <- readModelTemplate (maTemplatePath opts) (maTheta opts)
         times (maReg opts)
@@ -52,10 +52,15 @@ runMaxl opts = do
         (maExcludePatterns opts) (maHistPath opts)
     x <- getInitialParams modelTemplate (maMaybeInputFile opts) (maInitialValues opts)
     reportGhostPops modelTemplate (raNames hist) x
-    modelTemplateWithFixedParams <- tryRight $
-        makeFixedParamsTemplate modelTemplate (maFixedParams opts) x
-    xNew <- getInitialParams modelTemplateWithFixedParams (maMaybeInputFile opts)
-        (maInitialValues opts)
+    (modelTemplateWithFixedParams, xNew) <-
+        if length (maFixedParams opts) > 0
+        then do
+            scriptIO $ errLn "loading modified model template with fixed parameters"
+            mt <- tryRight $ makeFixedParamsTemplate modelTemplate (maFixedParams opts) x
+            xNew <- getInitialParams mt (maMaybeInputFile opts) (maInitialValues opts)
+            return (mt, xNew)
+        else
+            return (modelTemplate, x)
     let extraEvents = maAdditionalEvents opts
     _ <- tryRight $ minFunc modelTemplateWithFixedParams extraEvents hist xNew
     let minFunc' = either (const penalty) id . minFunc

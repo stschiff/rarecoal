@@ -17,7 +17,7 @@ import           Control.Monad.Except (throwError)
 import qualified Data.Attoparsec.Text as A
 import           Data.Char            (isAlphaNum)
 -- import Debug.Trace (trace)
-import           Data.List            (elemIndex)
+import           Data.List            (elemIndex, nub)
 import           Data.Text            (unpack)
 import qualified Data.Text.IO         as T
 import qualified Data.Vector.Unboxed  as V
@@ -131,7 +131,7 @@ parseModelTemplate = do
     return (names, discoveryRates, events, constraints)
 
 pullOutAllParamNames :: [(BranchSpec, ParamSpec)] -> [EventTemplate] -> [String]
-pullOutAllParamNames dRates eTemplates = go [] dRates eTemplates
+pullOutAllParamNames dRates eTemplates = reverse . nub $ go [] dRates eTemplates
   where
     go res (dR:dRs) ets = case dR of
         (_, Left _) -> go res dRs ets
@@ -142,15 +142,15 @@ pullOutAllParamNames dRates eTemplates = go [] dRates eTemplates
         SplitEventTemplate (Left _) _ _ (Left _)           -> go res [] ets
         SplitEventTemplate (Left _) _ _ (Right n)          -> go (n:res) [] ets
         SplitEventTemplate (Right n) _ _ (Left _)          -> go (n:res) [] ets
-        SplitEventTemplate (Right n1) _ _ (Right n2)       -> go (n1:n2:res) [] ets
+        SplitEventTemplate (Right n1) _ _ (Right n2)       -> go (n2:n1:res) [] ets
         PopSizeEventTemplate (Left _) _ (Left _)           -> go res [] ets 
         PopSizeEventTemplate (Left _) _ (Right n)          -> go (n:res) [] ets 
         PopSizeEventTemplate (Right n) _ (Left _)          -> go (n:res) [] ets 
-        PopSizeEventTemplate (Right n1) _ (Right n2)       -> go (n1:n2:res) [] ets 
+        PopSizeEventTemplate (Right n1) _ (Right n2)       -> go (n2:n1:res) [] ets 
         JoinPopSizeEventTemplate (Left _) _ _ (Left _)     -> go res [] ets
         JoinPopSizeEventTemplate (Left _) _ _ (Right n)    -> go (n:res) [] ets
         JoinPopSizeEventTemplate (Right n) _ _ (Left _)    -> go (n:res) [] ets
-        JoinPopSizeEventTemplate (Right n1) _ _ (Right n2) -> go (n1:n2:res) [] ets
+        JoinPopSizeEventTemplate (Right n1) _ _ (Right n2) -> go (n2:n1:res) [] ets
     go res [] [] = res
 
 parseDiscoveryRate :: A.Parser (BranchSpec, ParamSpec)

@@ -9,10 +9,9 @@ import Test.Tasty.HUnit (testCase, Assertion, assertEqual)
 
 template :: ModelTemplate
 template = ModelTemplate {
-    mtParams = ["p_EUR", "p_SEA", "p_SIB", "p_FAM", "t_EUR_SIB", "t_SEA_FAM",
-        "t_EUR_SEA", "p_EUR_SIB", "p_SEA_FAM", "p_EUR_SEA", "tAdm_FAM_SIB",
-        "pAdm_FAM_SIB", "adm_FAM_SIB", "adm_EUR_FAM", "tAdm_SEA_SIB",
-        "pAdm_SEA_SIB", "adm_SEA_SIB"],
+    mtParams = ["p_EUR", "p_SEA", "p_SIB", "p_FAM", "t_EUR_SIB", "p_EUR_SIB", "t_SEA_FAM", 
+        "p_SEA_FAM", "t_EUR_SEA", "p_EUR_SEA", "adm_FAM_SIB", "tAdm_FAM_SIB", "pAdm_FAM_SIB", 
+        "adm_SEA_SIB", "tAdm_SEA_SIB", "pAdm_SEA_SIB", "adm_EUR_FAM"],
     mtTheta = 0.0005,
     mtTimeSteps = defaultTimes,
     mtDiscoveryRate = [],
