@@ -2,8 +2,8 @@ module Logl (LoglOpt(..), runLogl, computeLogLikelihood,
     computeStandardOrder) where
 
 import Rarecoal.Core (getProb, ModelSpec(..))
-import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..),
-    loadHistogram, computeStandardOrder)
+import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..))
+import Rarecoal.Utils (loadHistogram, computeStandardOrder)
 import Rarecoal.ModelTemplate (getModelSpec, ModelDesc)
 
 import Control.Error (Script, scriptIO, assertErr, tryRight, err)

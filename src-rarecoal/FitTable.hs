@@ -2,8 +2,8 @@ module FitTable (runFitTable, FitTableOpt(..), writeFitTables) where
 
 import Rarecoal.Core (getProb, ModelSpec)
 import Rarecoal.ModelTemplate (ModelDesc, getModelSpec)
-import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), loadHistogram,
-    SitePattern(..), computeStandardOrder)
+import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..))
+import Rarecoal.Utils (loadHistogram, computeStandardOrder)
 
 import Control.Error (Script, tryRight, scriptIO)
 import qualified Control.Foldl as F

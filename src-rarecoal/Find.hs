@@ -1,7 +1,8 @@
 module Find (runFind, FindOpt(..)) where
 
 import Rarecoal.Core (ModelSpec(..), ModelEvent(..), EventType(..))
-import Rarecoal.RareAlleleHistogram (loadHistogram, RareAlleleHistogram(..), SitePattern(..))
+import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..))
+import Rarecoal.Utils (loadHistogram)
 import Rarecoal.ModelTemplate (getModelSpec, ModelDesc, BranchSpec)
 
 import Control.Error (Script, scriptIO, tryAssert, tryRight, err, tryJust)

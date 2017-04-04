@@ -14,12 +14,12 @@ cabal-version:       >=1.10
 library
   exposed-modules:     Rarecoal.Core,
                        Rarecoal.Utils, Rarecoal.StateSpace, Rarecoal.Core.Test, 
-                       Rarecoal.StateSpace.Test, Rarecoal.RareAlleleHistogram,
+                       Rarecoal.StateSpace.Test,
                        Rarecoal.ModelTemplate, Rarecoal.ModelTemplate.Test
   hs-source-dirs:      src
   build-depends:       base, containers, errors, text, attoparsec, pipes-text, transformers,
                        pipes-attoparsec, vector, data-memocombinators, tasty, tasty-quickcheck, 
-                       QuickCheck, split, MissingH, hslogger, tasty-hunit, mtl
+                       QuickCheck, split, MissingH, hslogger, tasty-hunit, mtl, rarecoal-tools
   default-language:    Haskell2010
   ghc-options:         -O
 
@@ -64,7 +64,8 @@ executable rarecoal
                        hslogger,
                        text,
                        turtle,
-                       attoparsec
+                       attoparsec,
+                       rarecoal-tools
   other-modules:       Find, Logl, Maxl, Mcmc, Prob, FitTable, SimCommand
   default-language:    Haskell2010
   extra-lib-dirs:      /usr/lib

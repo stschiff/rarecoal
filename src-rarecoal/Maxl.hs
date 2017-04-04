@@ -5,7 +5,8 @@ import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..), getRegulariza
 import Rarecoal.ModelTemplate (ModelTemplate(..), instantiateModel,
     readModelTemplate, getInitialParams, makeFixedParamsTemplate,
     reportGhostPops)
-import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), loadHistogram)
+import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..))
+import Rarecoal.Utils (loadHistogram)
 import FitTable (writeFitTables)
 
 import Control.Error (Script, scriptIO, assertErr, tryRight, errLn)

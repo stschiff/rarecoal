@@ -5,7 +5,8 @@ import FitTable (writeFitTables)
 import Rarecoal.ModelTemplate (ModelTemplate(..), readModelTemplate, getInitialParams, 
     makeFixedParamsTemplate, reportGhostPops, instantiateModel)
 import Rarecoal.Core (getTimeSteps, ModelEvent(..))
-import Rarecoal.RareAlleleHistogram (loadHistogram, RareAlleleHistogram(..))
+import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..))
+import Rarecoal.Utils (loadHistogram)
 
 import qualified Data.Vector.Unboxed as V
 import qualified System.Random as R
