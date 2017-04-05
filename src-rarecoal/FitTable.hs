@@ -70,10 +70,11 @@ writeFullTable outFN standardOrder hist theoryValues = do
                 outS = case raJackknifeEstimates hist of
                         Nothing -> intercalate "\t" $ [patternString, show realCount, show realFreq,
                                                        show theoryFreq, fitDev]
-                        Just (jkMean, jkSE) ->
-                            let zScore = (theoryFreq - realFreq) / jkSE
-                            intercalate "\t" $ [patternString, show realCount, show realFreq,
-                                                show theoryFreq, fitDev, jkSE, zScore]
+                        Just jkDict ->
+                            let Just (_, jkSE) = p `M.lookup` jkDict
+                                zScore = (theoryFreq - realFreq) / jkSE
+                            in  intercalate "\t" $ [patternString, show realCount, show realFreq,
+                                                    show theoryFreq, fitDev, show jkSE, show zScore]
             hPutStrLn outF outS
 
 writeSummaryTable :: FilePath -> [[Int]] -> RareAlleleHistogram -> [Double] -> IO ()

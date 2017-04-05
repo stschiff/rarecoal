@@ -410,8 +410,8 @@ getRegularizationPenalty ms = do
         (mEvents ms)
     reg = mPopSizeRegularization ms
     regFunc oldP newP = if newP > oldP
-                            then reg * (newP / oldP - 1.0)^2
-                            else reg * (oldP / newP - 1.0)^2
+                            then reg * (newP / oldP - 1.0)^(2::Int)
+                            else reg * (oldP / newP - 1.0)^(2::Int)
 
 choose :: Int -> Int -> Double
 choose _ 0 = 1
@@ -434,7 +434,7 @@ getNrOfPops modelEvents =
         else Right nrBranches
   where
       allBranches = do
-          ModelEvent t e <- modelEvents
+          ModelEvent _ e <- modelEvents
           case e of
               Join k l -> [k, l]
               Split k l _ -> [k, l]
