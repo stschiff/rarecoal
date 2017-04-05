@@ -1,7 +1,7 @@
 module Find (runFind, FindOpt(..)) where
 
 import Rarecoal.Core (ModelSpec(..), ModelEvent(..), EventType(..))
-import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..))
+import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern)
 import Rarecoal.Utils (loadHistogram)
 import Rarecoal.ModelTemplate (getModelSpec, ModelDesc, BranchSpec)
 
@@ -22,8 +22,7 @@ data FindOpt = FindOpt {
     fiMinAf :: Int,
     fiMaxAf :: Int,
     fiConditionOn :: [Int],
-    fiExcludePatterns :: [[Int]],
-    fiIgnoreList :: [SitePattern],
+    fiExcludePatterns :: [SitePattern],
     fiHistPath :: FilePath,
     fiNoShortcut :: Bool,
     fiNrThreads :: Int

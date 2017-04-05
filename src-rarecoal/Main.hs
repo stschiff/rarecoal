@@ -6,7 +6,6 @@ import           Mcmc                         (McmcOpt (..), runMcmc)
 import           Prob                         (ProbOpt (..), runProb)
 import           Rarecoal.Core                (EventType (..), ModelEvent (..))
 import           Rarecoal.ModelTemplate       (ModelDesc (..))
-import           Rarecoal.RareAlleleHistogram (SitePattern (..))
 import           SimCommand                   (SimCommandOpt (..),
                                                runSimCommand)
 
@@ -327,7 +326,7 @@ parseFindOpt = FindOpt <$> parseQueryBranch <*> parseEvalFile <*>
     parseBranchAge <*> parseDeltaTime <*> parseMaxTime <*>
     parseModelDesc <*> parseMinAf <*>
     parseMaxAf <*> parseConditioning <*> OP.many parseExcludePattern <*>
-    parseIgnoreList <*> parseHistPath <*>
+    parseHistPath <*>
     parseNoShortcut <*> parseNrThreads
   where
     parseQueryBranch = (Left <$> parseQueryIndex) <|> (Right <$> parseQueryName)
@@ -346,17 +345,9 @@ parseFindOpt = FindOpt <$> parseQueryBranch <*> parseEvalFile <*>
                             OP.value 0.0005 <> OP.hidden
     parseMaxTime = OP.option OP.auto $ OP.long "maxTime" <> OP.metavar "<Double>" <>
                          OP.showDefault <> OP.help "maximum time" <> OP.value 0.025 <> OP.hidden
-    parseIgnoreList = OP.option (OP.str >>= readIgnoreList) $ OP.long "exclude" <>
-                            OP.metavar "[[INT,INT,...],[INT,INT,...],...]" <>
-                            OP.help "a comma-separated list of \
-                            \lists, without spaces, with patterns to exclude from the likelihood \
-                            \computation" <> OP.value [] <> OP.internal
     parseNoShortcut = OP.switch $ OP.long "noShortcut" <> OP.internal <>
                                   OP.help "do not use shortcut if all lineages are in one \
                                            \population"
-    readIgnoreList s = do
-        let ll = read s :: [[Int]]
-        return $ map Pattern ll
 
 parseFitTable :: OP.Parser Command
 parseFitTable = CmdFitTable <$> parseFitTableOpt

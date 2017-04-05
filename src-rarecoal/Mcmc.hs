@@ -5,7 +5,7 @@ import FitTable (writeFitTables)
 import Rarecoal.ModelTemplate (ModelTemplate(..), readModelTemplate, getInitialParams, 
     makeFixedParamsTemplate, reportGhostPops, instantiateModel)
 import Rarecoal.Core (getTimeSteps, ModelEvent(..))
-import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..))
+import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern)
 import Rarecoal.Utils (loadHistogram)
 
 import qualified Data.Vector.Unboxed as V
@@ -37,7 +37,7 @@ data McmcOpt = McmcOpt {
    mcMinAf :: Int,
    mcMaxAf :: Int,
    mcConditionOn :: [Int],
-   mcExcludePatterns :: [[Int]],
+   mcExcludePatterns :: [SitePattern],
    mcLinGen :: Int,
    mcHistPath :: FilePath,
    mcRandomSeed :: Int,

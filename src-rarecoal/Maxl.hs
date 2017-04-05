@@ -5,7 +5,7 @@ import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..), getRegulariza
 import Rarecoal.ModelTemplate (ModelTemplate(..), instantiateModel,
     readModelTemplate, getInitialParams, makeFixedParamsTemplate,
     reportGhostPops)
-import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..))
+import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern)
 import Rarecoal.Utils (loadHistogram)
 import FitTable (writeFitTables)
 
@@ -30,7 +30,7 @@ data MaxlOpt = MaxlOpt {
    maMinAf :: Int,
    maMaxAf :: Int,
    maConditionOn :: [Int],
-   maExcludePatterns :: [[Int]],
+   maExcludePatterns :: [SitePattern],
    maLinGen :: Int,
    maHistPath :: FilePath,
    maNrThreads :: Int,

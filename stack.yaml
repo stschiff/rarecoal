@@ -3,7 +3,7 @@ packages:
 - location: .
 - location:
     git: git@github.com:stschiff/rarecoal-tools.git
-    commit: 1ffd67c1ddc5144579f8df497a81ed5d9ebf12b4
+    commit: fac4efc014027f55950e5854770e53b2ee9b4749
 # extra-deps:
 # - cabal-helper-0.6.3.1
 resolver: lts-7.0

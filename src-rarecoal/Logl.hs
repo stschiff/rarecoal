@@ -2,7 +2,7 @@ module Logl (LoglOpt(..), runLogl, computeLogLikelihood,
     computeStandardOrder) where
 
 import Rarecoal.Core (getProb, ModelSpec(..))
-import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern(..))
+import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern, showSitePattern)
 import Rarecoal.Utils (loadHistogram, computeStandardOrder)
 import Rarecoal.ModelTemplate (getModelSpec, ModelDesc)
 
@@ -17,7 +17,7 @@ data LoglOpt = LoglOpt {
    loMinAf :: Int,
    loMaxAf :: Int,
    loConditionOn :: [Int],
-   loExcludePatterns :: [[Int]],
+   loExcludePatterns :: [SitePattern],
    loHistPath :: FilePath,
    loNrThreads :: Int
 }
@@ -40,15 +40,15 @@ runLogl opts = do
     let nVec = raNVec hist
     patternProbs <- tryRight . sequence $
             parMap rdeepseq (getProb modelSpec nVec False) standardOrder
-    let patternCounts = map (defaultLookup hist . Pattern) standardOrder
+    let patternCounts = map (defaultLookup hist) standardOrder
         ll = sum $ zipWith (\p c -> log p * fromIntegral c) patternProbs
             patternCounts
-        otherCounts = defaultLookup hist Higher
+        otherCounts = raTotalNrSites hist - sum patternCounts
     let totalLogLikelihood =
             ll + fromIntegral otherCounts * log (1.0 - sum patternProbs)
     scriptIO . putStrLn $ "Log Likelihood:" ++ "\t" ++ show totalLogLikelihood
     scriptIO . mapM_ putStrLn $
-        zipWith (\p val -> show (Pattern p) ++ "\t" ++ show val) standardOrder
+        zipWith (\p val -> showSitePattern p ++ "\t" ++ show val) standardOrder
         patternProbs
 
 computeLogLikelihood :: ModelSpec -> RareAlleleHistogram -> Bool ->
@@ -59,10 +59,10 @@ computeLogLikelihood modelSpec histogram noShortcut = do
     let nVec = raNVec histogram
     patternProbs <- sequence $
         parMap rdeepseq (getProb modelSpec nVec noShortcut) standardOrder
-    let patternCounts = map (defaultLookup histogram . Pattern) standardOrder
+    let patternCounts = map (defaultLookup histogram) standardOrder
         ll = sum $
             zipWith (\p c -> log p * fromIntegral c) patternProbs patternCounts
-        otherCounts = defaultLookup histogram Higher
+        otherCounts = raTotalNrSites histogram - sum patternCounts
     return $ ll + fromIntegral otherCounts * log (1.0 - sum patternProbs)
 
 defaultLookup :: RareAlleleHistogram -> SitePattern -> Int64
