@@ -9,7 +9,7 @@ import Control.Error (Script, tryRight, scriptIO)
 import qualified Control.Foldl as F
 import Control.Monad (forM_, when)
 import Control.Monad.ST (ST, runST)
-import Data.List (intercalate)
+import Data.List (intercalate, zip4)
 import Data.STRef (newSTRef, modifySTRef, readSTRef)
 import qualified Data.Map.Strict as M
 import qualified Data.Vector.Unboxed as V
@@ -79,7 +79,7 @@ writeFullTable outFN standardOrder hist theoryValues = do
                                                     show theoryFreq, fitDev, show jkSE, show zScore]
             hPutStrLn outF outS
 
-writeSummaryTable :: FilePath -> [[Int]] -> RareAlleleHistogram -> [Double] -> IO ()
+writeSummaryTable :: FilePath -> [SitePattern] -> RareAlleleHistogram -> [Double] -> IO ()
 writeSummaryTable outFN standardOrder hist theoryValues = do
     let names = raNames hist
         nVec = raNVec hist
@@ -92,6 +92,15 @@ writeSummaryTable outFN standardOrder hist theoryValues = do
         theoryFreqs = zipWith (\p v -> (p, v)) standardOrder theoryValues
         combinedFold = (,) <$> singletonProbsF nVec <*> sharingProbsF nVec
         (singletonProbs, sharingProbs) = runST $ F.foldM combinedFold realFreqs
+        maybeErrorSummaries = case raJackknifeEstimates hist of
+            Nothing -> Nothing
+            Just jkDict ->
+                let errors = do
+                        pat <- standardOrder
+                        let (_, se) = M.findWithDefault (0, 0) pat jkDict
+                        return (pat, se)
+                    combinedErrorFold = (,) <$> singletonErrorsF nVec <*> sharingErrorsF nVec
+                in  Just (runST $ F.foldM combinedErrorFold errors)
         (singletonProbsTheory, sharingProbsTheory) = runST $ F.foldM combinedFold theoryFreqs
         singletonLabels = map (++ "(singletons)") names
         sharingLabels = [names!!i ++ "/" ++ names!!j | i <- [0..(length names - 1)],
@@ -99,17 +108,32 @@ writeSummaryTable outFN standardOrder hist theoryValues = do
         allLabels = singletonLabels ++ sharingLabels
         allProbs = singletonProbs ++ sharingProbs
         allProbsTheory = singletonProbsTheory ++ sharingProbsTheory
-        l = do
-            (label, real, fit) <- zip3 allLabels allProbs allProbsTheory
-            let fitDev = if real > 0
-                         then
-                             let val = round $ 100.0 * (fit - real) / real :: Int
-                             in  show val
-                             else "n/a"
-            return $ intercalate "\t" [label, show real, show fit, fitDev]
+        getFitDev r f = if r > 0 then
+                            let val = round $ 100.0 * (f - r) / r :: Int in show val
+                        else "n/a"
+        (header, lines_) = case maybeErrorSummaries of
+            Nothing ->
+                let h = intercalate "\t" $ ["Populations", "AlleleSharing", "Predicted", 
+                                                 "relDev%"]
+                    l = do
+                        (label, real, fit) <- zip3 allLabels allProbs allProbsTheory
+                        let fitDev = getFitDev real fit
+                        return $ intercalate "\t" [label, show real, show fit, fitDev]
+                in  (h, l)
+            Just (singletonErrors, sharingErrors) ->
+                let h = intercalate "\t" $ ["Populations", "AlleleSharing", "Predicted", 
+                                                 "relDev%", "stdErr", "zScore"]
+                    l = do
+                        let allErrors = singletonErrors ++ sharingErrors
+                        (label, real, fit, se) <- zip4 allLabels allProbs allProbsTheory allErrors
+                        let fitDev = getFitDev real fit
+                        let zScore = (fit - real) / se
+                        return $ intercalate "\t" [label, show real, show fit, fitDev, show se, 
+                                                   show zScore]
+                in  (h, l)
     withFile outFN WriteMode $ \h -> do
-        hPutStrLn h . intercalate "\t" $ ["Populations", "AlleleSharing", "Predicted", "relDev%"]
-        mapM_ (hPutStrLn h) l
+        hPutStrLn h header
+        mapM_ (hPutStrLn h) lines_
 
 singletonProbsF :: [Int] -> F.FoldM (ST s) (SitePattern, Double) [Double]
 singletonProbsF nVec = F.FoldM step initial extract
@@ -146,3 +170,39 @@ sharingProbsF nVec = F.FoldM step initial extract
         VM.set v 0.0
         return v
     extract = fmap V.toList . V.freeze
+
+singletonErrorsF :: [Int] -> F.FoldM (ST s) (SitePattern, Double) [Double]
+singletonErrorsF nVec = F.FoldM step initial extract
+  where
+    step vec (p, se) = do
+        when (sum p == 1) $ do
+            let i = snd . head . filter ((>0) . fst) $ zip p [0..]
+            VM.modify vec (\v -> v + se ^ (2::Int)) i
+        return vec
+    initial = do
+        v <- VM.new (length nVec)
+        VM.set v 0.0
+        return v
+    extract = fmap ((map sqrt) . V.toList) . V.freeze
+
+sharingErrorsF :: [Int] -> F.FoldM (ST s) (SitePattern, Double) [Double]
+sharingErrorsF nVec = F.FoldM step initial extract
+  where
+    step vec (p, se) = do
+        index <- newSTRef 0
+        forM_ [0 .. (length nVec - 1)] $ \i ->
+            forM_ [i .. (length nVec - 1)] $ \j -> do
+                let add = if i == j
+                          then se * fromIntegral (p!!i * (p!!i - 1)) /
+                                    fromIntegral (nVec!!i * (nVec!!i - 1))
+                          else se * fromIntegral (p!!i * p!!j) /
+                                    fromIntegral (nVec!!i * nVec!!j)
+                index' <- readSTRef index
+                VM.modify vec (\v -> v + add ^ (2::Int)) index'
+                modifySTRef index (+1)
+        return vec
+    initial = do
+        v <- VM.new (length nVec * (length nVec + 1) `div` 2)
+        VM.set v 0.0
+        return v
+    extract = fmap ((map sqrt) . V.toList) . V.freeze
