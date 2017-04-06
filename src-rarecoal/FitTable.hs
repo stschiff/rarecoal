@@ -5,13 +5,15 @@ import Rarecoal.ModelTemplate (ModelDesc, getModelSpec)
 import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern)
 import Rarecoal.Utils (loadHistogram, computeStandardOrder)
 
-import Control.Error (Script, tryRight, scriptIO, errLn)
+import Control.Error (Script, tryRight, scriptIO)
 import qualified Control.Foldl as F
-import Control.Monad (forM_)
--- import Data.Int (Int64)
+import Control.Monad (forM_, when)
+import Control.Monad.ST (ST, runST)
 import Data.List (intercalate)
+import Data.STRef (newSTRef, modifySTRef, readSTRef)
 import qualified Data.Map.Strict as M
 import qualified Data.Vector.Unboxed as V
+import qualified Data.Vector.Unboxed.Mutable as VM
 import System.IO (withFile, IOMode(..), hPutStrLn)
 
 data FitTableOpt = FitTableOpt {
@@ -89,9 +91,8 @@ writeSummaryTable outFN standardOrder hist theoryValues = do
             return (pat, fromIntegral count / fromIntegral totalCounts)
         theoryFreqs = zipWith (\p v -> (p, v)) standardOrder theoryValues
         combinedFold = (,) <$> singletonProbsF nVec <*> sharingProbsF nVec
-        (singletonProbs, sharingProbs) = F.fold combinedFold realFreqs
-        (singletonProbsTheory, sharingProbsTheory) =
-            F.fold combinedFold theoryFreqs
+        (singletonProbs, sharingProbs) = runST $ F.foldM combinedFold realFreqs
+        (singletonProbsTheory, sharingProbsTheory) = runST $ F.foldM combinedFold theoryFreqs
         singletonLabels = map (++ "(singletons)") names
         sharingLabels = [names!!i ++ "/" ++ names!!j | i <- [0..(length names - 1)],
                          j <- [i .. (length names - 1)]]
@@ -110,37 +111,38 @@ writeSummaryTable outFN standardOrder hist theoryValues = do
         hPutStrLn h . intercalate "\t" $ ["Populations", "AlleleSharing", "Predicted", "relDev%"]
         mapM_ (hPutStrLn h) l
 
-singletonProbsF :: [Int] -> F.Fold (SitePattern, Double) [Double]
-singletonProbsF nVec = F.Fold step initial extract
+singletonProbsF :: [Int] -> F.FoldM (ST s) (SitePattern, Double) [Double]
+singletonProbsF nVec = F.FoldM step initial extract
   where
-    step vec (p, val) = 
-        if   sum p == 1
-        then
+    step vec (p, val) = do
+        when (sum p == 1) $ do
             let i = snd . head . filter ((>0) . fst) $ zip p [0..]
-            in  vec V.// [(i, vec V.! i + val)]
-        else vec
-    initial = V.replicate (length nVec) 0.0
-    extract = V.toList
+            VM.modify vec (\v -> v + val) i
+        return vec
+    initial = do
+        v <- VM.new (length nVec)
+        VM.set v 0.0
+        return v
+    extract = fmap V.toList . V.freeze
 
-sharingProbsF :: [Int] -> F.Fold (SitePattern, Double) [Double]
-sharingProbsF nVec = F.Fold step initial extract
+sharingProbsF :: [Int] -> F.FoldM (ST s) (SitePattern, Double) [Double]
+sharingProbsF nVec = F.FoldM step initial extract
   where
-    step vec (p, val) = 
-        let addVec = V.fromList $ do
-                i <- [0 .. (length nVec - 1)]
-                j <- [i .. (length nVec - 1)]
-                if   i == j
-                then return $ val * fromIntegral (p!!i * (p!!i - 1)) /
-                                    fromIntegral (nVec!!i * (nVec!!i - 1))
-                else return $ val * fromIntegral (p!!i * p!!j) /
-                                    fromIntegral (nVec!!i * nVec!!j)
-        in  V.zipWith (+) vec addVec
-    initial = V.replicate (length nVec * (length nVec + 1) `div` 2) 0.0
-    extract = V.toList
-
--- normFactorF :: F.Fold (SitePattern, Double) Double
--- normFactorF = F.Fold step initial extract
---   where
---     step count (_, val) = count + val
---     initial = 0
---     extract = id
+    step vec (p, val) = do
+        index <- newSTRef 0
+        forM_ [0 .. (length nVec - 1)] $ \i ->
+            forM_ [i .. (length nVec - 1)] $ \j -> do
+                let add = if i == j
+                          then val * fromIntegral (p!!i * (p!!i - 1)) /
+                                     fromIntegral (nVec!!i * (nVec!!i - 1))
+                          else val * fromIntegral (p!!i * p!!j) /
+                                     fromIntegral (nVec!!i * nVec!!j)
+                index' <- readSTRef index
+                VM.modify vec (\v -> v + add) index'
+                modifySTRef index (+1)
+        return vec
+    initial = do
+        v <- VM.new (length nVec * (length nVec + 1) `div` 2)
+        VM.set v 0.0
+        return v
+    extract = fmap V.toList . V.freeze
