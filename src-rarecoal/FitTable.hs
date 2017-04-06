@@ -5,7 +5,7 @@ import Rarecoal.ModelTemplate (ModelDesc, getModelSpec)
 import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern)
 import Rarecoal.Utils (loadHistogram, computeStandardOrder)
 
-import Control.Error (Script, tryRight, scriptIO)
+import Control.Error (Script, tryRight, scriptIO, errLn)
 import qualified Control.Foldl as F
 import Control.Monad (forM_)
 -- import Data.Int (Int64)
@@ -45,10 +45,10 @@ writeFitTables outFullTable outSummaryTable hist modelSpec = do
         writeFullTable outFullTable standardOrder hist theoryValues
         writeSummaryTable outSummaryTable standardOrder hist theoryValues
 
-writeFullTable :: FilePath -> [[Int]] -> RareAlleleHistogram -> [Double] -> IO ()
+writeFullTable :: FilePath -> [SitePattern] -> RareAlleleHistogram -> [Double] -> IO ()
 writeFullTable outFN standardOrder hist theoryValues = do
     let countMap = raCounts hist
-        totalCounts = M.foldl' (+) 0 countMap
+        totalCounts = raTotalNrSites hist
     withFile outFN WriteMode $ \outF -> do
         let headerLine = case raJackknifeEstimates hist of
                 Nothing -> "Pattern\tCount\tFreq\tTheoryFreq\trelDev%"
@@ -82,7 +82,7 @@ writeSummaryTable outFN standardOrder hist theoryValues = do
     let names = raNames hist
         nVec = raNVec hist
         countMap = raCounts hist
-    let totalCounts = fromIntegral $ M.foldl' (+) 0 countMap :: Int
+        totalCounts = raTotalNrSites hist
         realFreqs = do
             pat <- standardOrder
             let count = M.findWithDefault 0 pat countMap
