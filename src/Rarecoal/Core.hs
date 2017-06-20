@@ -72,6 +72,9 @@ getProb modelSpec nVec noShortcut config = do
     validateModel modelSpec
     let nVec' = padGhostPops nVec
         config' = padGhostPops config
+    nrPops <- getNrOfPops (mEvents modelSpec)
+    assertErr "illegal sample configuration given" $ 
+        length nVec' == length config' && length nVec' == nrPops 
     let timeSteps = mTimeSteps modelSpec
         d = runST $ do
             ms <- makeInitModelState modelSpec nrPops
@@ -424,8 +427,8 @@ chooseCont n k = product [(n + 1.0 - fromIntegral j) / fromIntegral j | j <- [1.
 
 getNrOfPops :: [ModelEvent] -> Either String Int
 getNrOfPops modelEvents =
-    let maxBranch = maximum allBranches
-        nrBranches = length . nub $ allBranches
+    let maxBranch = if null modelEvents then 0 else maximum allBranches
+        nrBranches = if null modelEvents then 1 else length . nub $ allBranches
     in  if maxBranch + 1 /= nrBranches
         then Left "Error: Branch indices are not consecutive. Ghost branch \
             \indices have to be zero-indexed and start with one higher than \
