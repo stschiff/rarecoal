@@ -430,7 +430,7 @@ getNrOfPops modelEvents =
     let maxBranch = if null modelEvents then 0 else maximum allBranches
         nrBranches = if null modelEvents then 1 else length . nub $ allBranches
     in  if maxBranch + 1 /= nrBranches
-        then Left "Error: Branch indices are not consecutive. Ghost branch \
+        then Left "Error: Branch indices " ++ show (nub allBranches) ++ " are not consecutive. Ghost branch \
             \indices have to be zero-indexed and start with one higher than \
             \the last named branch. Example with four named populations and 1 \
             \ghost populations: the ghost population should have index 4."
