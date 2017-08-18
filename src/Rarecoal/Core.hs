@@ -352,7 +352,7 @@ validateModel (ModelSpec _ _ dr _ events) = do
     -- when (reg > 1.0) $ checkRegularization (length dr) reg sortedEvents
   where
     checkEvents [] = Right ()
-    checkEvents (ModelEvent _ (Join k l):rest) = do
+    checkEvents (ModelEvent t (Join k l):rest) = do
         let illegalEvents = or $ do
                 ModelEvent _ e <- rest
                 case e of
@@ -360,11 +360,13 @@ validateModel (ModelSpec _ _ dr _ events) = do
                     Split k' l' _        -> return $ k' == l || l' == l
                     SetPopSize k' _      -> return $ k' == l
                     SetFreeze k' _       -> return $ k' == l
-        if k == l || illegalEvents then Left "Illegal joins" else checkEvents rest
+        if k == l || illegalEvents
+        then Left $ "Illegal join from " ++ show l ++ " to " ++ show k ++ " at time " ++ show t
+        else checkEvents rest
     checkEvents (ModelEvent _ (SetPopSize _ p):rest) =
         if p <= 0 then Left $ "Illegal population size: " ++ show p else checkEvents rest
     checkEvents (ModelEvent _ (Split _ _ m):rest) =
-        if m <= 0.0 || m >= 1.0 then Left "Illegal split rate" else checkEvents rest
+        if m <= 0.0 || m >= 1.0 then Left $ "Illegal split rate" ++ show m else checkEvents rest
     checkEvents (ModelEvent _ (SetFreeze _ _):rest) = checkEvents rest
 
 -- checkRegularization :: Int -> Double -> [ModelEvent] -> Either String ()
