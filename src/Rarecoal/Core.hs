@@ -366,7 +366,7 @@ validateModel (ModelSpec _ _ dr _ events) = do
     checkEvents (ModelEvent _ (SetPopSize _ p):rest) =
         if p <= 0 then Left $ "Illegal population size: " ++ show p else checkEvents rest
     checkEvents (ModelEvent _ (Split _ _ m):rest) =
-        if m <= 0.0 || m >= 1.0 then Left $ "Illegal split rate" ++ show m else checkEvents rest
+        if m < 0.0 || m > 1.0 then Left $ "Illegal split rate" ++ show m else checkEvents rest
     checkEvents (ModelEvent _ (SetFreeze _ _):rest) = checkEvents rest
 
 -- checkRegularization :: Int -> Double -> [ModelEvent] -> Either String ()
