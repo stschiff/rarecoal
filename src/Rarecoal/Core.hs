@@ -73,8 +73,8 @@ getProb modelSpec nVec noShortcut config = do
     let nVec' = padGhostPops nVec
         config' = padGhostPops config
     nrPops <- getNrOfPops (mEvents modelSpec)
-    assertErr "illegal sample configuration given" $ 
-        length nVec' == length config' && length nVec' == nrPops 
+    assertErr "illegal sample configuration given" $
+        length nVec' == length config' && length nVec' == nrPops
     let timeSteps = mTimeSteps modelSpec
         d = runST $ do
             ms <- makeInitModelState modelSpec nrPops
@@ -92,9 +92,9 @@ getProb modelSpec nVec noShortcut config = do
     err = "Overflow Error in getProb for nVec=" ++ show nVec ++ ", kVec=" ++
         show config
     padGhostPops a =
-        let d = nrPops - length a
+        let nrPops = length . mDiscoveryRates $ modelSpec
+            d = nrPops - length a
         in  a ++ replicate d 0
-    nrPops = length . mDiscoveryRates $ modelSpec
 
 
 makeInitModelState :: ModelSpec -> Int -> ST s (ModelState s)

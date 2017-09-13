@@ -17,7 +17,7 @@ get5popProb noShortCut config = case prob of
     Right res -> res
   where
     prob = getProb modelSpec nVec noShortCut config
-    modelSpec = ModelSpec defaultTimes 0.001 events
+    modelSpec = ModelSpec defaultTimes 0.001 [1, 1, 1, 1, 1] 10 events
     events = [ ModelEvent 0.0025 (Join 0 1)
              , ModelEvent 0.006 (Join 2 3)
              , ModelEvent 0.0075 (Join 2 4)
