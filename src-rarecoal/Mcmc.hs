@@ -1,11 +1,12 @@
 module Mcmc (runMcmc, McmcOpt(..)) where
 
-import Maxl (minFunc, penalty)
 import FitTable (writeFitTables)
-import Rarecoal.ModelTemplate (ModelTemplate(..), readModelTemplate, getInitialParams, 
+import Maxl (minFunc, penalty)
+import Rarecoal.Options (GeneralOptions(..), ModelOptions(..), HistogramOptions(..))
+import Rarecoal.ModelTemplate (ModelTemplate(..), readModelTemplate, getInitialParams,
     makeFixedParamsTemplate, reportGhostPops, instantiateModel)
 import Rarecoal.Core (getTimeSteps, ModelEvent(..))
-import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern)
+import Rarecoal.Formats.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern)
 import Rarecoal.Utils (loadHistogram)
 
 import qualified Data.Vector.Unboxed as V
@@ -27,22 +28,12 @@ import System.Log.Logger (infoM)
 (//) = (V.//)
 
 data McmcOpt = McmcOpt {
-   mcTheta :: Double,
-   mcTemplatePath :: FilePath,
-   mcAdditionalEvents :: [ModelEvent],
-   mcMaybeInputFile :: Maybe FilePath,
-   mcInitialValues :: [(String, Double)],
+   mcGeneralOpts :: GeneralOptions,
+   mcModelOpts :: ModelOptions,
    mcNrCycles :: Int,
    mcOutPrefix :: FilePath,
-   mcMinAf :: Int,
-   mcMaxAf :: Int,
-   mcConditionOn :: [Int],
-   mcExcludePatterns :: [SitePattern],
-   mcLinGen :: Int,
-   mcHistPath :: FilePath,
+   mcHistogramOpts :: HistogramOptions,
    mcRandomSeed :: Int,
-   mcNrThreads :: Int,
-   mcReg :: Double,
    mcFixedParams :: [String]
 }
 

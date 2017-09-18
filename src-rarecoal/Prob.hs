@@ -1,13 +1,13 @@
 module Prob (runProb, ProbOpt(..)) where
 
+import Rarecoal.Options (GeneralOptions(..), ModelOptions(..), HistogramOptions(..))
 import Rarecoal.Core (getProb)
 import Rarecoal.ModelTemplate (getModelSpec, ModelDesc)
 
 import Control.Error (Script, scriptIO, tryRight)
 
 data ProbOpt = ProbOpt {
-    prModelDesc :: ModelDesc,
-    prBranchnames :: [String],
+    prModelOpts :: ModelOptions,
     prNvec :: [Int],
     prKvec :: [Int]
 }

@@ -1,8 +1,9 @@
 module Logl (LoglOpt(..), runLogl, computeLogLikelihood,
     computeStandardOrder) where
 
+import Rarecoal.Options (GeneralOptions(..), ModelOptions(..), HistogramOptions(..))
 import Rarecoal.Core (getProb, ModelSpec(..))
-import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern, showSitePattern)
+import Rarecoal.Formats.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern, showSitePattern)
 import Rarecoal.Utils (loadHistogram, computeStandardOrder)
 import Rarecoal.ModelTemplate (getModelSpec, ModelDesc)
 
@@ -13,13 +14,9 @@ import qualified Data.Map.Strict as Map
 import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
 
 data LoglOpt = LoglOpt {
-   loModelDesc :: ModelDesc,
-   loMinAf :: Int,
-   loMaxAf :: Int,
-   loConditionOn :: [Int],
-   loExcludePatterns :: [SitePattern],
-   loHistPath :: FilePath,
-   loNrThreads :: Int
+    loGeneralOpts :: GeneralOptions,
+    loModelOpts :: ModelOptions,
+    loHistogramOpts :: HistogramOptions
 }
 
 runLogl :: LoglOpt -> Script ()

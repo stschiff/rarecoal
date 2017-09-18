@@ -1,11 +1,12 @@
 module Maxl (minFunc, penalty, runMaxl, MaxlOpt(..)) where
 
+import Rarecoal.Options (GeneralOptions(..), ModelOptions(..), HistogramOptions(..))
 import Logl (computeLogLikelihood)
 import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..), getRegularizationPenalty)
 import Rarecoal.ModelTemplate (ModelTemplate(..), instantiateModel,
     readModelTemplate, getInitialParams, makeFixedParamsTemplate,
     reportGhostPops)
-import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern)
+import Rarecoal.Formats.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern)
 import Rarecoal.Utils (loadHistogram)
 import FitTable (writeFitTables)
 
@@ -19,23 +20,13 @@ import System.IO (Handle, IOMode(..), hPutStrLn, hPutStr, withFile)
 import System.Log.Logger (infoM)
 
 data MaxlOpt = MaxlOpt {
-   maTheta :: Double,
-   maTemplatePath :: FilePath,
-   maAdditionalEvents :: [ModelEvent],
-   maMaybeInputFile :: Maybe FilePath,
-   maInitialValues :: [(String, Double)],
-   maMaxCycles :: Int,
-   maNrRestarts :: Int,
-   maOutPrefix :: FilePath,
-   maMinAf :: Int,
-   maMaxAf :: Int,
-   maConditionOn :: [Int],
-   maExcludePatterns :: [SitePattern],
-   maLinGen :: Int,
-   maHistPath :: FilePath,
-   maNrThreads :: Int,
-   maReg :: Double,
-   maFixedParams :: [String]
+    maGeneralOpts :: GeneralOptions,
+    maModelOpts :: ModelOptions,
+    maHistogramOpts :: HistogramOptions,
+    maMaxCycles :: Int,
+    maNrRestarts :: Int,
+    maOutPrefix :: FilePath,
+    maFixedParams :: [String]
 }
 
 runMaxl :: MaxlOpt -> Script ()
@@ -84,7 +75,7 @@ minimizeV :: Int -> (V.Vector Double -> Double) -> V.Vector Double ->
     (V.Vector Double, [V.Vector Double])
 minimizeV nrCycles minFunc' initial =
     let (vec, trace) =
-            minimize NMSimplex2 1.0e-8 nrCycles stepWidths (minFunc' . V.fromList) . V.toList $ 
+            minimize NMSimplex2 1.0e-8 nrCycles stepWidths (minFunc' . V.fromList) . V.toList $
             initial
     in  (V.fromList vec, map (V.fromList . toList) . toRows $ trace)
   where

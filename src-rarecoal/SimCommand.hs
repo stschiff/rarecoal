@@ -2,6 +2,7 @@
 
 module SimCommand (SimCommandOpt(..), runSimCommand) where
 
+import Rarecoal.Options (GeneralOptions(..), ModelOptions(..), HistogramOptions(..))
 import Rarecoal.Core (ModelSpec(..), ModelEvent(..), EventType(..))
 import Rarecoal.ModelTemplate (ModelDesc, getModelSpec)
 
@@ -12,15 +13,14 @@ import Prelude hiding (unwords)
 import Turtle (echo, format, d, g, s, (%))
 
 data SimCommandOpt = SimCommandOpt {
-    _ftModelDesc :: ModelDesc,
-    _ftBranchNames :: [String],
+    _ftModelOpts :: ModelOptions,
     _ftNrHaps :: [Int],
     _ftRecomb :: Double,
     _ftL :: Int
 }
 
 runSimCommand :: SimCommandOpt -> Script ()
-runSimCommand (SimCommandOpt modelDesc names nrHaps rho chromLength) = do
+runSimCommand (SimCommandOpt modelOpts nrHaps rho chromLength) = do
     (ModelSpec _ theta _ _ events) <- getModelSpec modelDesc names
     let thetaL = 2.0 * theta * fromIntegral chromLength
     echo $ format ("scrm "%d%" 1 -t "%g%" -r "%g%" "%d%" -l 100000 "%s%" "%s)

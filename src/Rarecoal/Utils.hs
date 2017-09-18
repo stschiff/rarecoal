@@ -1,29 +1,52 @@
-module Rarecoal.Utils (computeAllConfigs, loadHistogram, filterConditionOn, filterExcludePatterns,
-    filterMaxAf, filterGlobalMinAf, computeStandardOrder) where
+module Rarecoal.Utils (computeAllConfigs, loadHistogram,
+    -- filterConditionOn, filterExcludePatterns, filterMaxAf, filterGlobalMinAf,
+    computeStandardOrder, GeneralOptions(..), HistogramOptions(..)) where
 
-import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern, readHistogram)
+import Rarecoal.Formats.RareAlleleHistogram (RareAlleleHistogram(..),
+    SitePattern, readHistogram)
+import Rarecoal.Core (ModelEvent(..))
 
 import Control.Error
 import Control.Monad ((>=>), when)
 import qualified Data.Map.Strict as Map
+import Data.Text (Text)
+
+
+data GeneralOptions = GeneralOptions {
+    optTheta :: Double,
+    optNrThreads :: Int,
+    optNoShortcut :: Bool,
+    optRegPenalty :: Double,
+    optN0 :: Int,
+    optLinGen :: Int,
+    optTMax :: Double
+}
+
+data HistogramOptions = HistogramOptions {
+    optHistPath :: FilePath,
+    optMinAf :: Int,
+    optMaxAf :: Int,
+    optConditionOn :: [Int],
+    optExcludePatterns :: [SitePattern]
+}
 
 computeAllConfigs :: Int -> Int -> [Int] -> [SitePattern]
-computeAllConfigs nrPop maxFreq nVec = 
+computeAllConfigs nrPop maxFreq nVec =
    let maxPowerNum = (maxFreq + 1) ^ nrPop
        order = map (digitize (maxFreq + 1) nrPop) [1..maxPowerNum]
    in  filter (\v -> (sum v <= maxFreq) && and (zipWith (<=) v nVec)) order
 
 digitize :: Int -> Int -> Int -> [Int]
-digitize base nrDigit num 
+digitize base nrDigit num
     | nrDigit == 1 = [num]
     | otherwise    = let digitBase = base ^ (nrDigit - 1)
                          digit = div num digitBase
                          rest = num - digit * digitBase
-                     in  (digit:digitize base (nrDigit - 1) rest)  
+                     in  (digit:digitize base (nrDigit - 1) rest)
 
-loadHistogram :: Int -> Int -> [Int] -> [SitePattern] -> FilePath ->
-    Script RareAlleleHistogram
-loadHistogram minAf maxAf conditionOn excludePatterns path = do
+loadHistogram :: HistogramOptions -> Script RareAlleleHistogram
+loadHistogram (HistogramOptions path minAf maxAf conditionOn excludePatterns) =
+    do
     hist <- readHistogram path
     tryRight $ (filterMaxAf maxAf >=> filterGlobalMinAf minAf >=>
         filterConditionOn conditionOn >=> filterExcludePatterns excludePatterns)
@@ -45,7 +68,7 @@ filterExcludePatterns excludePatterns hist =
         let newBody = Map.filterWithKey pruneExcludePatterns (raCounts hist)
         return $ hist {raExcludePatterns = excludePatterns, raCounts = newBody}
   where
-    pruneExcludePatterns pat _ = not $ pat `elem` excludePatterns 
+    pruneExcludePatterns pat _ = not $ pat `elem` excludePatterns
 
 filterMaxAf :: Int -> RareAlleleHistogram -> Either String RareAlleleHistogram
 filterMaxAf maxAf' hist = do

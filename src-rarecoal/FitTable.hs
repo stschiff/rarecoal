@@ -1,8 +1,9 @@
 module FitTable (runFitTable, FitTableOpt(..), writeFitTables) where
 
+import Rarecoal.Options (GeneralOptions(..), ModelOptions(..), HistogramOptions(..))
 import Rarecoal.Core (getProb, ModelSpec)
 import Rarecoal.ModelTemplate (ModelDesc, getModelSpec)
-import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern)
+import Rarecoal.Formats.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern)
 import Rarecoal.Utils (loadHistogram, computeStandardOrder)
 
 import Control.Error (Script, tryRight, scriptIO)
@@ -17,27 +18,23 @@ import qualified Data.Vector.Unboxed.Mutable as VM
 import System.IO (withFile, IOMode(..), hPutStrLn)
 
 data FitTableOpt = FitTableOpt {
-    _ftModelDesc :: ModelDesc,
-    _ftMaxAf :: Int,
-    _ftMinAf :: Int,
-    _ftConditionOn :: [Int],
-    _ftExcludePatterns :: [SitePattern],
-    _ftHistPath :: FilePath,
-    _ftOutPrefix :: FilePath
+    ftModelOpts :: ModelOptions,
+    ftHistogramOpts :: HistogramOptions,
+    ftOutPrefix :: FilePath
 }
 
 runFitTable :: FitTableOpt -> Script ()
 runFitTable opts = do
     let FitTableOpt modelDesc maxAf minAf conditionOn excludePatterns histPath outPrefix = opts
-    
+
     let outFullTable = outPrefix ++ ".frequencyFitTable.txt"
         summaryTable = outPrefix ++ ".summaryFitTable.txt"
-    
+
     hist <- loadHistogram minAf maxAf conditionOn excludePatterns histPath
     modelSpec <- getModelSpec modelDesc (raNames hist)
     writeFitTables outFullTable summaryTable hist modelSpec
 
-writeFitTables :: FilePath -> FilePath -> RareAlleleHistogram -> ModelSpec -> 
+writeFitTables :: FilePath -> FilePath -> RareAlleleHistogram -> ModelSpec ->
     Script ()
 writeFitTables outFullTable outSummaryTable hist modelSpec = do
     standardOrder <- tryRight $ computeStandardOrder hist
@@ -64,7 +61,7 @@ writeFullTable outFN standardOrder hist theoryValues = do
                          else
                              let val = round $ 100.0 * (theoryFreq - realFreq) / realFreq :: Int
                              in show val
-                         
+
                 -- (mean, lower, upper) = wilsonScoreInterval totalCounts realCount
                 -- stdErr = upper - lower
                 -- zScore = (theoryFreq - realFreq) / stdErr
@@ -113,7 +110,7 @@ writeSummaryTable outFN standardOrder hist theoryValues = do
                         else "n/a"
         (header, lines_) = case maybeErrorSummaries of
             Nothing ->
-                let h = intercalate "\t" $ ["Populations", "AlleleSharing", "Predicted", 
+                let h = intercalate "\t" $ ["Populations", "AlleleSharing", "Predicted",
                                                  "relDev%"]
                     l = do
                         (label, real, fit) <- zip3 allLabels allProbs allProbsTheory
@@ -121,14 +118,14 @@ writeSummaryTable outFN standardOrder hist theoryValues = do
                         return $ intercalate "\t" [label, show real, show fit, fitDev]
                 in  (h, l)
             Just (singletonErrors, sharingErrors) ->
-                let h = intercalate "\t" $ ["Populations", "AlleleSharing", "Predicted", 
+                let h = intercalate "\t" $ ["Populations", "AlleleSharing", "Predicted",
                                                  "relDev%", "stdErr", "zScore"]
                     l = do
                         let allErrors = singletonErrors ++ sharingErrors
                         (label, real, fit, se) <- zip4 allLabels allProbs allProbsTheory allErrors
                         let fitDev = getFitDev real fit
                         let zScore = (fit - real) / se
-                        return $ intercalate "\t" [label, show real, show fit, fitDev, show se, 
+                        return $ intercalate "\t" [label, show real, show fit, fitDev, show se,
                                                    show zScore]
                 in  (h, l)
     withFile outFN WriteMode $ \h -> do
