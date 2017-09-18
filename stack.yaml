@@ -2,7 +2,7 @@ flags: {}
 packages:
 - location: .
 - location:
-    git: git@github.com:stschiff/rarecoal-tools.git
+    git: https://github.com/stschiff/rarecoal-tools.git
     commit: fac4efc014027f55950e5854770e53b2ee9b4749
 # extra-deps:
 # - cabal-helper-0.6.3.1
