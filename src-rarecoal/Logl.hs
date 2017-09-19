@@ -16,20 +16,18 @@ import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
 data LoglOpt = LoglOpt {
     loGeneralOpts :: GeneralOptions,
     loModelOpts :: ModelOptions,
+    loParamOpts :: ParamOpts,
     loHistogramOpts :: HistogramOptions
 }
 
 runLogl :: LoglOpt -> Script ()
 runLogl opts = do
-    nrProc <- scriptIO getNumProcessors
-    if loNrThreads opts == 0
-    then scriptIO $ setNumCapabilities nrProc
-    else scriptIO $ setNumCapabilities (loNrThreads opts)
-    nrThreads <- scriptIO getNumCapabilities
-    scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
-    hist <- loadHistogram (loMinAf opts) (loMaxAf opts) (loConditionOn opts)
-        (loExcludePatterns opts) (loHistPath opts)
-    modelSpec <- getModelSpec (loModelDesc opts) (raNames hist)
+    setNrProcessors opts
+    modelTemplate <- getModelTemplate (loModelOpts opts)
+    modelParams <- makeParameterDict (loParamOpts opts)
+    modelSpec <- tryRight $ instantiateModel (loGeneralOpts opts )
+        modelTemplate modelParams
+    hist <- loadHistogram (loHistogramOpts opts) modelTemplate
     standardOrder <- tryRight $ computeStandardOrder hist
     scriptIO . putStrLn $
         "computing probabilities for " ++ show (length standardOrder) ++
@@ -47,20 +45,3 @@ runLogl opts = do
     scriptIO . mapM_ putStrLn $
         zipWith (\p val -> showSitePattern p ++ "\t" ++ show val) standardOrder
         patternProbs
-
-computeLogLikelihood :: ModelSpec -> RareAlleleHistogram -> Bool ->
-    Either String Double
-computeLogLikelihood modelSpec histogram noShortcut = do
-    assertErr "minFreq must be greater than 0" $ raMinAf histogram > 0
-    standardOrder <- computeStandardOrder histogram
-    let nVec = raNVec histogram
-    patternProbs <- sequence $
-        parMap rdeepseq (getProb modelSpec nVec noShortcut) standardOrder
-    let patternCounts = map (defaultLookup histogram) standardOrder
-        ll = sum $
-            zipWith (\p c -> log p * fromIntegral c) patternProbs patternCounts
-        otherCounts = raTotalNrSites histogram - sum patternCounts
-    return $ ll + fromIntegral otherCounts * log (1.0 - sum patternProbs)
-
-defaultLookup :: RareAlleleHistogram -> SitePattern -> Int64
-defaultLookup histogram sitePattern = Map.findWithDefault 0 sitePattern (raCounts histogram)

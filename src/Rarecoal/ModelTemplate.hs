@@ -200,7 +200,7 @@ getParamNames (ModelTemplate commands) = reverse . nub $ go [] commands
         _ -> go res rest
 
 getNrAndNamesOfBranches :: ModelTemplate -> Either String (Int, [String])
-getNrAndNamesOfBranches (ModelTemplate mtCommands) =
+getNrAndNamesOfBranches (ModelTemplate mtCommands) = do
     let branchNameCommand = [b | MTBranchNames b <- mtCommands]
     branchNames <- case branchNameCommand of
         [] -> return []
@@ -211,7 +211,7 @@ getNrAndNamesOfBranches (ModelTemplate mtCommands) =
         n -> return $ length n
     return (nrBranches, branchNames)
   where
-    go res [] -> return res
+    go res [] = return res
     go res (cmd:rest) = case cmd of
       MTDiscoveryRate (BranchByIndex i) _ -> go (i:res) rest
       MTPopSizeChange _ (BranchByIndex i) _ -> go (i:res) rest
@@ -225,53 +225,52 @@ getNrAndNamesOfBranches (ModelTemplate mtCommands) =
       c -> Left $ "illegal branch name in " ++ show c ++
           " without branchName declaration"
 
-instantiateModel :: GeneralOptions -> ModelTemplate -> V.Vector Double ->
+instantiateModel :: GeneralOptions -> ModelTemplate -> [(String, Double)] ->
     Either String ModelSpec
-instantiateModel opts mt@(ModelTemplate mtCommands) paramsVec = do
+instantiateModel opts mt@(ModelTemplate mtCommands) paramsDict = do
     (nrBranches, branchNames) <- getNrAndNamesOfBranches mt
-    paramNames <- getParamNames mt
-    discoveryRates <- modifyDiscoveryRates branchNames paramNames mtCommands
+    discoveryRates <- modifyDiscoveryRates branchNames mtCommands
         (V.replicate nrBranches 1.0)
-    events <- reverse <$> getEvents branchNames paramNames mtCommands []
-    validateConstraints paramNames paramsVec mtCommands
+    events <- reverse <$> getEvents branchNames mtCommands []
+    validateConstraints mtCommands
     let timeSteps = getTimeSteps (optN0 opts) (optLinGen opts) (optTMax opts)
     return $ ModelSpec timeSteps (optTheta opts) discoveryRates
         (optRegPenalty opts) events
   where
     modifyDiscoveryRates _ _ [] res = return res
-    modifyDiscoveryRates branchNames paramNames (cmd:rest) res = case cmd of
+    modifyDiscoveryRates branchNames (cmd:rest) res = case cmd of
         MTDiscoveryRate branchSpec paramSpec -> do
             branchIndex <- getBranchIndex branchNames branchSpec
-            param <- getParam paramNames paramsVec paramSpec
+            param <- getParam paramsDict paramSpec
             return $ res V.// (branchIndex, param)
         _ -> modifyDiscoveryRates rest res
-    getEvents _ _ [] res = return res
-    getEvents bN pN (cmd:rest) res = case cmd of
+    getEvents _ [] res = return res
+    getEvents bN (cmd:rest) res = case cmd of
         MTJoin tSpec toSpec fromSpec -> do
-            t <- getParam pN paramsVec tSpec
+            t <- getParam paramsDict tSpec
             e <- Join <$> getBranchIndex bN toSpec <*>
                 getBranchIndex bN fromSpec
             return (ModelEvent t e:res)
         MTPopSizeChange tSpec bSpec pSpec -> do
-            t <- getParam pN paramsVec tSpec
+            t <- getParam paramsDict tSpec
             e <- SetPopSize <$> getBranchIndex bN bSpec <*>
-                getParam pN paramsVec pSpec
+                getParam paramsDict pSpec
             return (ModelEvent t e:res)
         MTJoinPopSizeChange tSpec toSpec fromSpec pSpec -> do
-            t <- getParam pN paramsVec tSpec
+            t <- getParam paramsDict tSpec
             e1 <- Join <$> getBranchIndex bN toSpec <*>
                 getBranchIndex bN fromSpec
             e2 <- SetPopSize <$> getBranchIndex bN toSpec <*>
-                getParam pN paramsVec pSpec
+                getParam paramsDict pSpec
             return (ModelEvent t e2:ModelEvent t e1:res)
         MTSplit tSpec toSpec fromSpec rateSpec -> do
-            t <- getParam pN paramsVec tSpec
+            t <- getParam paramsDict tSpec
             e <- Split <$> getBranchIndex bN toSpec <*>
                 getBranchIndex bN fromSpec <*>
-                getParam pN paramsVec rateSpec
+                getParam paramsDict rateSpec
             return (ModelEvent t e:res)
         MTFreeze tSpec bSpec v -> do
-            t <- getParam pN paramsVec tSpec
+            t <- getParam paramsDict tSpec
             e <- SetFreeze <$> getBranchIndex bN bSpec <*> pure v
             return (ModelEvent t e:res)
 
@@ -281,69 +280,70 @@ getBranchIndex branchNames branchSpec = case branchSpec of
     BranchByName n -> justErr ("did not find branch name " ++ n) $
         elemIndex n branchNames
 
-getParam :: [String] -> V.Vector Double -> ParamSpec -> Either String Double
-getParam _ _ (ParamFixed val) = return val
-getParam pnames paramVec (ParamVariable n) = do
-    when (length pnames /= V.length paramVec) $ Left ("number of parameter \
-        \values does not match number of parameters in template. Values: " ++
-        show params ++ ", parameters: " ++ show pnames)
-    case foundParam of
-        Nothing -> Left $ "Error in Template: could not find parameter \
-            \named " ++ param
+getParam :: [(String, Double)] -> ParamSpec -> Either String Double
+getParam _ (ParamFixed val) = return val
+getParam paramsDict (ParamVariable n) = do
+    case n `lookup` paramsDict of
+        Nothing -> Left $ "Error in Template: could not find parameter " ++ show n
         Just val -> return val
-  where
-    foundParam = lookup param (zip pnames (V.toList paramVec))
 
-validateConstraints :: [String] -> V.Vector Double -> [MTCommands] ->
+validateConstraints :: [(String, Double)] -> [MTCommands] ->
     Either String ()
-validateConstraints _ _ [] = return ()
-validateConstraints paramNames paramsVec (cmd:rest) =
+validateConstraints _ [] = return ()
+validateConstraints paramsDict (cmd:rest) =
     case cmd of
         MTConstraint pSpec1 pSpec2 op -> do
-            p1 <- getParam paramNames paramsVec pSpec1
-            p2 <- getParam paramNames paramsVec pSpec2
+            p1 <- getParam paramsDict pSpec1
+            p2 <- getParam paramsDict pSpec2
             case op of
                 ConstraintOpGreater ->
                     when (p1 <= p2) $ Left "constraint violated: " ++ cmd
                 ConstraintOpSmaller ->
                     when (p1 >= p2) $ Left "constraint violated: " ++ cmd
-            validateConstraints paramNames paramsVec rest
-        _ -> validateConstraints paramNames paramsVec rest
+            validateConstraints paramsDict rest
+        _ -> validateConstraints paramsDict rest
 
-makeParameterVector :: ParamOptions -> [String] -> Script (V.Vector Double)
-makeParameterVector (ParamOptions maybeInputFile xSettings) parameterNames =
+makeParameterDict :: ParamOptions -> IO [(String, Double)]
+makeParameterDict (ParamOptions maybeInputFile xSettings) =
     case maybeInputFile of
         Just paramsFile -> do
-            l <- lines <$> (scriptIO . readFile $ paramsFile)
+            l <- lines <$> readFile paramsFile
             if (head . head $ l) == '#'
             then -- aha, have rarecoal mcmc output file
-                loadFromDict
-                    [(k, read $ v !! 2) | (k : v) <- map words . drop 3 $ l]
+                removeDuplicateKeys $
+                    xSettings ++ [(k, read $ v !! 2) | (k : v) <- map words . drop 3 $ l]
             else -- aha, have rarecoal maxl output file
-                loadFromDict
-                    [(k, read v) | [k, v] <- map words l]
-        Nothing -> loadFromDict []
+                removeDuplicateKeys $
+                    xSettings ++ [(k, read v) | [k, v] <- map words l]
+        Nothing -> removeDuplicateKeys xSettings
   where
-    loadFromDict :: [(String, Double)] -> Script (V.Vector Double)
-    loadFromDict dict = V.fromList <$> mapM (paramLookup dict) parameterNames
-    paramLookup :: [(String, Double)] -> String -> Script Double
-    paramLookup dict p =
-        case p `lookup` parameterNames of
-            Just x -> do
-                scriptIO . errLn $ show p ++ " = " ++ show x
-                return x
-            Nothing ->
-                case p `lookup` dict of
-                    Just v -> do
-                        scriptIO . errLn $ show p ++ " = " ++ show v
-                        return v
-                    Nothing | head p == 'p' -> do
-                                scriptIO . errLn $ show p ++ " = 1.0 (default)"
-                                return 1.0
-                            | take 3 p == "adm" -> do
-                                scriptIO . errLn $ show p ++ " = 0.05 (default)"
-                                return 0.05
-                            | otherwise ->
-                                throwError $ "Don't know how to initialize \
-                                \parameter " ++ p ++ ". Please provide initial \
-                                \value via -X " ++ p ++ "=?"
+    removeDuplicateKeys settings = go settings []
+    go [] res = return res
+    go ((key, val):rest) res = case key `lookup` res of
+        Nothing -> do
+            errLn $ "setting parameter " ++ show key ++ " = " ++ show val
+            go rest ((key, val):res)
+        Just _ -> go rest res
+
+fillParameterDictWithDefaults :: ModelTemplate -> [(String, Double)] ->
+    Script [(String, Double)]
+fillParameterDictWithDefaults mt paramsDict = do
+    paramNames <- getParamNames mt
+    additionalParams <- fmap catMaybes . forM paramNames $ \p ->
+        case p `lookup` paramsDict of
+            Just _ -> return Nothing
+            Nothing -> do
+                if head p == 'p'
+                then do
+                    scriptIO . errLn $ "setting parameter " ++ show p ++
+                        " = 1.0 (default)"
+                    return $ Just (p, 1.0)
+                else if take 3 p == "adm"
+                    then do
+                        scriptIO . errLn $ "setting parameter " ++ show p ++
+                            " = 0.05 (d efault)"
+                        return $ Just (p, 0.05)
+                    else
+                        throwError $ "Don't know how to initialize \
+                        \parameter " ++ p ++ ". Please provide initial \
+                        \value via -X " ++ p ++ "=..."

@@ -19,19 +19,23 @@ import System.IO (withFile, IOMode(..), hPutStrLn)
 
 data FitTableOpt = FitTableOpt {
     ftModelOpts :: ModelOptions,
+    ftParamOpts :: ParamOpts,
     ftHistogramOpts :: HistogramOptions,
     ftOutPrefix :: FilePath
 }
 
 runFitTable :: FitTableOpt -> Script ()
 runFitTable opts = do
-    let FitTableOpt modelDesc maxAf minAf conditionOn excludePatterns histPath outPrefix = opts
-
+    setNrProcessors opts
+    let FitTableOpt modelOpts paramOpts histOpts outPrefix = opts
     let outFullTable = outPrefix ++ ".frequencyFitTable.txt"
         summaryTable = outPrefix ++ ".summaryFitTable.txt"
 
-    hist <- loadHistogram minAf maxAf conditionOn excludePatterns histPath
-    modelSpec <- getModelSpec modelDesc (raNames hist)
+    modelTemplate <- getModelTemplate (ftModelOpts opts)
+    modelParams <- makeParameterDict (ftParamOpts opts)
+    modelSpec <- tryRight $ instantiateModel (ftGeneralOpts opts )
+        modelTemplate modelParams
+    hist <- loadHistogram histOpts modelTemplate
     writeFitTables outFullTable summaryTable hist modelSpec
 
 writeFitTables :: FilePath -> FilePath -> RareAlleleHistogram -> ModelSpec ->

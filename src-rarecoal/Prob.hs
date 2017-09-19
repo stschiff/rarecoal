@@ -8,12 +8,18 @@ import Control.Error (Script, scriptIO, tryRight)
 
 data ProbOpt = ProbOpt {
     prModelOpts :: ModelOptions,
+    prParamOpts :: ParamOptions,
     prNvec :: [Int],
     prKvec :: [Int]
 }
 
 runProb :: ProbOpt -> Script ()
 runProb opts = do
-    modelSpec <- getModelSpec (prModelDesc opts) (prBranchnames opts)
+    setNrProcessors opts
+    modelTemplate <- getModelTemplate (prModelOpts opts)
+    modelParams <- makeParameterDict (prParamOpts opts)
+    modelSpec <- tryRight $ instantiateModel (prGeneralOpts opts)
+        modelTemplate modelParams
+
     val <- tryRight $ getProb modelSpec (prNvec opts) False (prKvec opts)
     scriptIO $ print val

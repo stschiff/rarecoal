@@ -14,6 +14,7 @@ import Turtle (echo, format, d, g, s, (%))
 
 data SimCommandOpt = SimCommandOpt {
     _ftModelOpts :: ModelOptions,
+    _ftParamOpts :: ParamOptions,
     _ftNrHaps :: [Int],
     _ftRecomb :: Double,
     _ftL :: Int
@@ -21,7 +22,11 @@ data SimCommandOpt = SimCommandOpt {
 
 runSimCommand :: SimCommandOpt -> Script ()
 runSimCommand (SimCommandOpt modelOpts nrHaps rho chromLength) = do
-    (ModelSpec _ theta _ _ events) <- getModelSpec modelDesc names
+    modelTemplate <- getModelTemplate (prModelOpts opts)
+    modelParams <- makeParameterDict (prParamOpts opts)
+    modelSpec <- tryRight $ instantiateModel (prGeneralOpts opts)
+        modelTemplate modelParams
+    let (ModelSpec _ theta _ _ events) = modelSpec
     let thetaL = 2.0 * theta * fromIntegral chromLength
     echo $ format ("scrm "%d%" 1 -t "%g%" -r "%g%" "%d%" -l 100000 "%s%" "%s)
         nSamples thetaL rhoL chromLength (makeSubPopSpec nrHaps)

@@ -14,27 +14,24 @@ import System.IO (stderr, hPutStrLn, openFile, IOMode(..), hClose)
 
 data FindOpt = FindOpt {
     fiGeneralOpts :: GeneralOptions,
+    fiModelOpts :: ModelOptions,
+    fiParamOpts :: ParamOptions,
+    fiHistOpts :: HistogramOptions,
     fiQueryBranch :: BranchSpec,
     fiEvalPath :: FilePath,
     fiBranchAge :: Double,
     fiDeltaTime :: Double,
-    fiMaxTime :: Double,
-    fiModelOpts :: ModelOptions,
-    fiHistOpts :: HistogramOptions
+    fiMaxTime :: Double
 }
 
 runFind :: FindOpt -> Script ()
 runFind opts = do
-    nrProc <- scriptIO getNumProcessors
-    if   fiNrThreads opts == 0
-    then scriptIO $ setNumCapabilities nrProc
-    else scriptIO $ setNumCapabilities (fiNrThreads opts)
-    nrThreads <- scriptIO getNumCapabilities
-    scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
-    hist <- loadHistogram (fiMinAf opts) (fiMaxAf opts) (fiConditionOn opts)
-        (fiExcludePatterns opts) (fiHistPath opts)
-    let names = raNames hist
-    modelSpec <- getModelSpec (fiModelDesc opts) names
+    setNrProcessors (fiGeneralOpts opts)
+    modelTemplate <- getModelTemplate (fiModelOpts opts)
+    modelParams <- makeParameterDict (fiParamOpts opts)
+    modelSpec <- tryRight $ instantiateModel (fiGeneralOpts opts )
+        modelTemplate modelParams
+    hist <- loadHistogram (fiHistOpts opts) modelTemplate
     l <- findQueryIndex (raNames hist) (fiQueryBranch opts)
     let modelSpec' =
             if fiBranchAge opts > 0.0

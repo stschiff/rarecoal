@@ -352,7 +352,9 @@ validateModel (ModelSpec _ _ dr _ events) = do
     -- when (reg > 1.0) $ checkRegularization (length dr) reg sortedEvents
   where
     checkEvents [] = Right ()
-    checkEvents (ModelEvent t (Join k l):rest) = do
+    checkEvents e@(ModelEvent t (Join k l):rest) = do
+        when (k >= length dr || l >= length dr || k < 0 || l < 0) $
+            Left ("illegal branch indices in event " ++ show e)
         let illegalEvents = or $ do
                 ModelEvent _ e <- rest
                 case e of
@@ -363,11 +365,18 @@ validateModel (ModelSpec _ _ dr _ events) = do
         if k == l || illegalEvents
         then Left $ "Illegal join from " ++ show l ++ " to " ++ show k ++ " at time " ++ show t
         else checkEvents rest
-    checkEvents (ModelEvent _ (SetPopSize _ p):rest) =
+    checkEvents (ModelEvent _ (SetPopSize k p):rest) = do
+        when (k >= length dr || k < 0) $
+            Left ("illegal branch indices in event " ++ show e)
         if p <= 0 then Left $ "Illegal population size: " ++ show p else checkEvents rest
-    checkEvents (ModelEvent _ (Split _ _ m):rest) =
+    checkEvents (ModelEvent _ (Split l k m):rest) = do
+        when (k >= length dr || l >= length dr || k < 0 || l < 0) $
+            Left ("illegal branch indices in event " ++ show e)
         if m < 0.0 || m > 1.0 then Left $ "Illegal split rate" ++ show m else checkEvents rest
-    checkEvents (ModelEvent _ (SetFreeze _ _):rest) = checkEvents rest
+    checkEvents (ModelEvent _ (SetFreeze k _):rest) = do
+        when (k >= length dr || k < 0) $
+            Left ("illegal branch indices in event " ++ show e)
+        checkEvents rest
 
 -- checkRegularization :: Int -> Double -> [ModelEvent] -> Either String ()
 -- checkRegularization nPops reg sortedEvents =

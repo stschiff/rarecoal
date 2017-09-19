@@ -1,13 +1,12 @@
 module Mcmc (runMcmc, McmcOpt(..)) where
 
 import FitTable (writeFitTables)
-import Maxl (minFunc, penalty)
 import Rarecoal.Options (GeneralOptions(..), ModelOptions(..), HistogramOptions(..))
 import Rarecoal.ModelTemplate (ModelTemplate(..), readModelTemplate, getInitialParams,
     makeFixedParamsTemplate, reportGhostPops, instantiateModel)
 import Rarecoal.Core (getTimeSteps, ModelEvent(..))
 import Rarecoal.Formats.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern)
-import Rarecoal.Utils (loadHistogram)
+import Rarecoal.Utils (loadHistogram, minFunc, penalty)
 
 import qualified Data.Vector.Unboxed as V
 import qualified System.Random as R
@@ -30,9 +29,10 @@ import System.Log.Logger (infoM)
 data McmcOpt = McmcOpt {
    mcGeneralOpts :: GeneralOptions,
    mcModelOpts :: ModelOptions,
+   mcParamOpts :: ParamOptions,
+   mcHistogramOpts :: HistogramOptions,
    mcNrCycles :: Int,
    mcOutPrefix :: FilePath,
-   mcHistogramOpts :: HistogramOptions,
    mcRandomSeed :: Int,
    mcFixedParams :: [String]
 }
@@ -50,35 +50,18 @@ data MCMCstate = MCMCstate {
 
 runMcmc :: McmcOpt -> Script ()
 runMcmc opts = do
-    nrProc <- scriptIO getNumProcessors
-    if   mcNrThreads opts == 0
-    then scriptIO $ setNumCapabilities nrProc
-    else scriptIO $ setNumCapabilities (mcNrThreads opts)
-    nrThreads <- scriptIO getNumCapabilities
-    scriptIO $ errLn ("running on " ++ show nrThreads ++ " processors")
-    let times = getTimeSteps 20000 (mcLinGen opts) 20.0
-    modelTemplate <- readModelTemplate (mcTemplatePath opts) (mcTheta opts)
-        times (mcReg opts)
-    hist <- loadHistogram (mcMinAf opts) (mcMaxAf opts) (mcConditionOn opts)
-        (mcExcludePatterns opts) (mcHistPath opts)
-    let extraEvents = mcAdditionalEvents opts
-    x <- getInitialParams modelTemplate (mcMaybeInputFile opts) (mcInitialValues opts)
-    reportGhostPops modelTemplate (raNames hist) x
-    (modelTemplateWithFixedParams, xNew) <-
-        if length (mcFixedParams opts) > 0
-        then do
-            scriptIO $ errLn "loading modified model template with fixed parameters"
-            mt <- tryRight $ makeFixedParamsTemplate modelTemplate (mcFixedParams opts) x
-            xNew <- getInitialParams mt (mcMaybeInputFile opts) (mcInitialValues opts)
-            return (mt, xNew)
-        else
-            return (modelTemplate, x)
-    _ <- tryRight $ minFunc modelTemplateWithFixedParams extraEvents hist xNew
+    setNrProcessors opts
+    modelTemplate <- getModelTemplate (maModelOpts opts)
+    modelParams <- makeParameterDict (maParamOpts opts)
+    modelSpec <- tryRight $ instantiateModel (maGeneralOpts opts )
+        modelTemplate modelParams
+    hist <- loadHistogram (maHistogramOpts opts) modelTemplate
+    xInit <- makeInitialPoint modelTemplate modelParams
     let minFunc' = either (const penalty) id .
-            minFunc modelTemplateWithFixedParams extraEvents hist
-        initV = minFunc' xNew
-        stepWidths = V.map (max 1.0e-8 . abs . (/100.0)) xNew
-        successRates = V.replicate (V.length xNew) 0.44
+            minFunc (mcGeneralOpts opts) modelTemplate hist
+        initV = minFunc' xInit
+        stepWidths = V.map (max 1.0e-8 . abs . (/100.0)) xInit
+        successRates = V.replicate (V.length xInit) 0.44
     ranGen <- if   mcRandomSeed opts == 0
               then scriptIO R.getStdGen
               else return $ R.mkStdGen (mcRandomSeed opts)

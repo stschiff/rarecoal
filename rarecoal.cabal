@@ -19,7 +19,7 @@ library
   hs-source-dirs:      src
   build-depends:       base, containers, errors, text, attoparsec, pipes-text, transformers,
                        pipes-attoparsec, vector, data-memocombinators, tasty, tasty-quickcheck, 
-                       QuickCheck, split, MissingH, hslogger, tasty-hunit, mtl, rarecoal-tools
+                       QuickCheck, split, MissingH, hslogger, tasty-hunit, mtl, rarecoal-formats
   default-language:    Haskell2010
   ghc-options:         -O
 

@@ -1,13 +1,15 @@
 module Maxl (minFunc, penalty, runMaxl, MaxlOpt(..)) where
 
-import Rarecoal.Options (GeneralOptions(..), ModelOptions(..), HistogramOptions(..))
-import Logl (computeLogLikelihood)
-import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..), getRegularizationPenalty)
+import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..),
+    getRegularizationPenalty)
+import Rarecoal.Formats.RareAlleleHistogram (RareAlleleHistogram(..),
+    SitePattern)
 import Rarecoal.ModelTemplate (ModelTemplate(..), instantiateModel,
     readModelTemplate, getInitialParams, makeFixedParamsTemplate,
     reportGhostPops)
-import Rarecoal.Formats.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern)
-import Rarecoal.Utils (loadHistogram)
+import Rarecoal.Options (GeneralOptions(..), ModelOptions(..),
+    HistogramOptions(..))
+import Rarecoal.Utils (minFunc, penalty, loadHistogram, computeLogLikelihood)
 import FitTable (writeFitTables)
 
 import Control.Error (Script, scriptIO, assertErr, tryRight, errLn)
@@ -22,6 +24,7 @@ import System.Log.Logger (infoM)
 data MaxlOpt = MaxlOpt {
     maGeneralOpts :: GeneralOptions,
     maModelOpts :: ModelOptions,
+    maParamOpts :: ParamOpts,
     maHistogramOpts :: HistogramOptions,
     maMaxCycles :: Int,
     maNrRestarts :: Int,
@@ -31,35 +34,18 @@ data MaxlOpt = MaxlOpt {
 
 runMaxl :: MaxlOpt -> Script ()
 runMaxl opts = do
-    nrProc <- scriptIO getNumProcessors
-    if maNrThreads opts == 0
-        then scriptIO $ setNumCapabilities nrProc
-        else scriptIO $ setNumCapabilities (maNrThreads opts)
-    nrThreads <- scriptIO getNumCapabilities
-    scriptIO $ errLn ("running on " ++ show nrThreads ++ " processors")
-    let times = getTimeSteps 20000 (maLinGen opts) 20.0
-    modelTemplate <- readModelTemplate (maTemplatePath opts) (maTheta opts)
-        times (maReg opts)
-    hist <- loadHistogram (maMinAf opts) (maMaxAf opts) (maConditionOn opts)
-        (maExcludePatterns opts) (maHistPath opts)
-    x <- getInitialParams modelTemplate (maMaybeInputFile opts) (maInitialValues opts)
-    reportGhostPops modelTemplate (raNames hist) x
-    (modelTemplateWithFixedParams, xNew) <-
-        if length (maFixedParams opts) > 0
-        then do
-            scriptIO $ errLn "loading modified model template with fixed parameters"
-            mt <- tryRight $ makeFixedParamsTemplate modelTemplate (maFixedParams opts) x
-            xNew <- getInitialParams mt (maMaybeInputFile opts) (maInitialValues opts)
-            return (mt, xNew)
-        else
-            return (modelTemplate, x)
-    let extraEvents = maAdditionalEvents opts
-    _ <- tryRight $ minFunc modelTemplateWithFixedParams extraEvents hist xNew
-    let minFunc' = either (const penalty) id . minFunc
-            modelTemplateWithFixedParams extraEvents hist
+    setNrProcessors opts
+    modelTemplate <- getModelTemplate (maModelOpts opts)
+    modelParams <- makeParameterDict (maParamOpts opts)
+    modelSpec <- tryRight $ instantiateModel (maGeneralOpts opts )
+        modelTemplate modelParams
+    hist <- loadHistogram (maHistogramOpts opts) modelTemplate
+    let minFunc' = either (const penalty) id .
+            minFunc (maGeneralOpts opts) modelTemplate hist
         minimizationRoutine = minimizeV (maMaxCycles opts) minFunc'
+    xInit <- makeInitialPoint modelTemplate modelParams
     (minResult, trace) <- scriptIO $ minimizeWithRestarts (maNrRestarts opts)
-        minimizationRoutine xNew
+        minimizationRoutine xInit
     let outMaxlFN = maOutPrefix opts ++ ".paramEstimates.txt"
         outTraceFN = maOutPrefix opts ++ ".trace.txt"
         outFullFitTableFN = maOutPrefix opts ++ ".frequencyFitTable.txt"
@@ -105,20 +91,3 @@ reportTrace modelTemplate trace h = do
             mtParams modelTemplate
         body = map (intercalate "\t" . map show . V.toList) trace
     hPutStr h . unlines $ header : body
-
-minFunc :: ModelTemplate -> [ModelEvent] -> RareAlleleHistogram -> V.Vector Double -> Either String Double
-minFunc modelTemplate extraEvents hist params = do
-    let names = raNames hist
-    modelSpec <- instantiateModel modelTemplate params names
-    regPenalty <- getRegularizationPenalty modelSpec
-    let events = mEvents modelSpec
-        events' = extraEvents ++ events
-        modelSpec' = modelSpec {mEvents = events'}
-    val <- computeLogLikelihood modelSpec' hist False
-    assertErr ("likelihood infinite for params " ++ show params) $ not (isInfinite val)
-    assertErr ("likelihood NaN for params " ++ show params) $ not (isNaN val)
-    return (-val + regPenalty)
-    -- return (-val)
-
-penalty :: Double
-penalty = 1.0e20
