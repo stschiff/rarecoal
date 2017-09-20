@@ -13,6 +13,7 @@ import Prelude hiding (unwords)
 import Turtle (echo, format, d, g, s, (%))
 
 data SimCommandOpt = SimCommandOpt {
+    _ftGeneralOpts :: GeneralOptions,
     _ftModelOpts :: ModelOptions,
     _ftParamOpts :: ParamOptions,
     _ftNrHaps :: [Int],

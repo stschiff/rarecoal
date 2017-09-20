@@ -18,6 +18,7 @@ import qualified Data.Vector.Unboxed.Mutable as VM
 import System.IO (withFile, IOMode(..), hPutStrLn)
 
 data FitTableOpt = FitTableOpt {
+    ftGeneralOpts :: GeneralOptions,
     ftModelOpts :: ModelOptions,
     ftParamOpts :: ParamOpts,
     ftHistogramOpts :: HistogramOptions,

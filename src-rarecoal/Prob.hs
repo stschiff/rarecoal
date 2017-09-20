@@ -7,6 +7,7 @@ import Rarecoal.ModelTemplate (getModelSpec, ModelDesc)
 import Control.Error (Script, scriptIO, tryRight)
 
 data ProbOpt = ProbOpt {
+    prGeneralOpts :: GeneralOptions,
     prModelOpts :: ModelOptions,
     prParamOpts :: ParamOptions,
     prNvec :: [Int],
