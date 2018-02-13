@@ -1,40 +1,53 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Rarecoal.ModelTemplate (ModelOptions(..), ParamOptions(..),
     ModelTemplate(..), getModelTemplate, instantiateModel,
-    makeParameterVector) where
+    makeParameterDict, getRegularizationPenalty, getParamNames,
+    fillParameterDictWithDefaults, loadHistogram, minFunc, penalty,
+    makeInitialPoint, getNrAndNamesOfBranches, validateBranchNameCongruency)
+    where
 
-import           Rarecoal.Core        (EventType (..), ModelEvent (..),
-                                       ModelSpec (..), getTimeSteps,
-                                       getNrOfPops)
-import           Rarecoal.Utils       (GeneralOptions(..))
+import           Rarecoal.Formats.RareAlleleHistogram (RareAlleleHistogram (..),
+                                                       readHistogram)
+import           Rarecoal.Utils                       (filterConditionOn,
+                                                       filterExcludePatterns,
+                                                       filterGlobalMinAf,
+                                                       filterMaxAf,
+                                                       getTimeSteps,
+                                                       GeneralOptions (..),
+                                                       HistogramOptions (..))
+import           Rarecoal.Core              (getRegularizationPenalty,
+    EventType(..), ModelSpec(..), ModelEvent (..))
 
-import           Control.Applicative  ((<|>))
-import           Control.Error        (Script, assertErr, justErr, scriptIO,
-                                       tryRight, errLn)
-import           Control.Monad        (forM, when)
-import           Control.Monad.Except (throwError)
-import           Data.Char            (isAlphaNum)
+import           Control.Applicative                  ((<|>))
+import           Control.Error                        (Script, assertErr, errLn,
+                                                       justErr, scriptIO,
+                                                       tryRight)
+import           Control.Monad                        (forM, forM_, when, (>=>))
+import           Control.Monad.Trans.Except           (throwE)
+import           Data.Char                            (isAlphaNum)
 -- import Debug.Trace (trace)
-import           Data.List            (elemIndex, nub)
-import           Data.Text            (unpack)
-import qualified Data.Text.IO         as T
-import qualified Data.Vector.Unboxed  as V
-import qualified Text.Parsec as P
-import qualified Text.Parsec.Char as PC
-import           Text.Parsec.Text (Parser)
-import           Text.Parsec.Number (sign, int, floating)
-import           System.Log.Logger    (infoM)
+import           Data.List                            (elemIndex, nub)
+import           Data.Maybe                           (catMaybes)
+import qualified Data.Text                            as T
+import qualified Data.Text.IO                         as T
+import qualified Data.Vector.Unboxed                  as V
+import qualified Text.Parsec                          as P
+import qualified Text.Parsec.Char                     as PC
+import           Text.Parsec.Number                   (floating, int, sign)
+import           Text.Parsec.Text                     (Parser)
+import           Turtle                               (format, w, (%), g)
 
 data ModelOptions = ModelOptions {
-    optMaybeModelTemplateFile :: Maybe ParamOptions,
-    optModelTemplateString :: Text
+    optMaybeModelTemplateFile :: Maybe FilePath,
+    optModelTemplateString    :: T.Text
 }
 
 data ParamOptions = ParamOptions {
     optMaybeParamInputFile :: Maybe FilePath,
-    optParameterSettings :: [(String, Double)]
+    optParameterSettings   :: [(String, Double)]
 }
 
-data ModelTemplate = ModelTemplate [MTCommand]
+newtype ModelTemplate = ModelTemplate [MTCommand]
 
 data MTCommand = MTBranchNames [String]
                | MTDiscoveryRate BranchSpec ParamSpec
@@ -44,38 +57,46 @@ data MTCommand = MTBranchNames [String]
                | MTSplit ParamSpec BranchSpec BranchSpec ParamSpec
                | MTFreeze ParamSpec BranchSpec Bool
                | MTConstraint ParamSpec ParamSpec ConstraintOperator
+               deriving (Show)
 
 data ParamSpec = ParamFixed Double | ParamVariable String deriving (Eq, Show)
 data BranchSpec = BranchByIndex Int | BranchByName String deriving (Eq, Show)
 
-data ConstraintOperator = ConstraintOpGreater | ConstraintOpSmaller
+data ConstraintOperator = ConstraintOpGreater | ConstraintOpSmaller deriving (Show)
 
-getModelTemplate :: ModelOptions -> Either Text ModelTemplate
+getModelTemplate :: ModelOptions -> Script ModelTemplate
 getModelTemplate (ModelOptions maybeFP input) = do
     ModelTemplate cmds1 <- case maybeFP of
         Just fp -> do
             input' <- scriptIO $ T.readFile fp
-            case parse modelTemplateParser "" input' of
-                ParserError e -> Left (show e)
-                Right v -> Right v
+            case P.parse modelTemplateP "" input' of
+                Left e  -> throwE (format w e)
+                Right v -> return v
         Nothing -> return $ ModelTemplate []
-    ModelTemplate cmds2 <- case parse modelTemplateParser "" input of
-        ParserError e -> Left (show e)
-        Right v -> Right v
-    return $ ModelTemplate (cmds1 ++ cmds2)
+    ModelTemplate cmds2 <- case P.parse modelTemplateP "" input of
+        Left e  -> throwE (format w e)
+        Right v -> return v
+    let mt = ModelTemplate (cmds1 ++ cmds2)
+    reportModelTemplate mt
+    return mt
+  where
+    reportModelTemplate mt = do
+        modelBranchNames <- tryRight $ getModelBranchNames mt
+        let paramNames = getParamNames mt
+        scriptIO . errLn $ format ("loaded model template with branch names "%w%" and model parameters "%w) modelBranchNames paramNames
 
 modelTemplateP :: Parser ModelTemplate
 modelTemplateP =
     ModelTemplate <$> P.sepBy commandP (PC.char ';' *> PC.spaces)
 
 commandP :: Parser MTCommand
-commandP = try branchNameCmdP <|>
-           try discoveryRateCmdP <|>
-           try popSizeChangeCmdP <|>
-           try joinCmdP <|>
-           try joinPopSizeCmdP <|>
-           try splitCmdP <|>
-           try freezeCmdP <|>
+commandP = P.try branchNameCmdP <|>
+           P.try discoveryRateCmdP <|>
+           P.try popSizeChangeCmdP <|>
+           P.try joinCmdP <|>
+           P.try joinPopSizeCmdP <|>
+           P.try splitCmdP <|>
+           P.try freezeCmdP <|>
            constraintCmdP
 
 branchNameCmdP :: Parser MTCommand
@@ -97,16 +118,16 @@ discoveryRateCmdP =
     (PC.string "rate=" *> paramSpecP)
 
 branchSpecP :: Parser BranchSpec
-branchSpecP = try (BranchByName <$> branchNameP) <|>
-              (BranchByIndex . read <$> int)
+branchSpecP = P.try (BranchByName <$> branchNameP) <|>
+              (BranchByIndex <$> int)
 
 paramSpecP :: Parser ParamSpec
-paramSpecP = try (ParamFixed <$> (sign <*> floating)) <|>
+paramSpecP = P.try (ParamFixed <$> (sign <*> floating)) <|>
              (ParamVariable <$> variableP)
 
 variableP :: Parser String
 variableP = PC.char '<' *>
-    P.many1 (PC.satisfy (\c -> isAlphaNum c || c == '_')) <* '>'
+    P.many1 (PC.satisfy (\c -> isAlphaNum c || c == '_')) <* P.char '>'
 
 popSizeChangeCmdP :: Parser MTCommand
 popSizeChangeCmdP =
@@ -150,19 +171,19 @@ freezeCmdP =
     (PC.string "branch=" *> branchSpecP <* spaces1) <*>
     (PC.string "freeze=" *> boolP)
   where
-    boolP = try (read <$> PC.string "True") <|> (read <$> PC.string "False")
+    boolP = P.try (read <$> PC.string "True") <|> (read <$> PC.string "False")
 
 constraintCmdP :: Parser MTCommand
-constraintCmdP = try smallerConstraintP <|> greaterConstraintP
+constraintCmdP = P.try smallerConstraintP <|> greaterConstraintP
   where
     smallerConstraintP =
         MTConstraint <$>
         (PC.string "constraint" *> spaces1 *> paramSpecP <* PC.spaces) <*>
-        (PC.char '<' *> PC.spaces *> paramSpec) <*> pure ConstraintOpSmaller
+        (PC.char '<' *> PC.spaces *> paramSpecP) <*> pure ConstraintOpSmaller
     greaterConstraintP =
         MTConstraint <$>
         (PC.string "constraint" *> spaces1 *> paramSpecP <* PC.spaces) <*>
-        (PC.char '>' *> PC.spaces *> paramSpec) <*> pure ConstraintOpGreater
+        (PC.char '>' *> PC.spaces *> paramSpecP) <*> pure ConstraintOpGreater
 
 getParamNames :: ModelTemplate -> [String]
 getParamNames (ModelTemplate commands) = reverse . nub $ go [] commands
@@ -199,18 +220,17 @@ getParamNames (ModelTemplate commands) = reverse . nub $ go [] commands
             go (n2:n1:res) rest
         _ -> go res rest
 
-getNrAndNamesOfBranches :: ModelTemplate -> Either String (Int, [String])
-getNrAndNamesOfBranches (ModelTemplate mtCommands) = do
+getModelBranchNames :: ModelTemplate -> Either T.Text [String]
+getModelBranchNames (ModelTemplate mtCommands) = do
     let branchNameCommand = [b | MTBranchNames b <- mtCommands]
-    branchNames <- case branchNameCommand of
-        [] -> return []
+    case branchNameCommand of
+        []      -> makeDefaultBranchNames
         [names] -> return names
-        _ -> Left "Error: More than one branchName command."
-    nrBranches <- case branchNames of
-        [] -> length . nub <$> go [] mtCommands
-        n -> return $ length n
-    return (nrBranches, branchNames)
+        _       -> Left "Error: More than one branchName command."
   where
+    makeDefaultBranchNames = do
+        nrBranches <- length . nub <$> go [] mtCommands
+        return ["Branch" ++ show i | i <- [0..nrBranches-1]]
     go res [] = return res
     go res (cmd:rest) = case cmd of
       MTDiscoveryRate (BranchByIndex i) _ -> go (i:res) rest
@@ -219,76 +239,78 @@ getNrAndNamesOfBranches (ModelTemplate mtCommands) = do
       MTJoinPopSizeChange _ (BranchByIndex i) (BranchByIndex j) _ ->
         go (j:i:res) rest
       MTSplit _ (BranchByIndex i) (BranchByIndex j) _ -> go (j:i:res) rest
-      MTFreeze _ (BranchByIndex i) Bool -> go (i:res) rest
-      MTConstraint _ _ _ -> go res rest
+      MTFreeze _ (BranchByIndex i) _ -> go (i:res) rest
+      MTConstraint{} -> go res rest
       MTBranchNames _ -> go res rest
-      c -> Left $ "illegal branch name in " ++ show c ++
-          " without branchName declaration"
+      c -> Left $ format ("illegal use of named branch in command "%w%
+        " without branchName declaration") c
 
 instantiateModel :: GeneralOptions -> ModelTemplate -> [(String, Double)] ->
-    Either String ModelSpec
+    Either T.Text ModelSpec
 instantiateModel opts mt@(ModelTemplate mtCommands) paramsDict = do
-    (nrBranches, branchNames) <- getNrAndNamesOfBranches mt
+    branchNames <- getModelBranchNames mt
     discoveryRates <- modifyDiscoveryRates branchNames mtCommands
-        (V.replicate nrBranches 1.0)
+        (V.replicate (length branchNames) 1.0)
     events <- reverse <$> getEvents branchNames mtCommands []
-    validateConstraints mtCommands
+    validateConstraints paramsDict mtCommands
     let timeSteps = getTimeSteps (optN0 opts) (optLinGen opts) (optTMax opts)
-    return $ ModelSpec timeSteps (optTheta opts) discoveryRates
-        (optRegPenalty opts) events
+    return $ ModelSpec timeSteps (optTheta opts) (V.toList discoveryRates)
+        (optRegPenalty opts) (optNoShortcut opts) events
   where
-    modifyDiscoveryRates _ _ [] res = return res
+    modifyDiscoveryRates _ [] res = return res
     modifyDiscoveryRates branchNames (cmd:rest) res = case cmd of
         MTDiscoveryRate branchSpec paramSpec -> do
             branchIndex <- getBranchIndex branchNames branchSpec
             param <- getParam paramsDict paramSpec
-            return $ res V.// (branchIndex, param)
-        _ -> modifyDiscoveryRates rest res
+            return $ res V.// [(branchIndex, param)]
+        _ -> modifyDiscoveryRates branchNames rest res
     getEvents _ [] res = return res
     getEvents bN (cmd:rest) res = case cmd of
         MTJoin tSpec toSpec fromSpec -> do
             t <- getParam paramsDict tSpec
             e <- Join <$> getBranchIndex bN toSpec <*>
                 getBranchIndex bN fromSpec
-            return (ModelEvent t e:res)
+            getEvents bN rest (ModelEvent t e:res)
         MTPopSizeChange tSpec bSpec pSpec -> do
             t <- getParam paramsDict tSpec
             e <- SetPopSize <$> getBranchIndex bN bSpec <*>
                 getParam paramsDict pSpec
-            return (ModelEvent t e:res)
+            getEvents bN rest (ModelEvent t e:res)
         MTJoinPopSizeChange tSpec toSpec fromSpec pSpec -> do
             t <- getParam paramsDict tSpec
             e1 <- Join <$> getBranchIndex bN toSpec <*>
                 getBranchIndex bN fromSpec
             e2 <- SetPopSize <$> getBranchIndex bN toSpec <*>
                 getParam paramsDict pSpec
-            return (ModelEvent t e2:ModelEvent t e1:res)
+            getEvents bN rest (ModelEvent t e2:ModelEvent t e1:res)
         MTSplit tSpec toSpec fromSpec rateSpec -> do
             t <- getParam paramsDict tSpec
             e <- Split <$> getBranchIndex bN toSpec <*>
                 getBranchIndex bN fromSpec <*>
                 getParam paramsDict rateSpec
-            return (ModelEvent t e:res)
+            getEvents bN rest (ModelEvent t e:res)
         MTFreeze tSpec bSpec v -> do
             t <- getParam paramsDict tSpec
             e <- SetFreeze <$> getBranchIndex bN bSpec <*> pure v
-            return (ModelEvent t e:res)
+            getEvents bN rest (ModelEvent t e:res)
+        _ -> getEvents bN rest res
 
-getBranchIndex :: [String] -> BranchSpec -> Either String Int
+getBranchIndex :: [String] -> BranchSpec -> Either T.Text Int
 getBranchIndex branchNames branchSpec = case branchSpec of
     BranchByIndex k' -> return k'
-    BranchByName n -> justErr ("did not find branch name " ++ n) $
+    BranchByName n -> justErr (format ("did not find branch name "%w) n) $
         elemIndex n branchNames
 
-getParam :: [(String, Double)] -> ParamSpec -> Either String Double
+getParam :: [(String, Double)] -> ParamSpec -> Either T.Text Double
 getParam _ (ParamFixed val) = return val
-getParam paramsDict (ParamVariable n) = do
+getParam paramsDict (ParamVariable n) =
     case n `lookup` paramsDict of
-        Nothing -> Left $ "Error in Template: could not find parameter " ++ show n
+        Nothing ->
+            Left $ format ("Error in Template: could not find parameter "%w) n
         Just val -> return val
 
-validateConstraints :: [(String, Double)] -> [MTCommands] ->
-    Either String ()
+validateConstraints :: [(String, Double)] -> [MTCommand] ->
+    Either T.Text ()
 validateConstraints _ [] = return ()
 validateConstraints paramsDict (cmd:rest) =
     case cmd of
@@ -297,9 +319,11 @@ validateConstraints paramsDict (cmd:rest) =
             p2 <- getParam paramsDict pSpec2
             case op of
                 ConstraintOpGreater ->
-                    when (p1 <= p2) $ Left "constraint violated: " ++ cmd
+                    when (p1 <= p2) $
+                        Left (format ("constraint violated: "%w) cmd)
                 ConstraintOpSmaller ->
-                    when (p1 >= p2) $ Left "constraint violated: " ++ cmd
+                    when (p1 >= p2) $
+                        Left (format ("constraint violated: "%w) cmd)
             validateConstraints paramsDict rest
         _ -> validateConstraints paramsDict rest
 
@@ -321,29 +345,60 @@ makeParameterDict (ParamOptions maybeInputFile xSettings) =
     go [] res = return res
     go ((key, val):rest) res = case key `lookup` res of
         Nothing -> do
-            errLn $ "setting parameter " ++ show key ++ " = " ++ show val
+            errLn $ format ("setting parameter "%w%" = "%g) key val
             go rest ((key, val):res)
         Just _ -> go rest res
 
 fillParameterDictWithDefaults :: ModelTemplate -> [(String, Double)] ->
     Script [(String, Double)]
 fillParameterDictWithDefaults mt paramsDict = do
-    paramNames <- getParamNames mt
-    additionalParams <- fmap catMaybes . forM paramNames $ \p ->
+    let paramNames = getParamNames mt
+    fmap catMaybes . forM paramNames $ \p ->
         case p `lookup` paramsDict of
             Just _ -> return Nothing
-            Nothing -> do
-                if head p == 'p'
-                then do
-                    scriptIO . errLn $ "setting parameter " ++ show p ++
-                        " = 1.0 (default)"
-                    return $ Just (p, 1.0)
-                else if take 3 p == "adm"
-                    then do
-                        scriptIO . errLn $ "setting parameter " ++ show p ++
-                            " = 0.05 (d efault)"
+            Nothing | head p == 'p' -> do
+                        scriptIO . errLn $
+                            format ("setting parameter "%w%" = 1.0 (default)") p
+                        return $ Just (p, 1.0)
+                    | take 3 p == "adm" -> do
+                        scriptIO . errLn $ format ("setting parameter "%w%
+                            " = 0.05 (d efault)") p
                         return $ Just (p, 0.05)
-                    else
-                        throwError $ "Don't know how to initialize \
-                        \parameter " ++ p ++ ". Please provide initial \
-                        \value via -X " ++ p ++ "=..."
+                    | otherwise ->
+                        throwE $ format ("Don't know how to initialize \
+                        \parameter "%w%". Please provide initial \
+                        \value via -X "%w%"=...") p p
+
+loadHistogram :: HistogramOptions -> ModelTemplate -> Script RareAlleleHistogram
+loadHistogram histOpts modelTemplate = do
+    let HistogramOptions path minAf maxAf conditionOn excludePatterns = histOpts
+    hist <- readHistogram path
+    validateBranchNameCongruency modelTemplate (raNames hist)
+    tryRight $ (filterMaxAf maxAf >=> filterGlobalMinAf minAf >=>
+        filterConditionOn conditionOn >=> filterExcludePatterns excludePatterns)
+        hist
+  where
+    validateBranchNameCongruency modelTemplate histBranchNames = do
+        modelBranchNames <- tryRight $ getModelBranchNames modelTemplate
+        forM_ histBranchNames $ \histName ->
+            when (histName `notElem` modelBranchNames) $
+                throwE (format ("histogram branch "%w%
+                    " not found in model branches ("%w%")") histName
+                    modelBranchNames)
+        forM_ modelBranchNames $ \modelName ->
+            when (modelName `notElem` histBranchNames) $
+                scriptIO . errLn $ format ("found unsampled ghost branch: "%w)
+                modelName
+
+penalty :: Double
+penalty = 1.0e20
+
+makeInitialPoint :: ModelTemplate -> [(String, Double)] ->
+    Either T.Text (V.Vector Double)
+makeInitialPoint modelTemplate modelParams = do
+    let paramNames = getParamNames modelTemplate
+    vals <- forM paramNames $ \n ->
+        case n `lookup` modelParams of
+            Just x  -> return x
+            Nothing -> Left $ format ("did not find parameter "%w) n
+    return $ V.fromList vals

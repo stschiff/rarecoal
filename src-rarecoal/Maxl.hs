@@ -1,15 +1,13 @@
 module Maxl (minFunc, penalty, runMaxl, MaxlOpt(..)) where
 
-import Rarecoal.Core (getTimeSteps, ModelSpec(..), ModelEvent(..),
+import Rarecoal.Core (ModelSpec(..), ModelEvent(..),
     getRegularizationPenalty)
 import Rarecoal.Formats.RareAlleleHistogram (RareAlleleHistogram(..),
     SitePattern)
 import Rarecoal.ModelTemplate (ModelTemplate(..), instantiateModel,
-    readModelTemplate, getInitialParams, makeFixedParamsTemplate,
-    reportGhostPops)
-import Rarecoal.Options (GeneralOptions(..), ModelOptions(..),
-    HistogramOptions(..))
-import Rarecoal.Utils (minFunc, penalty, loadHistogram, computeLogLikelihood)
+    getModelTemplate, ModelOptions(..))
+import Rarecoal.Utils (computeLogLikelihood,
+    GeneralOptions(..), HistogramOptions(..))
 import FitTable (writeFitTables)
 
 import Control.Error (Script, scriptIO, assertErr, tryRight, errLn)
@@ -39,7 +37,8 @@ runMaxl opts = do
     modelParams <- makeParameterDict (maParamOpts opts)
     modelSpec <- tryRight $ instantiateModel (maGeneralOpts opts )
         modelTemplate modelParams
-    hist <- loadHistogram (maHistogramOpts opts) modelTemplate
+    hist <- loadHistogram (maHistogramOpts opts)
+    validateBranchNameCongruency modelTemplate (raNames hist)
     let minFunc' = either (const penalty) id .
             minFunc (maGeneralOpts opts) modelTemplate hist
         minimizationRoutine = minimizeV (maMaxCycles opts) minFunc'
@@ -56,6 +55,21 @@ runMaxl opts = do
         reportTrace modelTemplateWithFixedParams trace h
     finalModelSpec <- tryRight $ instantiateModel modelTemplate minResult (raNames hist)
     writeFitTables outFullFitTableFN outSummaryTableFN hist finalModelSpec
+
+minFunc :: GeneralOptions -> ModelTemplate -> RareAlleleHistogram -> V.Vector Double -> Either T.Text Double
+minFunc generalOpts modelTemplate hist paramsVec = do
+    let paramNames = getParamNames modelTemplate
+    let paramsDict = zip paramNames . V.toList $ paramsVec
+    modelSpec <- instantiateModel generalOpts modelTemplate paramsDict
+    regPenalty <- getRegularizationPenalty modelSpec
+    (_, modelBranchNames) <- getNrAndNamesOfBranches modelTemplate
+    val <- computeLogLikelihood modelSpec hist modelBranchNames
+    assertErr (format ("likelihood infinite for params "%w) paramsVec) $
+        not (isInfinite val)
+    assertErr (format ("likelihood NaN for params "%w) paramsVec) $
+        not (isNaN val)
+    return (-val + regPenalty)
+    -- return (-val)
 
 minimizeV :: Int -> (V.Vector Double -> Double) -> V.Vector Double ->
     (V.Vector Double, [V.Vector Double])

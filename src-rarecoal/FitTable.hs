@@ -1,15 +1,19 @@
-module FitTable (runFitTable, FitTableOpt(..), writeFitTables) where
+module FitTable (runFitTable, FitTableOpt(..)) where
 
-import Rarecoal.Options (GeneralOptions(..), ModelOptions(..), HistogramOptions(..))
-import Rarecoal.Core (getProb, ModelSpec)
-import Rarecoal.ModelTemplate (ModelDesc, getModelSpec)
-import Rarecoal.Formats.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern)
-import Rarecoal.Utils (loadHistogram, computeStandardOrder)
+import Rarecoal.Core (getProb)
+import Rarecoal.Formats.RareAlleleHistogram (RareAlleleHistogram(..),
+    SitePattern)
+import Rarecoal.ModelTemplate (ModelOptions(..), ParamOptions(..),
+    getModelTemplate, makeParameterDict, instantiateModel, loadHistogram,
+    getNrAndNamesOfBranches)
+import Rarecoal.Utils (computeStandardOrder, GeneralOptions(..),
+    HistogramOptions(..), setNrProcessors, turnHistPatternIntoModelPattern)
 
 import Control.Error (Script, tryRight, scriptIO)
 import qualified Control.Foldl as F
 import Control.Monad (forM_, when)
 import Control.Monad.ST (ST, runST)
+import Control.Parallel.Strategies (rdeepseq, parMap)
 import Data.List (intercalate, zip4)
 import Data.STRef (newSTRef, modifySTRef, readSTRef)
 import qualified Data.Map.Strict as M
@@ -20,37 +24,31 @@ import System.IO (withFile, IOMode(..), hPutStrLn)
 data FitTableOpt = FitTableOpt {
     ftGeneralOpts :: GeneralOptions,
     ftModelOpts :: ModelOptions,
-    ftParamOpts :: ParamOpts,
+    ftParamOpts :: ParamOptions,
     ftHistogramOpts :: HistogramOptions,
     ftOutPrefix :: FilePath
 }
 
 runFitTable :: FitTableOpt -> Script ()
 runFitTable opts = do
-    setNrProcessors opts
-    let FitTableOpt modelOpts paramOpts histOpts outPrefix = opts
+    let FitTableOpt generalOpts modelOpts paramOpts histOpts outPrefix = opts
+    scriptIO $ setNrProcessors generalOpts
     let outFullTable = outPrefix ++ ".frequencyFitTable.txt"
-        summaryTable = outPrefix ++ ".summaryFitTable.txt"
+        outSummaryTable = outPrefix ++ ".summaryFitTable.txt"
 
-    modelTemplate <- getModelTemplate (ftModelOpts opts)
-    modelParams <- makeParameterDict (ftParamOpts opts)
+    modelTemplate <- getModelTemplate modelOpts
+    modelParams <- scriptIO $ makeParameterDict paramOpts
     modelSpec <- tryRight $ instantiateModel (ftGeneralOpts opts )
         modelTemplate modelParams
     hist <- loadHistogram histOpts modelTemplate
-    writeFitTables outFullTable summaryTable hist modelSpec
-
-writeFitTables :: FilePath -> FilePath -> RareAlleleHistogram -> ModelSpec ->
-    Script ()
-writeFitTables outFullTable outSummaryTable hist modelSpec = do
-    standardOrder <- tryRight $ computeStandardOrder hist
-    theoryValues <- mapM (tryRight . getProb modelSpec (raNVec hist) False) standardOrder
-
+    (_, modelBranchNames) <- tryRight $ getNrAndNamesOfBranches modelTemplate
+    spectrum <- computeFrequencySpectrum modelSpec hist modelBranchNames
     scriptIO $ do
-        writeFullTable outFullTable standardOrder hist theoryValues
-        writeSummaryTable outSummaryTable standardOrder hist theoryValues
+        writeFullTable outFullTable spectrum
+        writeSummaryTable outSummaryTable spectrum
 
-writeFullTable :: FilePath -> [SitePattern] -> RareAlleleHistogram -> [Double] -> IO ()
-writeFullTable outFN standardOrder hist theoryValues = do
+writeFullTable :: FilePath -> [(SitePattern, Int, Double)] -> IO ()
+writeFullTable outFN spectrum = do
     let countMap = raCounts hist
         totalCounts = raTotalNrSites hist
     withFile outFN WriteMode $ \outF -> do
@@ -72,13 +70,15 @@ writeFullTable outFN standardOrder hist theoryValues = do
                 -- zScore = (theoryFreq - realFreq) / stdErr
                 patternString = "(" ++ intercalate "," (map show p) ++ ")"
                 outS = case raJackknifeEstimates hist of
-                        Nothing -> intercalate "\t" $ [patternString, show realCount, show realFreq,
-                                                       show theoryFreq, fitDev]
+                        Nothing -> intercalate "\t" [patternString,
+                            show realCount, show realFreq, show theoryFreq,
+                            fitDev]
                         Just jkDict ->
                             let Just (_, jkSE) = p `M.lookup` jkDict
                                 zScore = (theoryFreq - realFreq) / jkSE
-                            in  intercalate "\t" $ [patternString, show realCount, show realFreq,
-                                                    show theoryFreq, fitDev, show jkSE, show zScore]
+                            in  intercalate "\t" [patternString,
+                                show realCount, show realFreq, show theoryFreq,
+                                fitDev, show jkSE, show zScore]
             hPutStrLn outF outS
 
 writeSummaryTable :: FilePath -> [SitePattern] -> RareAlleleHistogram -> [Double] -> IO ()
@@ -115,16 +115,16 @@ writeSummaryTable outFN standardOrder hist theoryValues = do
                         else "n/a"
         (header, lines_) = case maybeErrorSummaries of
             Nothing ->
-                let h = intercalate "\t" $ ["Populations", "AlleleSharing", "Predicted",
-                                                 "relDev%"]
+                let h = intercalate "\t" ["Populations", "AlleleSharing",
+                        "Predicted", "relDev%"]
                     l = do
                         (label, real, fit) <- zip3 allLabels allProbs allProbsTheory
                         let fitDev = getFitDev real fit
                         return $ intercalate "\t" [label, show real, show fit, fitDev]
                 in  (h, l)
             Just (singletonErrors, sharingErrors) ->
-                let h = intercalate "\t" $ ["Populations", "AlleleSharing", "Predicted",
-                                                 "relDev%", "stdErr", "zScore"]
+                let h = intercalate "\t" ["Populations", "AlleleSharing",
+                        "Predicted", "relDev%", "stdErr", "zScore"]
                     l = do
                         let allErrors = singletonErrors ++ sharingErrors
                         (label, real, fit, se) <- zip4 allLabels allProbs allProbsTheory allErrors
@@ -143,7 +143,7 @@ singletonProbsF nVec = F.FoldM step initial extract
     step vec (p, val) = do
         when (sum p == 1) $ do
             let i = snd . head . filter ((>0) . fst) $ zip p [0..]
-            VM.modify vec (\v -> v + val) i
+            VM.modify vec (+val) i
         return vec
     initial = do
         v <- VM.new (length nVec)
@@ -164,7 +164,7 @@ sharingProbsF nVec = F.FoldM step initial extract
                           else val * fromIntegral (p!!i * p!!j) /
                                      fromIntegral (nVec!!i * nVec!!j)
                 index' <- readSTRef index
-                VM.modify vec (\v -> v + add) index'
+                VM.modify vec (+add) index'
                 modifySTRef index (+1)
         return vec
     initial = do
@@ -185,7 +185,7 @@ singletonErrorsF nVec = F.FoldM step initial extract
         v <- VM.new (length nVec)
         VM.set v 0.0
         return v
-    extract = fmap ((map sqrt) . V.toList) . V.freeze
+    extract = fmap (map sqrt . V.toList) . V.freeze
 
 sharingErrorsF :: [Int] -> F.FoldM (ST s) (SitePattern, Double) [Double]
 sharingErrorsF nVec = F.FoldM step initial extract
@@ -207,4 +207,4 @@ sharingErrorsF nVec = F.FoldM step initial extract
         v <- VM.new (length nVec * (length nVec + 1) `div` 2)
         VM.set v 0.0
         return v
-    extract = fmap ((map sqrt) . V.toList) . V.freeze
+    extract = fmap (map sqrt . V.toList) . V.freeze

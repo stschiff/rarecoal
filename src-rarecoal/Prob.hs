@@ -1,8 +1,9 @@
 module Prob (runProb, ProbOpt(..)) where
 
-import Rarecoal.Options (GeneralOptions(..), ModelOptions(..), HistogramOptions(..))
+import Rarecoal.Utils (GeneralOptions(..), setNrProcessors)
 import Rarecoal.Core (getProb)
-import Rarecoal.ModelTemplate (getModelSpec, ModelDesc)
+import Rarecoal.ModelTemplate (ModelOptions(..), ParamOptions(..),
+    getModelTemplate, makeParameterDict, instantiateModel)
 
 import Control.Error (Script, scriptIO, tryRight)
 
@@ -16,11 +17,11 @@ data ProbOpt = ProbOpt {
 
 runProb :: ProbOpt -> Script ()
 runProb opts = do
-    setNrProcessors opts
+    scriptIO $ setNrProcessors (prGeneralOpts opts)
     modelTemplate <- getModelTemplate (prModelOpts opts)
-    modelParams <- makeParameterDict (prParamOpts opts)
+    modelParams <- scriptIO $ makeParameterDict (prParamOpts opts)
     modelSpec <- tryRight $ instantiateModel (prGeneralOpts opts)
         modelTemplate modelParams
 
-    val <- tryRight $ getProb modelSpec (prNvec opts) False (prKvec opts)
+    val <- tryRight $ getProb modelSpec (prNvec opts) (prKvec opts)
     scriptIO $ print val

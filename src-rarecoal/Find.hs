@@ -33,16 +33,17 @@ runFind opts = do
         modelTemplate modelParams
     hist <- loadHistogram (fiHistOpts opts) modelTemplate
     l <- findQueryIndex (raNames hist) (fiQueryBranch opts)
+    tryAssert ("model must have free branch " ++ show l) $
+        hasFreeBranch l modelSpec'
     let modelSpec' =
             if fiBranchAge opts > 0.0
             then
-                let events = ModelEvent 0.0 (SetFreeze l True) : mEvents modelSpec
+                let events = ModelEvent 0.0 (SetFreeze l True) :
+                             ModelEvent (fiBranchAge opts) (SetFreeze l False) :
+                             mEvents modelSpec
                 in  modelSpec {mEvents = events}
             else
                 modelSpec
-                -- let events = ModelEvent 0.0 (SetPopSize l (fiBranchPopSize opts)) : mEvents modelSpec
-                -- in  modelSpec {mEvents = events}
-    tryAssert ("model must have free branch " ++ show l) $ hasFreeBranch l modelSpec'
     let nrPops = length $ raNVec hist
         allParamPairs = do
             branch <- [0..(nrPops - 1)]

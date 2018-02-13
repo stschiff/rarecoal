@@ -1,47 +1,82 @@
-module Logl (LoglOpt(..), runLogl, computeLogLikelihood,
-    computeStandardOrder) where
+module Logl (LoglOpt(..), runLogl, SpectrumEntry(..), Spectrum,
+    computeFrequencySpectrum, computeLogLikelihood) where
 
-import Rarecoal.Options (GeneralOptions(..), ModelOptions(..), HistogramOptions(..))
-import Rarecoal.Core (getProb, ModelSpec(..))
-import Rarecoal.Formats.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern, showSitePattern)
-import Rarecoal.Utils (loadHistogram, computeStandardOrder)
-import Rarecoal.ModelTemplate (getModelSpec, ModelDesc)
+import Rarecoal.Core (getProb)
+import Rarecoal.Formats.RareAlleleHistogram (RareAlleleHistogram(..),
+    showSitePattern)
+import Rarecoal.Utils (computeStandardOrder, GeneralOptions(..),
+    HistogramOptions(..), setNrProcessors, turnHistPatternIntoModelPattern)
+import Rarecoal.ModelTemplate (ModelOptions(..), ParamOptions(..),
+    loadHistogram, getModelTemplate, makeParameterDict, instantiateModel, getNrAndNamesOfBranches)
 
-import Control.Error (Script, scriptIO, assertErr, tryRight, err)
+import Control.Error (Script, scriptIO, tryRight)
 import Control.Parallel.Strategies (rdeepseq, parMap)
-import Data.Int (Int64)
 import qualified Data.Map.Strict as Map
-import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
 
 data LoglOpt = LoglOpt {
     loGeneralOpts :: GeneralOptions,
     loModelOpts :: ModelOptions,
-    loParamOpts :: ParamOpts,
+    loParamOpts :: ParamOptions,
     loHistogramOpts :: HistogramOptions
 }
 
+data SpectrumEntry = SpectrumEntry {
+    spPattern :: SitePattern,
+    spCount :: Int64,
+    spFreq :: Double,
+    spJackknifeError :: Maybe Double,
+    spTheory :: Double
+}
+
+type Spectrum = [SpectrumEntry]
+
 runLogl :: LoglOpt -> Script ()
 runLogl opts = do
-    setNrProcessors opts
+    scriptIO $ setNrProcessors (loGeneralOpts opts)
     modelTemplate <- getModelTemplate (loModelOpts opts)
-    modelParams <- makeParameterDict (loParamOpts opts)
+    modelParams <- scriptIO $ makeParameterDict (loParamOpts opts)
     modelSpec <- tryRight $ instantiateModel (loGeneralOpts opts )
         modelTemplate modelParams
     hist <- loadHistogram (loHistogramOpts opts) modelTemplate
-    standardOrder <- tryRight $ computeStandardOrder hist
+    (_, modelBranchNames) <- tryRight $ getNrAndNamesOfBranches modelTemplate
+    spectrum <- computeFrequencySpectrum modelSpec hist modelBranchNames
+    let totalLogLikelihood = computeLogLikelihood spectrum
+    scriptIO . putStrLn $ "Log Likelihood:" ++ "\t" ++ show totalLogLikelihood
+    scriptIO . mapM_ putStrLn $
+        zipWith (\(p, _, val) -> showSitePattern p ++ "\t" ++ show val) spectrum
+
+computeFrequencySpectrum :: ModelSpec -> RareAlleleHistogram -> [String] ->
+    Either Text Spectrum
+computeFrequencySpectrum modelSpec histogram modelBranchNames = do
+    assertErr "minFreq must be greater than 0" $ raMinAf histogram > 0
+    let standardOrder = computeStandardOrder histogram
     scriptIO . putStrLn $
         "computing probabilities for " ++ show (length standardOrder) ++
         " patterns"
-    let nVec = raNVec hist
-    patternProbs <- tryRight . sequence $
-            parMap rdeepseq (getProb modelSpec nVec False) standardOrder
-    let patternCounts = map (defaultLookup hist) standardOrder
-        ll = sum $ zipWith (\p c -> log p * fromIntegral c) patternProbs
-            patternCounts
-        otherCounts = raTotalNrSites hist - sum patternCounts
-    let totalLogLikelihood =
-            ll + fromIntegral otherCounts * log (1.0 - sum patternProbs)
-    scriptIO . putStrLn $ "Log Likelihood:" ++ "\t" ++ show totalLogLikelihood
-    scriptIO . mapM_ putStrLn $
-        zipWith (\p val -> showSitePattern p ++ "\t" ++ show val) standardOrder
-        patternProbs
+    standardOrderModelMapped <-
+        mapM (turnHistPatternIntoModelPattern histogram modelBranchNames)
+            standardOrder
+    let nVec = raNVec histogram
+    nVecModelMapped <-
+        turnHistPatternIntoModelPattern histogram modelBranchNames nVec
+    patternProbs <- sequence $
+        parMap rdeepseq (getProb modelSpec nVecModelMapped)
+            standardOrderModelMapped
+    let patternCounts =
+            [Map.findWithDefault 0 k (raCounts histogram) | k <- standardOrder]
+        totalCounts = raTotalNrSites histogram
+        patternFreqs = [c / fromIntegral totalCounts | c <- patternCounts]
+        errors = case raJackknifeEstimates histogram of
+            Just errMap ->
+                [Just . snd $ Map.findWithDefault (0, 0) k errMap | k <- standardOrder]
+            Nothing -> [Nothing | _ <- standardOrder]
+    return $ zipWith5 SpectrumEntry standardOrder patternCounts patternFreqs
+        patternProbs errors
+
+computeLogLikelihood :: Spectrum -> Double
+computeLogLikelihood spectrum = do
+    let ll = sum [log (spTheory e) * fromIntegral (spCount e) | e <- spectrum]
+        patternCounts = map spCount spectrum
+        patternProbs = map spTheory spectrum
+        otherCounts = raTotalNrSites histogram - sum patternCounts
+    return $ ll + fromIntegral otherCounts * log (1.0 - sum patternProbs)

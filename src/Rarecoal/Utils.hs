@@ -1,15 +1,22 @@
-module Rarecoal.Utils (computeAllConfigs, loadHistogram,
-    -- filterConditionOn, filterExcludePatterns, filterMaxAf, filterGlobalMinAf,
-    computeStandardOrder, GeneralOptions(..), HistogramOptions(..), histLookup) where
+{-# LANGUAGE OverloadedStrings #-}
+module Rarecoal.Utils (computeAllConfigs, computeStandardOrder,
+    turnHistPatternIntoModelPattern, defaultTimes, getTimeSteps,
+    setNrProcessors, filterConditionOn, filterExcludePatterns, filterMaxAf,
+    filterGlobalMinAf, GeneralOptions(..), HistogramOptions(..)) where
 
+import Rarecoal.Core (ModelSpec(..), getProb)
 import Rarecoal.Formats.RareAlleleHistogram (RareAlleleHistogram(..),
     SitePattern, readHistogram)
-import Rarecoal.Core (ModelEvent(..))
+
 
 import Control.Error
-import Control.Monad ((>=>), when)
+import Control.Monad (when, forM, (>=>))
+import Data.List (elemIndex)
 import qualified Data.Map.Strict as Map
 import Data.Text (Text)
+import GHC.Conc (getNumProcessors, setNumCapabilities, getNumCapabilities)
+import Turtle (format, d, (%))
+import Control.Parallel.Strategies (parMap, rdeepseq)
 
 
 data GeneralOptions = GeneralOptions {
@@ -30,15 +37,29 @@ data HistogramOptions = HistogramOptions {
     optExcludePatterns :: [SitePattern]
 }
 
+defaultTimes :: [Double]
+defaultTimes = getTimeSteps 20000 400 20.0
+
+getTimeSteps :: Int -> Int -> Double -> [Double]
+getTimeSteps n0 lingen tMax =
+    let tMin     = 1.0 / (2.0 * fromIntegral n0)
+        alpha    = fromIntegral lingen / (2.0 * fromIntegral n0)
+        nr_steps = floor $ logBase (1.0 + tMin / alpha) (1.0 + tMax / alpha)
+    in  map (getTimeStep alpha nr_steps) [1..nr_steps-1]
+  where
+    getTimeStep :: Double -> Int -> Int -> Double
+    getTimeStep alpha nr_steps i =
+        alpha * exp (fromIntegral i / fromIntegral nr_steps * log (1.0 + tMax / alpha)) - alpha
+
 setNrProcessors :: GeneralOptions -> IO ()
 setNrProcessors generalOpts = do
-    nrThreads <- optNrThreds generalOpts
+    let nrThreads = optNrThreads generalOpts
     nrProc <- getNumProcessors
     if   nrThreads == 0
     then setNumCapabilities nrProc
     else setNumCapabilities nrThreads
     nrThreads' <- getNumCapabilities
-    err ("running on " ++ show nrThreads' ++ " processors\n")
+    errLn $ format ("running on "%d%" processors") nrThreads'
 
 computeAllConfigs :: Int -> Int -> [Int] -> [SitePattern]
 computeAllConfigs nrPop maxFreq nVec =
@@ -46,17 +67,18 @@ computeAllConfigs nrPop maxFreq nVec =
        order = map (digitize (maxFreq + 1) nrPop) [1..maxPowerNum]
    in  filter (\v -> (sum v <= maxFreq) && and (zipWith (<=) v nVec)) order
 
-turnHistPatternIntoModelPattern :: RareAlleleHistogram -> Maybe [String] ->
-    SitePattern -> Either String SitePattern
-turnHistPatternIntoModelPattern hist maybeModelBranchNames histPattern = do
-    case maybeModelBranchNames of
-        Just modelBranchNames -> do
+turnHistPatternIntoModelPattern :: RareAlleleHistogram -> [String] ->
+    SitePattern -> Either Text SitePattern
+turnHistPatternIntoModelPattern hist modelBranchNames histPattern =
+    case modelBranchNames of
+        [] -> return histPattern
+        branchNames -> do
             let histBranchNames = raNames hist
-            forM modelBranchNames $ \modelBranchName ->
+            forM branchNames $ \modelBranchName ->
                 case modelBranchName `elemIndex` histBranchNames of
                     Just i -> return (histPattern !! i)
                     Nothing -> return 0 -- ghost branch
-        Nothing -> return histPattern
+
 
 digitize :: Int -> Int -> Int -> [Int]
 digitize base nrDigit num
@@ -66,33 +88,8 @@ digitize base nrDigit num
                          rest = num - digit * digitBase
                      in  (digit:digitize base (nrDigit - 1) rest)
 
-loadHistogram :: HistogramOptions -> ModelTemplate -> Script RareAlleleHistogram
-loadHistogram histOpts modelTemplate = do
-    let HistogramOptions path minAf maxAf conditionOn excludePatterns = histOpts
-    (_, modelBranchNames) <- getNrAndNamesOfBranches modelTemplate
-    hist <- readHistogram path
-    validateBranchNameCongruency modelBranchNames (raNames hist)
-    reportGhostBranches hist modelBranchNames
-    tryRight $ (filterMaxAf maxAf >=> filterGlobalMinAf minAf >=>
-        filterConditionOn conditionOn >=> filterExcludePatterns excludePatterns)
-        hist
-  where
-    validateBranchNameCongruency modelBranchNames histBranchNames =
-        case modelBranchNames of
-            [] -> return ()
-            modelNames ->
-                forM_ histBranchNames $ \histName ->
-                    when (histName `notElem` modelNames) $
-                        Left $ "histogram branch " ++ histName ++
-                            " not found in model branches (" ++
-                            show modelNames ++ ")"
-                forM_ modelNames $ \modelName ->
-                    when (modelName `notElem` histBranchNames) $
-                        errLn $ "found ghost branch: " ++ show modelName
-
-
 filterConditionOn :: [Int] -> RareAlleleHistogram ->
-    Either String RareAlleleHistogram
+    Either Text RareAlleleHistogram
 filterConditionOn indices hist =
     if null indices then return hist else do
         let newBody = Map.filterWithKey conditionPatternOn (raCounts hist)
@@ -101,7 +98,7 @@ filterConditionOn indices hist =
     conditionPatternOn pat _ = all (\i -> pat !! i > 0) indices
 
 filterExcludePatterns :: [[Int]] -> RareAlleleHistogram ->
-    Either String RareAlleleHistogram
+    Either Text RareAlleleHistogram
 filterExcludePatterns excludePatterns hist =
     if null excludePatterns then return hist else do
         let newBody = Map.filterWithKey pruneExcludePatterns (raCounts hist)
@@ -109,7 +106,7 @@ filterExcludePatterns excludePatterns hist =
   where
     pruneExcludePatterns pat _ = pat `notElem` excludePatterns
 
-filterMaxAf :: Int -> RareAlleleHistogram -> Either String RareAlleleHistogram
+filterMaxAf :: Int -> RareAlleleHistogram -> Either Text RareAlleleHistogram
 filterMaxAf maxAf' hist = do
     let maxAf = if maxAf' == 0 then raMaxAf hist else maxAf'
     when (maxAf > raMaxAf hist || maxAf < raMinAf hist) $ Left "illegal maxAF"
@@ -119,7 +116,8 @@ filterMaxAf maxAf' hist = do
   where
     prunePatternFreq maxM pat _ = sum pat <= maxM
 
-filterGlobalMinAf :: Int -> RareAlleleHistogram -> Either String RareAlleleHistogram
+filterGlobalMinAf :: Int -> RareAlleleHistogram ->
+    Either Text RareAlleleHistogram
 filterGlobalMinAf minAf hist = do
     when (minAf > raMaxAf hist || minAf < raMinAf hist) $ Left "illegal minAf"
     if minAf == raMinAf hist then return hist else do
@@ -138,42 +136,3 @@ computeStandardOrder histogram =
             computeAllConfigs nrPop (raMaxAf histogram) nVec
   where
     hasConditioning indices pat = all (\i -> pat !! i > 0) indices
-
-minFunc :: GeneralOptions -> ModelTemplate -> RareAlleleHistogram -> V.Vector Double -> Either String Double
-minFunc generalOpts modelTemplate hist paramsVec = do
-    let paramNames = getParamNames modelTemplate
-    let paramsDict = zip paramNames . V.toList $ paramsVec
-    modelSpec <- instantiateModel generalOpts modelTemplate paramsDict
-    regPenalty <- getRegularizationPenalty modelSpec
-    val <- computeLogLikelihood modelSpec hist False
-    assertErr ("likelihood infinite for params " ++ show params) $ not (isInfinite val)
-    assertErr ("likelihood NaN for params " ++ show params) $ not (isNaN val)
-    return (-val + regPenalty)
-    -- return (-val)
-
-penalty :: Double
-penalty = 1.0e20
-
-computeLogLikelihood :: ModelSpec -> RareAlleleHistogram -> Bool ->
-    Either String Double
-computeLogLikelihood modelSpec histogram noShortcut = do
-    assertErr "minFreq must be greater than 0" $ raMinAf histogram > 0
-    standardOrder <- computeStandardOrder histogram
-    let nVec = raNVec histogram
-    patternProbs <- sequence $
-        parMap rdeepseq (getProb modelSpec nVec noShortcut) standardOrder
-    let patternCounts = map (defaultLookup histogram) standardOrder
-        ll = sum $
-            zipWith (\p c -> log p * fromIntegral c) patternProbs patternCounts
-        otherCounts = raTotalNrSites histogram - sum patternCounts
-    return $ ll + fromIntegral otherCounts * log (1.0 - sum patternProbs)
-
-makeInitialPoint :: ModelTemplate -> [(String, Double)] ->
-    Either String V.Vector Double
-makeInitialPoint modelTemplate modelParams = do
-    let paramNames = getParamNames modelTemplate
-    vals <- forM paramNames $ \n ->
-        case n `lookup` modelParams of
-            Just x -> return x
-            Nothing -> Left "did not find parameter " ++ show n
-    return $ V.fromList vals

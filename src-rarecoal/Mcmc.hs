@@ -55,7 +55,8 @@ runMcmc opts = do
     modelParams <- makeParameterDict (maParamOpts opts)
     modelSpec <- tryRight $ instantiateModel (maGeneralOpts opts )
         modelTemplate modelParams
-    hist <- loadHistogram (maHistogramOpts opts) modelTemplate
+    hist <- loadHistogram (maHistogramOpts opts)
+    validateBranchNameCongruency modelTemplate (raNames hist)
     xInit <- makeInitialPoint modelTemplate modelParams
     let minFunc' = either (const penalty) id .
             minFunc (mcGeneralOpts opts) modelTemplate hist
