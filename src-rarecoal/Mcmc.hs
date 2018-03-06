@@ -2,7 +2,7 @@ module Mcmc (runMcmc, McmcOpt(..)) where
 
 import Rarecoal.Utils (GeneralOptions(..), HistogramOptions(..), setNrProcessors)
 import Rarecoal.ModelTemplate (ModelTemplate(..), ParamOptions(..), ModelOptions(..), 
-    getModelTemplate, instantiateModel, getParamNames, makeParameterDict)
+    getModelTemplate, instantiateModel, getParamNames, makeParameterDict, fillParameterDictWithDefaults)
 import Rarecoal.Utils (loadHistogram)
 import Rarecoal.MaxUtils (minFunc, penalty, writeFullFitTable, writeSummaryFitTable, 
     makeInitialPoint, computeFrequencySpectrum)
@@ -49,7 +49,8 @@ runMcmc :: McmcOpt -> Script ()
 runMcmc opts = do
     scriptIO $ setNrProcessors (mcGeneralOpts opts)
     modelTemplate <- getModelTemplate (mcModelOpts opts)
-    modelParams <- scriptIO $ makeParameterDict (mcParamOpts opts)
+    modelParams <- (scriptIO $ makeParameterDict (mcParamOpts opts)) >>= 
+        fillParameterDictWithDefaults modelTemplate
     _ <- tryRight $ instantiateModel (mcGeneralOpts opts) modelTemplate modelParams
     let modelBranchNames = mtBranchNames modelTemplate
     hist <- loadHistogram (mcHistogramOpts opts) modelBranchNames

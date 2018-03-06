@@ -19,7 +19,6 @@ import           Control.Monad.Trans.Except           (throwE)
 import           Data.Char                            (isAlphaNum)
 -- import Debug.Trace (trace)
 import           Data.List                            (elemIndex, nub)
-import           Data.Maybe                           (catMaybes)
 import qualified Data.Text                            as T
 import qualified Data.Text.IO                         as T
 import qualified Text.Parsec                          as P
@@ -72,7 +71,8 @@ getModelTemplate mo = do
             ", constraints "%w%" and parameters "%w) n e c paramNames
 
 modelTemplateP :: Parser ModelTemplate
-modelTemplateP = ModelTemplate <$> parseBranchNames <*> parseEvents <*> parseConstraints
+modelTemplateP = ModelTemplate <$> parseBranchNames <*> parseEvents <*>
+    (parseConstraints <|> pure [])
 
 parseBranchNames :: Parser [T.Text]
 parseBranchNames = PC.string "BRANCHES" *> PC.spaces *> PC.char '=' *> PC.spaces *> PC.char '[' *> 
@@ -259,17 +259,17 @@ fillParameterDictWithDefaults :: ModelTemplate -> [(T.Text, Double)] ->
     Script [(T.Text, Double)]
 fillParameterDictWithDefaults mt paramsDict = do
     let paramNames = getParamNames mt
-    fmap catMaybes . forM paramNames $ \p ->
+    forM paramNames $ \p ->
         case p `lookup` paramsDict of
-            Just _ -> return Nothing
+            Just v -> return (p, v)
             Nothing | T.head p == 'p' -> do
                         scriptIO . errLn $
                             format ("setting parameter "%w%" = 1.0 (default)") p
-                        return $ Just (p, 1.0)
+                        return (p, 1.0)
                     | T.take 3 p == "adm" -> do
                         scriptIO . errLn $ format ("setting parameter "%w%
-                            " = 0.05 (d efault)") p
-                        return $ Just (p, 0.05)
+                            " = 0.05 (default)") p
+                        return (p, 0.05)
                     | otherwise ->
                         throwE $ format ("Don't know how to initialize \
                         \parameter "%w%". Please provide initial \

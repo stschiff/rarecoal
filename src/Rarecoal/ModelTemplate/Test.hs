@@ -1,7 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Rarecoal.ModelTemplate.Test (tests) where
 
-import Rarecoal.Utils (defaultTimes)
 import Rarecoal.ModelTemplate (ModelTemplate(..), MTEvent(..), MTConstraint(..), ParamSpec(..),
     ConstraintOperator(..), getModelTemplate, ModelOptions(..))
 

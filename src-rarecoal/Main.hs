@@ -185,11 +185,11 @@ parseHistOpts = HistogramOptions <$> parseHistPath <*> parseMinAf <*>
         \square-brackets. Gives all branches (as 0-based indices) in which you \
         \require at least one derived allele for the computation of the \
         \likelihood. This is useful for mapping ancient samples onto a tree" <>
-        OP.value [] <> OP.hidden
+        OP.value [] <> OP.showDefault
     parseExcludePattern = OP.option OP.auto $ OP.long "excludePattern" <>
         OP.metavar "[INT,INT,...]" <> OP.help "a comma-separated list without \
         \spaces and surrounded by square-brackets. Gives a pattern to exclude \
-        \from fitting. Can be given multiple times" <> OP.hidden
+        \from fitting. Can be given multiple times" <> OP.hidden <> OP.value [] <> OP.showDefault
 
 parseMaxl :: OP.Parser Command
 parseMaxl = CmdMaxl <$> parseMaxlOpt

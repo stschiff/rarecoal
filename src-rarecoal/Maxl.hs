@@ -2,7 +2,7 @@
 module Maxl (runMaxl, MaxlOpt(..)) where
 
 import Rarecoal.ModelTemplate (ModelTemplate(..), instantiateModel, getModelTemplate, 
-    ModelOptions(..), ParamOptions(..), makeParameterDict, getParamNames)
+    ModelOptions(..), ParamOptions(..), makeParameterDict, getParamNames, fillParameterDictWithDefaults)
 import Rarecoal.Utils (GeneralOptions(..), HistogramOptions(..), setNrProcessors, loadHistogram)
 import Rarecoal.MaxUtils (penalty, minFunc, computeFrequencySpectrum, 
     writeFullFitTable, writeSummaryFitTable, makeInitialPoint)
@@ -30,7 +30,8 @@ runMaxl :: MaxlOpt -> Script ()
 runMaxl opts = do
     scriptIO $ setNrProcessors (maGeneralOpts opts)
     modelTemplate <- getModelTemplate (maModelOpts opts)
-    modelParams <- scriptIO $ makeParameterDict (maParamOpts opts)
+    modelParams <- (scriptIO $ makeParameterDict (maParamOpts opts)) >>= 
+        fillParameterDictWithDefaults modelTemplate
     _ <- tryRight $ instantiateModel (maGeneralOpts opts) modelTemplate modelParams
     let modelBranchNames = mtBranchNames modelTemplate
     hist <- loadHistogram (maHistogramOpts opts) modelBranchNames
