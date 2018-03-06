@@ -5,7 +5,8 @@ module Rarecoal.MaxUtils (penalty, makeInitialPoint, minFunc, computeLogLikeliho
     writeFullFitTable, writeSummaryFitTable) 
 where
 
-import Rarecoal.Core (ModelSpec(..), getRegularizationPenalty, getProb)
+import Rarecoal.Core (ModelSpec(..), getProb)
+import Rarecoal.StateSpace (getRegularizationPenalty)
 import Rarecoal.Utils (GeneralOptions(..), computeStandardOrder, turnHistPatternIntoModelPattern,
     Branch)
 import Rarecoal.ModelTemplate (ModelTemplate(..), getParamNames, instantiateModel)

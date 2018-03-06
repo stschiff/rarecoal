@@ -127,7 +127,7 @@ prop_fullSplitIsJoinForA = forAll (suchThat gen (\(_, k, l) -> k /= l)) go
         twoFuncs = [popJoinA, \b k' l' -> popSplitA b k' l' 1.0]
 
 makeTestModelSpec :: ModelSpec
-makeTestModelSpec = ModelSpec defaultTimes 0.0005 [1,1,1,1,1] 10 False events
+makeTestModelSpec = ModelSpec 5 defaultTimes 0.0005 [1,1,1,1,1] 10 False events
   where
     events = [ ModelEvent 0.0025 (Join 0 1)
              , ModelEvent 0.006 (Join 2 3)

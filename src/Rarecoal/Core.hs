@@ -1,24 +1,34 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Rarecoal.Core (getProb, validateModel,
-    choose, ModelEvent(..), EventType(..), ModelSpec(..), popJoinA,
-    popJoinB, popSplitA, popSplitB, getNrOfPops, getRegularizationPenalty) where
+module Rarecoal.Core (getProb, ModelEvent(..), EventType(..), ModelSpec(..), popJoinA,
+    popJoinB, popSplitA, popSplitB) where
 
 import           Rarecoal.StateSpace         (JointStateSpace (..),
                                               getNonZeroStates,
-                                              makeJointStateSpace)
+                                              makeJointStateSpace, ModelEvent(..),
+                                              validateModel,
+                                              EventType(..), ModelSpec(..))
+import Rarecoal.Utils (choose, chooseCont)
 import           Control.Error.Safe          (assertErr)
 import           Control.Exception.Base      (assert)
 import           Control.Monad               (filterM, foldM, forM, forM_, when,
                                               (>=>))
 import           Control.Monad.ST            (ST, runST)
-import           Data.List                   (nub, sortBy)
+import           Data.List                   (nub)
 import           Data.STRef                  (STRef, modifySTRef, newSTRef,
                                               readSTRef, writeSTRef)
+import Data.List (sortBy)
 import qualified Data.Text as T
-import Turtle (format, (%), w, d, g)
+import Turtle (format, (%), w)
 import qualified Data.Vector.Unboxed         as V
 import qualified Data.Vector.Unboxed.Mutable as VM
 -- import Debug.Trace (trace)
+
+data ModelState s = ModelState {
+    _msT              :: STRef s Double,
+    _msEventQueue     :: STRef s [ModelEvent],
+    _msPopSize        :: VM.MVector s Double,
+    _msFreezeState    :: VM.MVector s Bool
+}
 
 data CoalState s = CoalState {
     _csA             :: VM.MVector s Double,
@@ -29,71 +39,28 @@ data CoalState s = CoalState {
     _csStateSpace    :: JointStateSpace
 }
 
-data ModelState s = ModelState {
-    _msT              :: STRef s Double,
-    _msEventQueue     :: STRef s [ModelEvent],
-    _msPopSize        :: VM.MVector s Double,
-    _msFreezeState    :: VM.MVector s Bool
-}
-
-data ModelEvent = ModelEvent {
-    meTime      :: Double,
-    meEventType ::EventType
-} deriving (Show, Read)
-
-data EventType = Join Int Int
-               | Split Int Int Double
-               | SetPopSize Int Double
-               | SetFreeze Int Bool
-               deriving (Show, Read)
-
-data ModelSpec = ModelSpec {
-    mTimeSteps      :: [Double],
-    mTheta          :: Double,
-    mDiscoveryRates :: [Double],
-    mPopSizeRegularization :: Double,
-    mNoShortcut :: Bool,
-    mEvents         :: [ModelEvent]
-} deriving (Show)
-
 getProb :: ModelSpec -> [Int] -> [Int] -> Either T.Text Double
 getProb modelSpec nVec config = do
     validateModel modelSpec
-    let nVec' = padGhostPops nVec
-        config' = padGhostPops config
-    nrPops <- getNrOfPops (mEvents modelSpec)
+    let nrPops = mNrPops modelSpec
     assertErr "illegal sample configuration given" $
-        length nVec' == length config' && length nVec' == nrPops
+        length nVec == length config && length nVec == nrPops
     let timeSteps = mTimeSteps modelSpec
         dd = runST $ do
-            ms <- makeInitModelState modelSpec nrPops
-            cs <- makeInitCoalState nVec' config'
+            ms <- makeInitModelState modelSpec
+            cs <- makeInitCoalState nVec config
             propagateStates ms cs timeSteps (mNoShortcut modelSpec)
             readSTRef (_csD cs)
-        combFac = product $ zipWith choose nVec' config'
+        combFac = product $ zipWith choose nVec config
         discoveryRateFactor =
             product [if c > 0 then d' else 1.0 |
-                (c, d') <- zip config' (mDiscoveryRates modelSpec)]
+                (c, d') <- zip config (mDiscoveryRates modelSpec)]
     assertErr err $ combFac > 0
     --trace (show $ combFac) $ return ()
     return $ dd * mTheta modelSpec * combFac * discoveryRateFactor
   where
     err = format ("Overflow Error in getProb for nVec="%w%", kVec="%w) nVec
         config
-    padGhostPops a =
-        let nrPops = length . mDiscoveryRates $ modelSpec
-            dd = nrPops - length a
-        in  a ++ replicate dd 0
-
-makeInitModelState :: ModelSpec -> Int -> ST s (ModelState s)
-makeInitModelState (ModelSpec _ _ _ _ _ events) nrPop = do
-    sortedEvents <- newSTRef $
-        sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) ->
-                time1 `compare` time2) events
-    t <- newSTRef 0.0
-    popSize <- VM.replicate nrPop 1.0
-    freezeState <- VM.replicate nrPop False
-    return $ ModelState t sortedEvents popSize freezeState
 
 makeInitCoalState :: [Int] -> [Int] -> ST s (CoalState s)
 makeInitCoalState nVec config = do
@@ -330,94 +297,13 @@ updateD cs deltaT = do
     b1s <- mapM (VM.read (_csB cs)) x1s
     modifySTRef (_csD cs) (\v -> v + deltaT * sum b1s)
 
-validateModel :: ModelSpec -> Either T.Text ()
-validateModel (ModelSpec _ _ dr _ _ events) = do
-    when (or [t < 0 | ModelEvent t _ <- events]) $ Left "Negative event times"
-    when (or [r <= 0 || r > 1 | r <- dr]) $ Left "illegal discovery Rate"
-    let sortedEvents =
-            sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) -> time1 `compare` time2) events
-    checkEvents sortedEvents
-    -- when (reg > 1.0) $ checkRegularization (length dr) reg sortedEvents
-  where
-    checkEvents [] = Right ()
-    checkEvents e@(ModelEvent t (Join k l):rest) = do
-        when (k >= length dr || l >= length dr || k < 0 || l < 0) $
-            Left (format ("illegal branch indices in event "%w) e)
-        let illegalEvents = or $ do
-                ModelEvent _ ee <- rest
-                case ee of
-                    Join k' l'           -> return $ k' == l || l' == l
-                    Split k' l' _        -> return $ k' == l || l' == l
-                    SetPopSize k' _      -> return $ k' == l
-                    SetFreeze k' _       -> return $ k' == l
-        if k == l || illegalEvents
-        then Left $ format ("Illegal join from "%d%" to "%d%" at time "%g) l k t
-        else checkEvents rest
-    checkEvents (e@(ModelEvent _ (SetPopSize k p)):rest) = do
-        when (k >= length dr || k < 0) $
-            Left (format ("illegal branch indices in event "%w) e)
-        if p <= 0 then Left $ format ("Illegal population size: "%g) p else checkEvents rest
-    checkEvents (e@(ModelEvent _ (Split l k m)):rest) = do
-        when (k >= length dr || l >= length dr || k < 0 || l < 0) $
-            Left (format ("illegal branch indices in event "%w) e)
-        if m < 0.0 || m > 1.0 then Left $ format ("Illegal split rate"%g) m else checkEvents rest
-    checkEvents (e@(ModelEvent _ (SetFreeze k _)):rest) = do
-        when (k >= length dr || k < 0) $
-            Left (format ("illegal branch indices in event "%w) e)
-        checkEvents rest
+makeInitModelState :: ModelSpec -> ST s (ModelState s)
+makeInitModelState (ModelSpec nrPop _ _ _ _ _ events) = do
+    sortedEvents <- newSTRef $
+        sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) ->
+                time1 `compare` time2) events
+    t <- newSTRef 0.0
+    popSize <- VM.replicate nrPop 1.0
+    freezeState <- VM.replicate nrPop False
+    return $ ModelState t sortedEvents popSize freezeState
 
-getRegularizationPenalty :: ModelSpec -> Either T.Text Double
-getRegularizationPenalty ms = do
-    nPops <- getNrOfPops (mEvents ms)
-    let initialPopSizes = V.replicate nPops 1.0
-    return $ go 0 initialPopSizes sortedEvents
-  where
-    go res _ [] = res
-    go res ps (ModelEvent t (SetPopSize k newP):rest) =
-        let newPs = ps V.// [(k, newP)]
-            oldP = ps V.! k
-            newRes = if t /= 0.0 then res + regFunc oldP newP else res
-        in  go newRes newPs rest
-    go res ps (ModelEvent _ (Join l k):rest) =
-        let fromP = ps V.! k
-            toP = ps V.! l
-            newRes = res + regFunc fromP toP
-        in  go newRes ps rest
-    go res ps (_:rest) = go res ps rest
-    sortedEvents = sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) -> time1 `compare` time2)
-        (mEvents ms)
-    reg = mPopSizeRegularization ms
-    regFunc oldP newP = if newP > oldP
-                            then reg * (newP / oldP - 1.0)^(2::Int)
-                            else reg * (oldP / newP - 1.0)^(2::Int)
-
-choose :: Int -> Int -> Double
-choose _ 0 = 1
-choose n k = product [fromIntegral (n + 1 - j) / fromIntegral j | j <- [1..k]]
-
--- see https://en.wikipedia.org/wiki/Binomial_coefficient
-chooseCont :: Double -> Int -> Double
-chooseCont _ 0 = 1
-chooseCont n k = product [(n + 1.0 - fromIntegral j) / fromIntegral j | j <- [1..k]]
-
-getNrOfPops :: [ModelEvent] -> Either T.Text Int
-getNrOfPops modelEvents =
-    let maxBranch = if null modelEvents then 0 else maximum allBranches
-        nrBranches = if null modelEvents then 1 else length . nub $ allBranches
-    in  if maxBranch + 1 /= nrBranches
-        then Left (format ("Error: Branch indices "%w%" are not consecutive. There are two typical reasons for this: 1) You are using ghost branches, and are not following the rule that  \
-            \indices have to be zero-indexed and start with one higher than \
-            \the last named branch. Example with four named populations and 1 \
-            \ghost populations: the ghost population should have index 4. \
-            \2) There is a branch in your data that \
-            \is not in your model at all. You need to at least specify a \
-            \population size") (nub allBranches))
-        else Right nrBranches
-  where
-      allBranches = do
-          ModelEvent _ e <- modelEvents
-          case e of
-              Join k l -> [k, l]
-              Split k l _ -> [k, l]
-              SetPopSize k _ -> [k]
-              SetFreeze k _ -> [k]

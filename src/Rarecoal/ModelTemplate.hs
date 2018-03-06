@@ -8,8 +8,8 @@ where
 import           Rarecoal.Utils                       (getTimeSteps,
                                                        GeneralOptions (..),
                                                        Branch)
-import           Rarecoal.Core              (getRegularizationPenalty,
-    EventType(..), ModelSpec(..), ModelEvent (..))
+import           Rarecoal.Core              (EventType(..), ModelSpec(..), ModelEvent (..))
+import Rarecoal.StateSpace (getRegularizationPenalty)
 
 import           Control.Applicative                  ((<|>))
 import           Control.Error                        (Script, errLn,
@@ -174,8 +174,9 @@ instantiateModel opts (ModelTemplate branchNames _mtEvents _mtConstraints) param
     events <- reverse <$> getEvents branchNames _mtEvents []
     validateConstraints paramsDict _mtConstraints
     let timeSteps = getTimeSteps (optN0 opts) (optLinGen opts) (optTMax opts)
-    return $ ModelSpec timeSteps (optTheta opts) [1.0 | _ <- branchNames] (optRegPenalty opts) 
-        (optNoShortcut opts) events
+        nrPops = length branchNames
+    return $ ModelSpec nrPops timeSteps (optTheta opts) [1.0 | _ <- [0..(nrPops - 1)]] 
+        (optRegPenalty opts) (optNoShortcut opts) events
   where
     getEvents _ [] res = return res
     getEvents bN (cmd:rest) res = case cmd of

@@ -29,7 +29,7 @@ runSimCommand opts = do
     modelTemplate <- getModelTemplate (_ftModelOpts opts)
     modelParams <- scriptIO $ makeParameterDict (_ftParamOpts opts)
     modelSpec <- tryRight $ instantiateModel (_ftGeneralOpts opts) modelTemplate modelParams
-    let (ModelSpec _ theta _ _ _ events) = modelSpec
+    let (ModelSpec _ _ theta _ _ _ events) = modelSpec
     let thetaL = 2.0 * theta * fromIntegral (_ftL opts)
     scriptIO . T.putStr $ format ("scrm "%d%" 1 -t "%g%" -r "%g%" "%d%
         " -l 100000 "%s%" "%s) nSamples thetaL rhoL (_ftL opts)

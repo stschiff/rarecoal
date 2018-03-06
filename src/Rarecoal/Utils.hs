@@ -2,7 +2,8 @@
 module Rarecoal.Utils (computeAllConfigs, computeStandardOrder,
     turnHistPatternIntoModelPattern, defaultTimes, getTimeSteps,
     setNrProcessors, filterConditionOn, filterExcludePatterns, filterMaxAf,
-    filterGlobalMinAf, GeneralOptions(..), HistogramOptions(..), loadHistogram, Branch) where
+    filterGlobalMinAf, GeneralOptions(..), HistogramOptions(..), loadHistogram, Branch, choose, 
+    chooseCont) where
 
 import SequenceFormats.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern, readHistogram)
 
@@ -147,3 +148,12 @@ loadHistogram histOpts modelBranches = do
             when (modelName `notElem` histBranchNames) $
                 scriptIO . errLn $ format ("found unsampled ghost branch: "%w)
                 modelName
+
+choose :: Int -> Int -> Double
+choose _ 0 = 1
+choose n k = product [fromIntegral (n + 1 - j) / fromIntegral j | j <- [1..k]]
+
+-- see https://en.wikipedia.org/wiki/Binomial_coefficient
+chooseCont :: Double -> Int -> Double
+chooseCont _ 0 = 1
+chooseCont n k = product [(n + 1.0 - fromIntegral j) / fromIntegral j | j <- [1..k]]
