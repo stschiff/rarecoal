@@ -139,7 +139,7 @@ prop_getProbTest = forAll genInput go
   where
     genInput = genStates `suchThat` (\v -> V.sum v > 0 && V.sum v <= maxAf)
     go state = get5popProb (V.toList state)
-    get5popProb config = case getProb modelSpec nVec False config of
+    get5popProb config = case getProb modelSpec nVec config of
         Left _ -> False
         Right res -> res >= 0.0
     modelSpec = makeTestModelSpec
@@ -148,7 +148,7 @@ prop_getProbTest = forAll genInput go
 assertConsistentProbs :: Assertion
 assertConsistentProbs =
     forM_ resultData $ \(state, previous) -> do
-        let current = case getProb modelSpec nVec False state of
+        let current = case getProb modelSpec nVec state of
                 Left _ -> -1.0
                 Right res -> res
         let msg = "failed for state " ++ show state ++ ": " ++ show previous ++ " (previous) vs. " ++ show current ++ " (current)"

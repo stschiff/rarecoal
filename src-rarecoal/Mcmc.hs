@@ -1,12 +1,11 @@
 module Mcmc (runMcmc, McmcOpt(..)) where
 
-import FitTable (writeFitTables)
-import Rarecoal.Options (GeneralOptions(..), ModelOptions(..), HistogramOptions(..))
-import Rarecoal.ModelTemplate (ModelTemplate(..), readModelTemplate, getInitialParams,
-    makeFixedParamsTemplate, reportGhostPops, instantiateModel)
-import Rarecoal.Core (getTimeSteps, ModelEvent(..))
-import Rarecoal.Formats.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern)
-import Rarecoal.Utils (loadHistogram, minFunc, penalty)
+import Rarecoal.Utils (GeneralOptions(..), HistogramOptions(..), setNrProcessors)
+import Rarecoal.ModelTemplate (ModelTemplate(..), ParamOptions(..), ModelOptions(..), 
+    getModelTemplate, instantiateModel, getParamNames, makeParameterDict)
+import Rarecoal.Utils (loadHistogram)
+import Rarecoal.MaxUtils (minFunc, penalty, writeFullFitTable, writeSummaryFitTable, 
+    makeInitialPoint, computeFrequencySpectrum)
 
 import qualified Data.Vector.Unboxed as V
 import qualified System.Random as R
@@ -15,11 +14,10 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad (when, forM_)
 import Control.Monad.Loops (whileM)
 import Data.List (intercalate, sort, minimumBy)
+import qualified Data.Text as T
 import Control.Error (Script, scriptIO, tryRight, errLn)
 import Data.Ord (comparing)
-import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
 import System.IO (withFile, Handle, IOMode(..), withFile, hPutStr, hPutStrLn)
-import System.Log.Logger (infoM)
 
 (!) :: V.Vector Double -> Int -> Double
 (!) = (V.!)
@@ -33,8 +31,7 @@ data McmcOpt = McmcOpt {
    mcHistogramOpts :: HistogramOptions,
    mcNrCycles :: Int,
    mcOutPrefix :: FilePath,
-   mcRandomSeed :: Int,
-   mcFixedParams :: [String]
+   mcRandomSeed :: Int
 }
 
 data MCMCstate = MCMCstate {
@@ -50,23 +47,21 @@ data MCMCstate = MCMCstate {
 
 runMcmc :: McmcOpt -> Script ()
 runMcmc opts = do
-    setNrProcessors opts
-    modelTemplate <- getModelTemplate (maModelOpts opts)
-    modelParams <- makeParameterDict (maParamOpts opts)
-    modelSpec <- tryRight $ instantiateModel (maGeneralOpts opts )
-        modelTemplate modelParams
-    hist <- loadHistogram (maHistogramOpts opts)
-    validateBranchNameCongruency modelTemplate (raNames hist)
-    xInit <- makeInitialPoint modelTemplate modelParams
-    let minFunc' = either (const penalty) id .
-            minFunc (mcGeneralOpts opts) modelTemplate hist
+    scriptIO $ setNrProcessors (mcGeneralOpts opts)
+    modelTemplate <- getModelTemplate (mcModelOpts opts)
+    modelParams <- scriptIO $ makeParameterDict (mcParamOpts opts)
+    _ <- tryRight $ instantiateModel (mcGeneralOpts opts) modelTemplate modelParams
+    let modelBranchNames = mtBranchNames modelTemplate
+    hist <- loadHistogram (mcHistogramOpts opts) modelBranchNames
+    xInit <- tryRight $ makeInitialPoint modelTemplate modelParams
+    let minFunc' = either (const penalty) id . minFunc (mcGeneralOpts opts) modelTemplate hist
         initV = minFunc' xInit
         stepWidths = V.map (max 1.0e-8 . abs . (/100.0)) xInit
         successRates = V.replicate (V.length xInit) 0.44
     ranGen <- if   mcRandomSeed opts == 0
               then scriptIO R.getStdGen
               else return $ R.mkStdGen (mcRandomSeed opts)
-    let initState = MCMCstate 0 0 initV xNew stepWidths successRates ranGen []
+    let initState = MCMCstate 0 0 initV xInit stepWidths successRates ranGen []
         pred_ = mcmcNotDone (mcNrCycles opts)
         act = mcmcCycle minFunc'
     states <- evalStateT (whileM pred_ act) initState
@@ -76,11 +71,17 @@ runMcmc opts = do
         outFullFitTableFN = mcOutPrefix opts ++ ".frequencyFitTable.txt"
         outSummaryTableFN = mcOutPrefix opts ++ ".summaryFitTable.txt"
     minPoint <- scriptIO . withFile outMcmcFN WriteMode $ \h ->
-        reportPosteriorStats (mtParams modelTemplateWithFixedParams) states h
+        reportPosteriorStats (map T.unpack . getParamNames $ modelTemplate) states h
     scriptIO . withFile outTraceFN WriteMode $ \h ->
-        reportTrace (mtParams modelTemplateWithFixedParams) states h
-    finalModelSpec <- tryRight $ instantiateModel modelTemplate minPoint (raNames hist)
-    writeFitTables outFullFitTableFN outSummaryTableFN hist finalModelSpec
+        reportTrace (map T.unpack . getParamNames $ modelTemplate) states h
+
+    let finalModelParams = [(n, r) | ((n, _), r) <- zip modelParams (V.toList minPoint)]
+    finalModelSpec <- tryRight $ instantiateModel (mcGeneralOpts opts) modelTemplate 
+        finalModelParams
+    finalSpectrum <- tryRight $ computeFrequencySpectrum finalModelSpec hist modelBranchNames
+    scriptIO $ do
+        writeFullFitTable outFullFitTableFN finalSpectrum
+        writeSummaryFitTable outSummaryTableFN finalSpectrum hist
 
 
 mcmcNotDone :: Int -> StateT MCMCstate Script Bool
@@ -112,7 +113,7 @@ mcmcCycle posterior = do
     modify (\s -> s {mcmcNrCycles = c + 1, mcmcScoreList = newVal:scoreValues})
     -- liftIO (infoM "rarecoal" $ showStateLog state)
     when ((c + 1) `mod` 10 == 0) $ do
-        liftIO (infoM "rarecoal" $ showStateLog state)
+        liftIO (errLn . T.pack $ showStateLog state)
         forM_ [0..k-1] adaptStepWidths
     get
 

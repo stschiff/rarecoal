@@ -1,21 +1,24 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 import           Find                         (FindOpt (..), runFind)
 import           FitTable                     (FitTableOpt (..), runFitTable)
 import           Logl                         (LoglOpt (..), runLogl)
 import           Maxl                         (MaxlOpt (..), runMaxl)
 import           Mcmc                         (McmcOpt (..), runMcmc)
 import           Prob                         (ProbOpt (..), runProb)
-import           Rarecoal.Core                (EventType (..), ModelEvent (..))
-import           Rarecoal.ModelTemplate       (ModelDesc (..))
+import           Rarecoal.ModelTemplate       (ModelOptions (..), ParamOptions(..))
+import Rarecoal.Utils (GeneralOptions(..), HistogramOptions(..))
 import           SimCommand                   (SimCommandOpt (..),
                                                runSimCommand)
 
-import           Control.Applicative          ((<|>), optional)
-import           Control.Error.Script         (runScript, scriptIO)
+import           Control.Applicative          ((<|>))
+import           Control.Error         (runScript, scriptIO, errLn)
 import           Data.List.Split              (splitOn)
 import           Data.Monoid                  ((<>))
 import           Data.Time.Clock              (getCurrentTime)
+import qualified Data.Text as T
 import qualified Options.Applicative          as OP
-import           Turtle                       (err, format, w, (%))
+import           Turtle                       (format, w, (%))
 
 data Options = Options Command
 
@@ -38,9 +41,8 @@ withInfo opts desc = OP.info (OP.helper <*> opts) $ OP.progDesc desc
 
 run :: Options -> IO ()
 run (Options cmdOpts) = runScript $ do
-    scriptIO $ updateGlobalLogger "rarecoal" (setLevel INFO)
     currentT <- scriptIO getCurrentTime
-    scriptIO . err $ format ("Rarecoal starting at "%w) currentT
+    scriptIO . errLn $ format ("Rarecoal starting at "%w) currentT
     case cmdOpts of
         CmdProb opts       -> runProb opts
         CmdLogl opts       -> runLogl opts
@@ -50,7 +52,7 @@ run (Options cmdOpts) = runScript $ do
         CmdFitTable opts   -> runFitTable opts
         CmdSimCommand opts -> runSimCommand opts
     currentTafter <- scriptIO getCurrentTime
-    scriptIO . err $ format ("Rarecoal finished at "%w) currentTafter
+    scriptIO . errLn $ format ("Rarecoal finished at "%w) currentTafter
 
 parseOptions :: OP.Parser Options
 parseOptions = Options <$> parseCommand
@@ -126,25 +128,21 @@ parseGeneralOpts = GeneralOptions <$> parseTheta <*> parseNrThreads <*>
         \patterning function."
 
 parseModelOpts :: OP.Parser ModelOptions
-parseModelDesc = ModelOptions <$> parseMaybeTemplateFile <*>
-    parseModelTemplateString
-  where
-    parseMaybeTemplateFile = OP.option (Just <$> OP.str)
-        (OP.metavar "TEMPLATE_FILE" <> OP.value Nothing <>
-        OP.help "file with model template commands" <> OP.short 'T' <>
-        OP.long "modelTemplate")
-    parseModelTemplateString = OP.strOption (OP.metavar "TEMPLATE_COMMANDS" <>
-        OP.value "" <> OP.short 't' <>
-        OP.help "model template commands passed directly via \
-        \the command line. If a template file is also given, both sets of \
-        \commands are concatenated to a single model template specification")
+parseModelOpts = parseModelByFile <|> parseModelByText
+
+parseModelByFile :: OP.Parser ModelOptions
+parseModelByFile = ModelByFile <$> OP.strOption (OP.metavar "TEMPLATE_FILE" <>
+    OP.help "file with model template commands" <> OP.short 'T' <> OP.long "modelTemplate")
+
+parseModelByText :: OP.Parser ModelOptions
+parseModelByText = ModelByText <$> OP.strOption (OP.metavar "MODEL_SPECS" <>
+    OP.short 't' <> OP.help "model template passed directly via the command line.")
 
 parseParamOpts :: OP.Parser ParamOptions
-parseParamOpts = ParamOptions <$> parseMaybeParamInputFile <*>
-    OP.many parseParamSetting
+parseParamOpts = ParamOptions <$> parseMaybeParamInputFile <*> OP.many parseParamSetting
   where
-    parseMaybeParamInputFile = OP.options (Just <$> OP.str) $
-        OP.long "paramsFile" <> OP.short 'P' <> OP.metavar "FILE" <>
+    parseMaybeParamInputFile = OP.option (Just <$> OP.str) $
+        OP.long "paramsFile" <> OP.short 'P' <> OP.metavar "FILE" <> OP.value Nothing <>
         OP.help "read the initial parameters from a file, which can be the \
         \main output file from either the maxl or the mcmc commands. This is \
         \useful for continuing an optimization from a previous run, or for \
@@ -160,7 +158,7 @@ parseParamOpts = ParamOptions <$> parseMaybeParamInputFile <*>
            then error ("could not parse parameter option " ++ s)
            else
                let [param, valueS] = fields
-               in  (param, read valueS)
+               in  (T.pack param, read valueS)
 
 parseLogl :: OP.Parser Command
 parseLogl = CmdLogl <$> parseLoglOpt
@@ -199,7 +197,7 @@ parseMaxl = CmdMaxl <$> parseMaxlOpt
 parseMaxlOpt :: OP.Parser MaxlOpt
 parseMaxlOpt = MaxlOpt <$> parseGeneralOpts <*> parseModelOpts <*>
     parseParamOpts <*> parseHistOpts <*> parseMaxCycles <*> parseNrRestarts <*>
-    parseOutPrefix <*> pure []
+    parseOutPrefix
   where
     parseMaxCycles = OP.option OP.auto $ OP.long "maxCycles"
                     <> OP.metavar "INT" <> OP.hidden
@@ -215,7 +213,7 @@ parseMaxlOpt = MaxlOpt <$> parseGeneralOpts <*> parseModelOpts <*>
 
 parseOutPrefix :: OP.Parser FilePath
 parseOutPrefix = OP.strOption $ OP.short 'o' <> OP.long "prefix" <>
-OP.metavar "PREFIX" <> OP.help "give the prefix for the output files."
+    OP.metavar "PREFIX" <> OP.help "give the prefix for the output files."
 
 -- parseFixedParams :: OP.Parser [String]
 -- parseFixedParams = OP.option (splitOn "," <$> OP.str) $ OP.long "fixedParams" <>
@@ -229,7 +227,7 @@ parseMcmc = CmdMcmc <$> parseMcmcOpt
 parseMcmcOpt :: OP.Parser McmcOpt
 parseMcmcOpt = McmcOpt <$> parseGeneralOpts <*> parseModelOpts <*>
     parseParamOpts <*> parseHistOpts <*> parseNrCycles <*> parseOutPrefix <*>
-    parseRandomSeed <*> pure []
+    parseRandomSeed
   where
     parseRandomSeed = OP.option OP.auto $ OP.long "seed" <> OP.metavar "INT" <>
                       OP.value 0 <> OP.hidden <>
@@ -251,12 +249,7 @@ parseFindOpt = FindOpt <$> parseGeneralOpts <*> parseModelOpts <*>
     parseParamOpts <*> parseHistOpts <*> parseQueryBranch <*> parseEvalFile <*>
     parseBranchAge <*> parseDeltaTime <*> parseMaxTime
   where
-    parseQueryBranch = (BranchByIndex <$> parseQueryIndex) <|>
-        (BranchByName <$> parseQueryName)
-    parseQueryIndex = OP.option OP.auto $ OP.short 'q' <>
-        OP.long "queryIndex" <> OP.metavar "INT" <>
-        OP.help "0-based index of query branch"
-    parseQueryName = OP.strOption $ OP.short 'n' <> OP.long "queryName" <>
+    parseQueryBranch = OP.strOption $ OP.short 'n' <> OP.long "queryName" <>
         OP.metavar "STRING" <> OP.help "branch name to query"
     parseEvalFile = OP.strOption $ OP.short 'f' <> OP.long "evalFile" <>
         OP.metavar "FILE" <> OP.help "file to write the list of computed \

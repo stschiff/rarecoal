@@ -1,23 +1,25 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Find (runFind, FindOpt(..)) where
 
-import Rarecoal.Options (GeneralOptions(..), ModelOptions(..), HistogramOptions(..))
+import Rarecoal.Utils (GeneralOptions(..), HistogramOptions(..), setNrProcessors)
 import Rarecoal.Core (ModelSpec(..), ModelEvent(..), EventType(..))
-import Rarecoal.Formats.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern)
-import Rarecoal.Utils (loadHistogram)
-import Rarecoal.ModelTemplate (getModelSpec, ModelDesc, BranchSpec)
+import SequenceFormats.RareAlleleHistogram (RareAlleleHistogram(..))
+import Rarecoal.Utils (loadHistogram, Branch)
+import Rarecoal.MaxUtils (computeLogLikelihood)
+import Rarecoal.ModelTemplate (getModelTemplate, makeParameterDict, ModelOptions(..), 
+    instantiateModel, ParamOptions(..), ModelTemplate(..))
 
-import Control.Error (Script, scriptIO, tryAssert, tryRight, err, tryJust)
+import Control.Error (Script, scriptIO, tryAssert, tryRight, tryJust)
 import Data.List (maximumBy, elemIndex)
-import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
-import Logl (computeLogLikelihood)
 import System.IO (stderr, hPutStrLn, openFile, IOMode(..), hClose)
+import Turtle (format, s, (%), d)
 
 data FindOpt = FindOpt {
     fiGeneralOpts :: GeneralOptions,
     fiModelOpts :: ModelOptions,
     fiParamOpts :: ParamOptions,
     fiHistOpts :: HistogramOptions,
-    fiQueryBranch :: BranchSpec,
+    fiQueryBranch :: Branch,
     fiEvalPath :: FilePath,
     fiBranchAge :: Double,
     fiDeltaTime :: Double,
@@ -26,15 +28,13 @@ data FindOpt = FindOpt {
 
 runFind :: FindOpt -> Script ()
 runFind opts = do
-    setNrProcessors (fiGeneralOpts opts)
+    scriptIO $ setNrProcessors (fiGeneralOpts opts)
     modelTemplate <- getModelTemplate (fiModelOpts opts)
-    modelParams <- makeParameterDict (fiParamOpts opts)
-    modelSpec <- tryRight $ instantiateModel (fiGeneralOpts opts )
-        modelTemplate modelParams
-    hist <- loadHistogram (fiHistOpts opts) modelTemplate
+    modelParams <- scriptIO $ makeParameterDict (fiParamOpts opts)
+    modelSpec <- tryRight $ instantiateModel (fiGeneralOpts opts) modelTemplate modelParams
+    hist <- loadHistogram (fiHistOpts opts) (mtBranchNames modelTemplate)
     l <- findQueryIndex (raNames hist) (fiQueryBranch opts)
-    tryAssert ("model must have free branch " ++ show l) $
-        hasFreeBranch l modelSpec'
+    tryAssert (format ("model must have free branch "%d) l) $ hasFreeBranch l modelSpec
     let modelSpec' =
             if fiBranchAge opts > 0.0
             then
@@ -52,9 +52,9 @@ runFind opts = do
             time <- getJoinTimes modelSpec' (fiDeltaTime opts) (fiMaxTime opts) (fiBranchAge opts)
                                   branch
             return (branch, time)
-    allLikelihoods <- do
-            let f (k, t) = computeLogLikelihoodIO hist modelSpec' k l t (fiNoShortcut opts)
-            mapM f allParamPairs
+    allLikelihoods <- sequence
+        [computeLogLikelihoodIO hist modelSpec' (mtBranchNames modelTemplate) k l t |
+         (k, t) <- allParamPairs]
     scriptIO $ writeResult (fiEvalPath opts) allParamPairs allLikelihoods
     let ((minBranch, minTime), minLL) = maximumBy (\(_, ll1) (_, ll2) -> ll1 `compare` ll2) $
                                         zip allParamPairs allLikelihoods
@@ -65,9 +65,8 @@ runFind opts = do
         let e = mEvents modelSpec
             jIndices = concat [[k, l] | ModelEvent _ (Join k l) <- e]
         in  queryBranch `notElem` jIndices
-    findQueryIndex _ (Left i) = return i
-    findQueryIndex names (Right branchName) =
-        tryJust ("could not find branch name " ++ branchName) $ elemIndex branchName names
+    findQueryIndex names branchName =
+        tryJust (format ("could not find branch name "%s) branchName) $ elemIndex branchName names
 
 isEmptyBranch :: ModelSpec -> Int -> Double -> Bool
 isEmptyBranch modelSpec l t = not $ null previousJoins
@@ -80,13 +79,13 @@ getJoinTimes modelSpec deltaT maxT branchAge k =
         leaveTimes = [t | ModelEvent t (Join _ l) <- mEvents modelSpec, k == l]
     in  if null leaveTimes then allTimes else filter (<head leaveTimes) allTimes
 
-computeLogLikelihoodIO :: RareAlleleHistogram -> ModelSpec -> Int -> Int -> Double -> Bool ->
-                       Script Double
-computeLogLikelihoodIO hist modelSpec k l t noShortcut = do
+computeLogLikelihoodIO :: RareAlleleHistogram -> ModelSpec -> [Branch] -> Int -> Int -> Double ->
+    Script Double
+computeLogLikelihoodIO hist modelSpec modelBranchNames k l t = do
     let e = mEvents modelSpec
         newE = ModelEvent t (Join k l)
         modelSpec' = modelSpec {mEvents = newE : e}
-    ll <- tryRight $ computeLogLikelihood modelSpec' hist noShortcut
+    ll <- tryRight $ computeLogLikelihood modelSpec' hist modelBranchNames
     scriptIO $ hPutStrLn stderr ("branch=" ++ show k ++ ", time=" ++ show t ++ ", ll=" ++ show ll)
     return ll
 

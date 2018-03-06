@@ -2,22 +2,19 @@
 module Rarecoal.Utils (computeAllConfigs, computeStandardOrder,
     turnHistPatternIntoModelPattern, defaultTimes, getTimeSteps,
     setNrProcessors, filterConditionOn, filterExcludePatterns, filterMaxAf,
-    filterGlobalMinAf, GeneralOptions(..), HistogramOptions(..)) where
+    filterGlobalMinAf, GeneralOptions(..), HistogramOptions(..), loadHistogram, Branch) where
 
-import Rarecoal.Core (ModelSpec(..), getProb)
-import Rarecoal.Formats.RareAlleleHistogram (RareAlleleHistogram(..),
-    SitePattern, readHistogram)
-
+import SequenceFormats.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern, readHistogram)
 
 import Control.Error
-import Control.Monad (when, forM, (>=>))
+import Control.Monad (when, forM, (>=>), forM_)
 import Data.List (elemIndex)
 import qualified Data.Map.Strict as Map
 import Data.Text (Text)
 import GHC.Conc (getNumProcessors, setNumCapabilities, getNumCapabilities)
-import Turtle (format, d, (%))
-import Control.Parallel.Strategies (parMap, rdeepseq)
+import Turtle (format, d, (%), w)
 
+type Branch = Text
 
 data GeneralOptions = GeneralOptions {
     optTheta :: Double,
@@ -67,18 +64,12 @@ computeAllConfigs nrPop maxFreq nVec =
        order = map (digitize (maxFreq + 1) nrPop) [1..maxPowerNum]
    in  filter (\v -> (sum v <= maxFreq) && and (zipWith (<=) v nVec)) order
 
-turnHistPatternIntoModelPattern :: RareAlleleHistogram -> [String] ->
-    SitePattern -> Either Text SitePattern
-turnHistPatternIntoModelPattern hist modelBranchNames histPattern =
-    case modelBranchNames of
-        [] -> return histPattern
-        branchNames -> do
-            let histBranchNames = raNames hist
-            forM branchNames $ \modelBranchName ->
-                case modelBranchName `elemIndex` histBranchNames of
-                    Just i -> return (histPattern !! i)
-                    Nothing -> return 0 -- ghost branch
-
+turnHistPatternIntoModelPattern :: [Branch] -> [Branch] -> SitePattern -> Either Text SitePattern
+turnHistPatternIntoModelPattern histBranches modelBranches histPattern =
+    forM modelBranches $ \modelBranchName ->
+        case modelBranchName `elemIndex` histBranches of
+            Just i -> return (histPattern !! i)
+            Nothing -> return 0 -- ghost branch
 
 digitize :: Int -> Int -> Int -> [Int]
 digitize base nrDigit num
@@ -136,3 +127,23 @@ computeStandardOrder histogram =
             computeAllConfigs nrPop (raMaxAf histogram) nVec
   where
     hasConditioning indices pat = all (\i -> pat !! i > 0) indices
+
+loadHistogram :: HistogramOptions -> [Branch] -> Script RareAlleleHistogram
+loadHistogram histOpts modelBranches = do
+    let HistogramOptions path minAf maxAf conditionOn excludePatterns = histOpts
+    hist <- readHistogram path
+    validateBranchNameCongruency modelBranches (raNames hist)
+    tryRight $ (filterMaxAf maxAf >=> filterGlobalMinAf minAf >=>
+        filterConditionOn conditionOn >=> filterExcludePatterns excludePatterns)
+        hist
+  where
+    validateBranchNameCongruency modelBranchNames histBranchNames = do
+        forM_ histBranchNames $ \histName ->
+            when (histName `notElem` modelBranchNames) $
+                throwE (format ("histogram branch "%w%
+                    " not found in model branches ("%w%")") histName
+                    modelBranchNames)
+        forM_ modelBranchNames $ \modelName ->
+            when (modelName `notElem` histBranchNames) $
+                scriptIO . errLn $ format ("found unsampled ghost branch: "%w)
+                modelName

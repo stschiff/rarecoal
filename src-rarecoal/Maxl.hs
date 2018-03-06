@@ -1,48 +1,42 @@
-module Maxl (minFunc, penalty, runMaxl, MaxlOpt(..)) where
+{-# LANGUAGE OverloadedStrings #-}
+module Maxl (runMaxl, MaxlOpt(..)) where
 
-import Rarecoal.Core (ModelSpec(..), ModelEvent(..),
-    getRegularizationPenalty)
-import Rarecoal.Formats.RareAlleleHistogram (RareAlleleHistogram(..),
-    SitePattern)
-import Rarecoal.ModelTemplate (ModelTemplate(..), instantiateModel,
-    getModelTemplate, ModelOptions(..))
-import Rarecoal.Utils (computeLogLikelihood,
-    GeneralOptions(..), HistogramOptions(..))
-import FitTable (writeFitTables)
+import Rarecoal.ModelTemplate (ModelTemplate(..), instantiateModel, getModelTemplate, 
+    ModelOptions(..), ParamOptions(..), makeParameterDict, getParamNames)
+import Rarecoal.Utils (GeneralOptions(..), HistogramOptions(..), setNrProcessors, loadHistogram)
+import Rarecoal.MaxUtils (penalty, minFunc, computeFrequencySpectrum, 
+    writeFullFitTable, writeSummaryFitTable, makeInitialPoint)
 
-import Control.Error (Script, scriptIO, assertErr, tryRight, errLn)
+import Control.Error (Script, scriptIO, tryRight, errLn)
 import Data.List (intercalate)
+import qualified Data.Text as T
 import qualified Data.Vector.Unboxed as V
-import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
 import Numeric.LinearAlgebra.Data (toRows, toList)
 import Numeric.GSL.Minimization (minimize, MinimizeMethod(..))
 import System.IO (Handle, IOMode(..), hPutStrLn, hPutStr, withFile)
-import System.Log.Logger (infoM)
+import Turtle (format, (%), w)
 
 data MaxlOpt = MaxlOpt {
     maGeneralOpts :: GeneralOptions,
     maModelOpts :: ModelOptions,
-    maParamOpts :: ParamOpts,
+    maParamOpts :: ParamOptions,
     maHistogramOpts :: HistogramOptions,
     maMaxCycles :: Int,
     maNrRestarts :: Int,
-    maOutPrefix :: FilePath,
-    maFixedParams :: [String]
+    maOutPrefix :: FilePath
 }
 
 runMaxl :: MaxlOpt -> Script ()
 runMaxl opts = do
-    setNrProcessors opts
+    scriptIO $ setNrProcessors (maGeneralOpts opts)
     modelTemplate <- getModelTemplate (maModelOpts opts)
-    modelParams <- makeParameterDict (maParamOpts opts)
-    modelSpec <- tryRight $ instantiateModel (maGeneralOpts opts )
-        modelTemplate modelParams
-    hist <- loadHistogram (maHistogramOpts opts)
-    validateBranchNameCongruency modelTemplate (raNames hist)
-    let minFunc' = either (const penalty) id .
-            minFunc (maGeneralOpts opts) modelTemplate hist
+    modelParams <- scriptIO $ makeParameterDict (maParamOpts opts)
+    _ <- tryRight $ instantiateModel (maGeneralOpts opts) modelTemplate modelParams
+    let modelBranchNames = mtBranchNames modelTemplate
+    hist <- loadHistogram (maHistogramOpts opts) modelBranchNames
+    let minFunc' = either (const penalty) id . minFunc (maGeneralOpts opts) modelTemplate hist
         minimizationRoutine = minimizeV (maMaxCycles opts) minFunc'
-    xInit <- makeInitialPoint modelTemplate modelParams
+    xInit <- tryRight $ makeInitialPoint modelTemplate modelParams
     (minResult, trace) <- scriptIO $ minimizeWithRestarts (maNrRestarts opts)
         minimizationRoutine xInit
     let outMaxlFN = maOutPrefix opts ++ ".paramEstimates.txt"
@@ -50,26 +44,16 @@ runMaxl opts = do
         outFullFitTableFN = maOutPrefix opts ++ ".frequencyFitTable.txt"
         outSummaryTableFN = maOutPrefix opts ++ ".summaryFitTable.txt"
     scriptIO . withFile outMaxlFN WriteMode $ \h ->
-        reportMaxResult modelTemplateWithFixedParams minResult (minFunc' minResult) h
+        reportMaxResult modelTemplate minResult (minFunc' minResult) h
     scriptIO . withFile outTraceFN WriteMode $ \h ->
-        reportTrace modelTemplateWithFixedParams trace h
-    finalModelSpec <- tryRight $ instantiateModel modelTemplate minResult (raNames hist)
-    writeFitTables outFullFitTableFN outSummaryTableFN hist finalModelSpec
-
-minFunc :: GeneralOptions -> ModelTemplate -> RareAlleleHistogram -> V.Vector Double -> Either T.Text Double
-minFunc generalOpts modelTemplate hist paramsVec = do
-    let paramNames = getParamNames modelTemplate
-    let paramsDict = zip paramNames . V.toList $ paramsVec
-    modelSpec <- instantiateModel generalOpts modelTemplate paramsDict
-    regPenalty <- getRegularizationPenalty modelSpec
-    (_, modelBranchNames) <- getNrAndNamesOfBranches modelTemplate
-    val <- computeLogLikelihood modelSpec hist modelBranchNames
-    assertErr (format ("likelihood infinite for params "%w) paramsVec) $
-        not (isInfinite val)
-    assertErr (format ("likelihood NaN for params "%w) paramsVec) $
-        not (isNaN val)
-    return (-val + regPenalty)
-    -- return (-val)
+        reportTrace modelTemplate trace h
+    let finalModelParams = [(n, r) | ((n, _), r) <- zip modelParams (V.toList minResult)]
+    finalModelSpec <- tryRight $ instantiateModel (maGeneralOpts opts) modelTemplate 
+        finalModelParams
+    finalSpectrum <- tryRight $ computeFrequencySpectrum finalModelSpec hist modelBranchNames
+    scriptIO $ do
+        writeFullFitTable outFullFitTableFN finalSpectrum
+        writeSummaryFitTable outSummaryTableFN finalSpectrum hist
 
 minimizeV :: Int -> (V.Vector Double -> Double) -> V.Vector Double ->
     (V.Vector Double, [V.Vector Double])
@@ -90,18 +74,19 @@ minimizeWithRestarts nrRestarts minimizationRoutine initialParams =
   where
     go 0 _ (res, trace) = return (res, trace)
     go n minR (res, trace) = do
-        infoM "rarecoal" $ "minimizing from point " ++ show res
+        errLn $ format ("minimizing from point "%w) res
         let (newRes, newTrace) = minR res
         go (n - 1) minR (newRes, trace ++ newTrace)
 
 reportMaxResult :: ModelTemplate -> V.Vector Double -> Double -> Handle -> IO ()
 reportMaxResult modelTemplate result minScore h = do
     hPutStrLn h $ "Score\t" ++ show minScore
-    hPutStr h . unlines $ zipWith (\p v -> p ++ "\t" ++ show v) (mtParams modelTemplate) (V.toList result)
+    hPutStr h . unlines $ zipWith (\p v -> T.unpack p ++ "\t" ++ show v) (getParamNames modelTemplate) 
+        (V.toList result)
 
 reportTrace :: ModelTemplate -> [V.Vector Double] -> Handle -> IO ()
 reportTrace modelTemplate trace h = do
     let header = intercalate "\t" $ ["Nr", "-Log-Likelihood", "Simplex size"] ++
-            mtParams modelTemplate
+            map T.unpack (getParamNames modelTemplate)
         body = map (intercalate "\t" . map show . V.toList) trace
     hPutStr h . unlines $ header : body
