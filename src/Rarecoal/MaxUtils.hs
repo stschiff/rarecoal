@@ -6,7 +6,7 @@ module Rarecoal.MaxUtils (penalty, makeInitialPoint, minFunc, computeLogLikeliho
 where
 
 import Rarecoal.Core (ModelSpec(..), getProb)
-import Rarecoal.StateSpace (getRegularizationPenalty)
+import Rarecoal.StateSpace (getRegularizationPenalty, CoreFunc)
 import Rarecoal.Utils (GeneralOptions(..), computeStandardOrder, turnHistPatternIntoModelPattern,
     Branch)
 import Rarecoal.ModelTemplate (ModelTemplate(..), getParamNames, instantiateModel)
@@ -54,11 +54,12 @@ minFunc :: GeneralOptions -> ModelTemplate -> RareAlleleHistogram -> V.Vector Do
     Either T.Text Double
 minFunc generalOpts modelTemplate hist paramsVec = do
     let paramNames = getParamNames modelTemplate
-    let paramsDict = zip paramNames . V.toList $ paramsVec
+        paramsDict = zip paramNames . V.toList $ paramsVec
+        coreFunc = optCoreFunc generalOpts
     modelSpec <- instantiateModel generalOpts modelTemplate paramsDict
     regPenalty <- getRegularizationPenalty modelSpec
     let modelBranchNames = mtBranchNames modelTemplate
-    val <- computeLogLikelihood modelSpec hist modelBranchNames
+    val <- computeLogLikelihood modelSpec coreFunc hist modelBranchNames
     assertErr (format ("likelihood infinite for params "%w) paramsVec) $
         not (isInfinite val)
     assertErr (format ("likelihood NaN for params "%w) paramsVec) $
@@ -66,11 +67,12 @@ minFunc generalOpts modelTemplate hist paramsVec = do
     return (-val + regPenalty)
     -- return (-val)
 
-computeLogLikelihood :: ModelSpec -> RareAlleleHistogram -> [Branch] -> Either T.Text Double
-computeLogLikelihood modelSpec histogram modelBranchNames =
+computeLogLikelihood :: ModelSpec -> CoreFunc -> RareAlleleHistogram -> [Branch] ->
+    Either T.Text Double
+computeLogLikelihood modelSpec coreFunc histogram modelBranchNames =
     let totalNrSites = raTotalNrSites histogram
     in  computeLogLikelihoodFromSpec totalNrSites <$>
-            computeFrequencySpectrum modelSpec histogram modelBranchNames
+            computeFrequencySpectrum modelSpec coreFunc histogram modelBranchNames
 
 computeLogLikelihoodFromSpec :: Int64 -> Spectrum -> Double
 computeLogLikelihoodFromSpec totalNrSites spectrum =
@@ -80,8 +82,9 @@ computeLogLikelihoodFromSpec totalNrSites spectrum =
         otherCounts = totalNrSites - sum patternCounts
     in  ll + fromIntegral otherCounts * log (1.0 - sum patternProbs)
 
-computeFrequencySpectrum :: ModelSpec -> RareAlleleHistogram -> [Branch] -> Either T.Text Spectrum
-computeFrequencySpectrum modelSpec histogram modelBranchNames = do
+computeFrequencySpectrum :: ModelSpec -> CoreFunc -> RareAlleleHistogram -> [Branch] ->
+    Either T.Text Spectrum
+computeFrequencySpectrum modelSpec coreFunc histogram modelBranchNames = do
     assertErr "minFreq must be greater than 0" $ raMinAf histogram > 0
     let standardOrder = computeStandardOrder histogram
     -- scriptIO . putStrLn $
@@ -94,7 +97,7 @@ computeFrequencySpectrum modelSpec histogram modelBranchNames = do
     nVecModelMapped <-
         turnHistPatternIntoModelPattern (raNames histogram) modelBranchNames nVec
     patternProbs <- sequence $
-        parMap rdeepseq (getProb modelSpec nVecModelMapped) standardOrderModelMapped
+        parMap rdeepseq (coreFunc modelSpec nVecModelMapped) standardOrderModelMapped
     let patternCounts = [Map.findWithDefault 0 k (raCounts histogram) | k <- standardOrder]
         totalCounts = raTotalNrSites histogram
         patternFreqs = [fromIntegral c / fromIntegral totalCounts | c <- patternCounts]

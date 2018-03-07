@@ -47,6 +47,8 @@ data ModelSpec = ModelSpec {
     mEvents         :: [ModelEvent]
 } deriving (Show)
 
+type CoreFunc = ModelSpec -> [Int] -> [Int] -> Either Text Double
+
 makeJointStateSpace :: Int -> Int -> JointStateSpace
 makeJointStateSpace nrPop maxAf =
     let stateToId = genericStateToId maxAf

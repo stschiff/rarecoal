@@ -12,7 +12,7 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Rarecoal.Core, Rarecoal.MaxUtils,
+  exposed-modules:     Rarecoal.Core, Rarecoal.Core2, Rarecoal.MaxUtils,
                        Rarecoal.Utils, Rarecoal.StateSpace,
                        Rarecoal.ModelTemplate, Rarecoal.Core.Test, Rarecoal.StateSpace.Test,
                        Rarecoal.ModelTemplate.Test

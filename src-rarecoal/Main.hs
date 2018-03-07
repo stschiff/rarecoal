@@ -10,6 +10,8 @@ import           Rarecoal.ModelTemplate       (ModelOptions (..), ParamOptions(.
 import Rarecoal.Utils (GeneralOptions(..), HistogramOptions(..))
 import           SimCommand                   (SimCommandOpt (..),
                                                runSimCommand)
+import qualified Rarecoal.Core as Core
+import qualified Rarecoal.Core2 as Core2
 
 import           Control.Applicative          ((<|>))
 import           Control.Error         (runScript, scriptIO, errLn)
@@ -91,9 +93,11 @@ parseProbOpt = ProbOpt <$> parseGeneralOpts <*> parseModelOpts <*>
         \the first and two from the second population.")
 
 parseGeneralOpts :: OP.Parser GeneralOptions
-parseGeneralOpts = GeneralOptions <$> parseTheta <*> parseNrThreads <*>
+parseGeneralOpts = GeneralOptions <$> parseCoreFunc <*> parseTheta <*> parseNrThreads <*>
     parseNoShortcut <*> parseRegularization <*> parseN0 <*> parseLinGen <*> parseTmax
   where
+    parseCoreFunc = (\c -> if c then Core2.getProb else Core.getProb) <$>
+        OP.switch (OP.long "core2" <> OP.hidden <> OP.help "use the new Core2 algorithm (in beta)")
     parseTheta = OP.option OP.auto $ OP.long "theta" <>
         OP.hidden <> OP.metavar "FLOAT" <> OP.value 0.0005 <>
         OP.showDefault <> OP.help "set the scaled mutation rate. This is only \

@@ -92,9 +92,8 @@ propagateStates ms@(ModelState aVec bVec bVecTemp d t nonZeroStates stateSpace e
         (ModelEvent nextT _: rest) -> do
             let deltaT = nextT - currentT
             aOld <- V.freeze $ aVec
-            propagateD stateSpace nonZeroStates deltaT bVec
-            propagateA deltaT aVec
-            propagateB stateSpace nonZeroStates aOld aVec bVec bVecTemp
+            propagateA ms deltaT
+            propagateB ms aOld
             writeSTRef (msT ms) nextT
             performEvent ms
             propagateStates ms
@@ -142,17 +141,77 @@ singlePopMutBranchLength popSize nrA nrDerived =
         combFactor = chooseCont (nrA + fromIntegral nrDerived) nrDerived
     in  withCombinatorics / combFactor
 
-propagateD :: JointStateSpace -> STRef s [Int] -> Double -> STRef s Double -> ST s ()
-propagateD stateSpace nonZeroStates deltaT dRef =
-    let deltaD = undefined
-    modifySTRef dRef (+deltaD)
+propagateA :: ModelState s -> Double -> ST s ()
+propagateA ms deltaT = do
+    nrPop <- VM.length (msA ms)
+    forM_ [0 .. nrPop - 1] $ \k -> do
+        popSizeK <- VM.read (msPopSize ms) k
+        freezeStateK <- VM.read (msFreezeState ms) k
+        aK <- VM.read (msA ms) k
+        let newA = if freezeStateK || aK < 1.0 then aK else propagateSingleA deltaT popSizeK aK
+        VM.write (msA ms) k newA
 
-propagateA :: Double -> VecDoubM s -> ST s ()
-propagateA deltaT aVec = undefined
+propagateSingleA :: Double -> Double -> Double -> Double
+propagateSingleA deltaT popSize a0 =
+    1.0 / (1.0 + ((1.0 / a0) - 1.0) * exp (- 0.5 * deltaT / popSize))
 
-propagateB :: StateSpace -> STRef s [Int] -> VecDoub -> VecDoubM s -> VecDoubM s -> VecDoubM s -> 
-    ST s ()
-propagateB stateSpace nonZeroStates oldA newA oldB bTemp = undefined
+propagateB :: ModelState s -> VecDoub -> ST s ()
+propagateB ms aVecOld = do
+    let nrPop = _jsNrPop $ msStateSpace ms
+    nonZeroStateIds <- readSTRef (msNonZeroStates ms)
+    VM.set (msBtemp ms) 0.0
+    popSizeVec <- V.freeze $ msPopSize ms
+    aVec <- V.freeze (msA ms)
+    forM_ nonZeroStateIds $ \xId -> do
+        let xVecOld = _jsIdToState (msStateSpace ms) xId
+        prob <- VM.read (msB ms) xId
+        mutBranchInf = computeMutBranchInfForState xVecOld aVecOld popSizeVec
+        mutBranchSubtract <- forM nonZeroStateIds $ \xIdNew -> do
+            let xVec = _jsIdToState (msStateSpace ms) xIdNew
+                rFactor = computeRfactorVec xVec aVec xVecOld aVecOld
+            VM.modify bTemp xIdNew (\v -> v + rFactor * prob)
+            if mutBranchInf > 0.0
+            then return $ rFactor * computeMutBranchInfForState xVec aVecOld popSizeVec
+            else return 0.0
+        modifySTRef dRef (\v -> v + prob * (mutBranchInf - sum mutBranchSubtract))
+
+computeMutBranchInfForState :: JointState -> VecDoub -> VecDoub -> Double
+computeMutBranchInfForState xVec aVec popSize = 
+    let sumDerived = V.sum xVec
+        maxDerived = V.maximum xVec
+        maxIndex = V.maxIndex xVec
+    in  if sumDerived == maxDerived
+        then singlePopMutBranchLength (popSize V.! maxIndex) (aVec V.! maxIndex) sumDerived
+        else 0.0
+
+computeRfactorVec :: JointState -> VecDoub -> JointState -> VecDoub
+computeRfactorVec xVec aVec xVecOld aVecOld =
+    product . V.toList $ V.zipWith4 computeRfactorCont xVec aVec xVecOld aVecOld
+
+computeRfactorCont :: Int -> Double -> Int -> Double
+computeRfactorCont x a xP aP =
+    let a0 = floor a
+        a1 = a0 + 1
+        aP0 = floor aP
+        aP1 = aP0 + 1
+        vec11 = a1 - a
+        vec12 = a - a0
+        vec21 = aP1 - aP
+        vec22 = aP - aP0
+        mat11 = rFac x a0 xP aP0
+        mat12 = rFac x a0 xP aP1
+        mat21 = rFac x a1 xP aP0
+        mat22 = rFac x a1 xP aP1
+    in  vec11 * (mat11 * vec21 + mat12 * vec22) + vec12 * (mat21 * vec21 + mat22 * vec22)
+
+rFac :: Int -> Int -> Int -> Int
+rFac x a xP aP | x == xP && a == aP = 1
+               | xP < x || (aP - xP) < (a - x) = 0
+               | otherwise =
+                   term1 * rFac x a (xP - 1) aP + term2 * rFac x a xP (aP - 1)
+  where
+    term1 = fromIntegral (xP * (xP - 1)) / fromIntegral (aP * (aP - 1))
+    term2 = fromIntegral ((aP - xP) * (aP - xP - 1)) / fromIntegral (aP * (aP - 1))
         
 performEvent :: ModelState s -> ST s ()
 performEvent ms = do

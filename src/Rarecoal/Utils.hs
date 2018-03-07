@@ -6,6 +6,7 @@ module Rarecoal.Utils (computeAllConfigs, computeStandardOrder,
     chooseCont) where
 
 import SequenceFormats.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern, readHistogram)
+import Rarecoal.StateSpace (CoreFunc)
 
 import Control.Error
 import Control.Monad (when, forM, (>=>), forM_)
@@ -18,6 +19,7 @@ import Turtle (format, d, (%), w)
 type Branch = Text
 
 data GeneralOptions = GeneralOptions {
+    optCoreFunc :: CoreFunc
     optTheta :: Double,
     optNrThreads :: Int,
     optNoShortcut :: Bool,

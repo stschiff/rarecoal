@@ -22,6 +22,6 @@ runProb opts = do
     modelParams <- scriptIO $ makeParameterDict (prParamOpts opts)
     modelSpec <- tryRight $ instantiateModel (prGeneralOpts opts)
         modelTemplate modelParams
-
-    val <- tryRight $ getProb modelSpec (prNvec opts) (prKvec opts)
+    let coreFunc = optCoreFunc . prGeneralOpts $ opts
+    val <- tryRight $ coreFunc modelSpec (prNvec opts) (prKvec opts)
     scriptIO $ print val

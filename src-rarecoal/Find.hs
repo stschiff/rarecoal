@@ -8,6 +8,7 @@ import Rarecoal.Utils (loadHistogram, Branch)
 import Rarecoal.MaxUtils (computeLogLikelihood)
 import Rarecoal.ModelTemplate (getModelTemplate, makeParameterDict, ModelOptions(..), 
     instantiateModel, ParamOptions(..), ModelTemplate(..))
+import Rarecoal.StateSpace (CoreFunc)
 
 import Control.Error (Script, scriptIO, tryAssert, tryRight, tryJust)
 import Data.List (maximumBy, elemIndex)
@@ -52,9 +53,10 @@ runFind opts = do
             time <- getJoinTimes modelSpec' (fiDeltaTime opts) (fiMaxTime opts) (fiBranchAge opts)
                                   branch
             return (branch, time)
-    allLikelihoods <- sequence
-        [computeLogLikelihoodIO hist modelSpec' (mtBranchNames modelTemplate) k l t |
-         (k, t) <- allParamPairs]
+    allLikelihoods <- sequence $ do
+        (k, t) <- allParamPairs
+        return $ computeLogLikelihoodIO hist modelSpec' (optCoreFunc . fiGeneralOpts $ opts)
+            (mtBranchNames modelTemplate) k l t
     scriptIO $ writeResult (fiEvalPath opts) allParamPairs allLikelihoods
     let ((minBranch, minTime), minLL) = maximumBy (\(_, ll1) (_, ll2) -> ll1 `compare` ll2) $
                                         zip allParamPairs allLikelihoods
@@ -79,13 +81,13 @@ getJoinTimes modelSpec deltaT maxT branchAge k =
         leaveTimes = [t | ModelEvent t (Join _ l) <- mEvents modelSpec, k == l]
     in  if null leaveTimes then allTimes else filter (<head leaveTimes) allTimes
 
-computeLogLikelihoodIO :: RareAlleleHistogram -> ModelSpec -> [Branch] -> Int -> Int -> Double ->
-    Script Double
-computeLogLikelihoodIO hist modelSpec modelBranchNames k l t = do
+computeLogLikelihoodIO :: RareAlleleHistogram -> ModelSpec -> CoreFunc -> [Branch] -> Int -> Int -> 
+    Double -> Script Double
+computeLogLikelihoodIO hist modelSpec coreFunc modelBranchNames k l t = do
     let e = mEvents modelSpec
         newE = ModelEvent t (Join k l)
         modelSpec' = modelSpec {mEvents = newE : e}
-    ll <- tryRight $ computeLogLikelihood modelSpec' hist modelBranchNames
+    ll <- tryRight $ computeLogLikelihood modelSpec' coreFunc hist modelBranchNames
     scriptIO $ hPutStrLn stderr ("branch=" ++ show k ++ ", time=" ++ show t ++ ", ll=" ++ show ll)
     return ll
 
