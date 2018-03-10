@@ -1,17 +1,19 @@
 module Rarecoal.StateSpace.Test (tests, stateSpace, genPopIndex, genRestrictedIds, nrPops, maxAf, genStates) where
     
-import Rarecoal.StateSpace (JointStateSpace(..), makeJointStateSpace, JointState)
+import Rarecoal.StateSpace (JointStateSpace(..), makeJointStateSpace, JointState, fillUpStateSpace)
 
-import Control.Monad (replicateM)
+import Control.Monad (replicateM, forM_)
 import qualified Data.Vector.Unboxed as V
 import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.HUnit (testCase, Assertion, assertBool)
 import Test.Tasty.QuickCheck (testProperty)
 import Test.QuickCheck
 
 tests :: TestTree
-tests = testGroup "StateSpace Tests" [ testProperty "invariant: from id to state and back" prop_idToStateAndBack,
-                                       testProperty "invariant: from state to id and back" prop_stateToIdAndBack
-                                     ]
+tests = testGroup "StateSpace Tests" [
+    testProperty "invariant: from id to state and back" prop_idToStateAndBack,
+    testProperty "invariant: from state to id and back" prop_stateToIdAndBack,
+    testCase "fillStateSpace correct" assertCorrectFullStateSpace]
 
 genIds :: Gen Int
 genIds = choose (0, nrStates - 1)
@@ -57,3 +59,17 @@ genPopIndex = choose (0, nrPops - 1)
 genRestrictedIds :: Gen Int
 genRestrictedIds = genIds `suchThat` (\xId -> V.sum ((_jsIdToState stateSpace) xId) <= maxAf)
 
+assertCorrectFullStateSpace :: Assertion
+assertCorrectFullStateSpace = do
+    let allStates = fillUpStateSpace stateSpace . map (_jsStateToId stateSpace) $
+            [V.fromList [2,2,0,0,0], V.fromList [0,2,2,0,0]]
+    forM_ allStates $ \x -> do
+        assertBool ("failed for fillup-state " ++ show (_jsIdToState stateSpace x) ++
+            " which should is not in the predef-list") $ x `elem` xResults
+    forM_ xResults $ \x -> do
+        assertBool ("failed for predef state " ++ show (_jsIdToState stateSpace x) ++
+            " which should be in the fill-up list") $ x `elem` allStates
+  where
+    xResults = map (_jsStateToId stateSpace . V.fromList) $ [
+        [2,2,0,0,0], [1,2,0,0,0], [2,1,0,0,0], [1,1,0,0,0],
+        [0,2,2,0,0], [0,1,2,0,0], [0,2,1,0,0], [0,1,1,0,0]]

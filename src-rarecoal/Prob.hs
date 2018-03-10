@@ -1,7 +1,6 @@
 module Prob (runProb, ProbOpt(..)) where
 
 import Rarecoal.Utils (GeneralOptions(..), setNrProcessors)
-import Rarecoal.Core (getProb)
 import Rarecoal.ModelTemplate (ModelOptions(..), ParamOptions(..),
     getModelTemplate, makeParameterDict, instantiateModel)
 

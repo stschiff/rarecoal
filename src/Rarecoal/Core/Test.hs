@@ -1,8 +1,9 @@
 module Rarecoal.Core.Test (tests) where
 
-import Rarecoal.Core (ModelEvent(..), EventType(..), ModelSpec(..), popJoinA, popJoinB, getProb, popSplitA, popSplitB)
+import qualified Rarecoal.Core as C
+import qualified Rarecoal.Core2 as C2
 import Rarecoal.Utils (defaultTimes)
-import Rarecoal.StateSpace (JointStateSpace(..))
+import Rarecoal.StateSpace (JointStateSpace(..), ModelEvent(..), EventType(..), ModelSpec(..))
 import Rarecoal.StateSpace.Test (stateSpace, genPopIndex, genRestrictedIds, nrPops, maxAf, genStates)
 
 import Control.Monad (replicateM, forM_)
@@ -28,7 +29,8 @@ tests = testGroup "Core Tests" [
         prop_splitPopsB,
     testProperty "full split equals join for A" prop_fullSplitIsJoinForA,
     testProperty "full split equals join for B" prop_fullSplitIsJoinForB,
-    testProperty "total probabilities are all positive" prop_getProbTest,
+    testProperty "Core -> total probabilities are all positive" prop_getProbTest,
+    testProperty "Core2 -> total probabilities are all positive" prop_getProb2Test,
     testCase "testing consistency with previous versions"
         assertConsistentProbs]
 
@@ -39,7 +41,7 @@ prop_joinPopsA = forAll (suchThat gen (\(_, k, l) -> k /= l)) go
     go (aVec, k, l) =
         let aVecNew = runST $ do
                 aVecM <- V.thaw aVec
-                popJoinA aVecM k l
+                C.popJoinA aVecM k l
                 V.freeze aVecM
         in  abs (V.sum aVec - V.sum aVecNew) < 1.0e-12
 
@@ -64,7 +66,7 @@ prop_joinPopsB = forAll (suchThat gen (\(_, _, k, l) -> k /= l)) go
                 bVecM <- V.thaw bVec
                 bVecTempM <- VM.clone bVecM
                 nonZeroStatesRef <- newSTRef nonZeroStates
-                popJoinB bVecM bVecTempM nonZeroStatesRef stateSpace k l
+                C.popJoinB bVecM bVecTempM nonZeroStatesRef stateSpace k l
                 V.freeze bVecM
         in (abs (V.sum bVec - V.sum newBVec) < 1.0e-12)
 
@@ -75,7 +77,7 @@ prop_splitPopsA = forAll (suchThat gen (\(_, k, l, _) -> k /= l)) go
     go (aVec, k, l, m) =
         let aVecNew = runST $ do
                 aVecM <- V.thaw aVec
-                popSplitA aVecM k l m
+                C.popSplitA aVecM k l m
                 V.freeze aVecM
         in  abs (V.sum aVec - V.sum aVecNew) < 1.0e-12
 
@@ -89,7 +91,7 @@ prop_splitPopsB = forAll (suchThat gen (\(_, _, k, l, _) -> k /= l)) go
                 bVecM <- V.thaw bVec
                 bVecTempM <- VM.clone bVecM
                 nonZeroStatesRef <- newSTRef nonZeroStates
-                popSplitB bVecM bVecTempM nonZeroStatesRef stateSpace k l m
+                C.popSplitB bVecM bVecTempM nonZeroStatesRef stateSpace k l m
                 V.freeze bVecM
         in (abs (V.sum bVec - V.sum newBVec) < 1.0e-12)
 
@@ -109,7 +111,7 @@ prop_fullSplitIsJoinForB = forAll (suchThat gen (\(_, _, k, l) -> k /= l)) go
             nonZeroStatesRef <- newSTRef nonZeroStates
             func bVecM bVecTempM nonZeroStatesRef stateSpace k l
             V.freeze bVecM
-        twoFuncs = [popJoinB, \b bT nz s k' l' -> popSplitB b bT nz s k' l' 1.0]
+        twoFuncs = [C.popJoinB, \b bT nz s k' l' -> C.popSplitB b bT nz s k' l' 1.0]
 
 prop_fullSplitIsJoinForA :: Property
 prop_fullSplitIsJoinForA = forAll (suchThat gen (\(_, k, l) -> k /= l)) go
@@ -124,7 +126,7 @@ prop_fullSplitIsJoinForA = forAll (suchThat gen (\(_, k, l) -> k /= l)) go
             aVecM <- V.thaw aVec
             func aVecM k l
             V.freeze aVecM
-        twoFuncs = [popJoinA, \b k' l' -> popSplitA b k' l' 1.0]
+        twoFuncs = [C.popJoinA, \b k' l' -> C.popSplitA b k' l' 1.0]
 
 makeTestModelSpec :: ModelSpec
 makeTestModelSpec = ModelSpec 5 defaultTimes 0.0005 [1,1,1,1,1] 10 False events
@@ -139,7 +141,18 @@ prop_getProbTest = forAll genInput go
   where
     genInput = genStates `suchThat` (\v -> V.sum v > 0 && V.sum v <= maxAf)
     go state = get5popProb (V.toList state)
-    get5popProb config = case getProb modelSpec nVec config of
+    get5popProb config = case C.getProb modelSpec nVec config of
+        Left _ -> False
+        Right res -> res >= 0.0
+    modelSpec = makeTestModelSpec
+    nVec = [100, 100, 100, 100, 100]
+
+prop_getProb2Test :: Property
+prop_getProb2Test = forAll genInput go
+  where
+    genInput = genStates `suchThat` (\v -> V.sum v > 0 && V.sum v <= maxAf)
+    go state = get5popProb (V.toList state)
+    get5popProb config = case C2.getProb modelSpec nVec config of
         Left _ -> False
         Right res -> res >= 0.0
     modelSpec = makeTestModelSpec
@@ -148,7 +161,7 @@ prop_getProbTest = forAll genInput go
 assertConsistentProbs :: Assertion
 assertConsistentProbs =
     forM_ resultData $ \(state, previous) -> do
-        let current = case getProb modelSpec nVec state of
+        let current = case C.getProb modelSpec nVec state of
                 Left _ -> -1.0
                 Right res -> res
         let msg = "failed for state " ++ show state ++ ": " ++ show previous ++ " (previous) vs. " ++ show current ++ " (current)"

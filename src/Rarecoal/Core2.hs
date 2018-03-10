@@ -1,30 +1,32 @@
-{-# LANGUAGE OverloadedStrings #-}
-module Rarecoal.Core (getProb, validateModel,
+{-# LANGUAGE OverloadedStrings, RankNTypes, BangPatterns #-}
+module Rarecoal.Core2 (getProb, validateModel,
     choose, ModelEvent(..), EventType(..), ModelSpec(..), popJoinA,
     popJoinB, popSplitA, popSplitB, getRegularizationPenalty) where
 
-import           Rarecoal.StateSpace         (JointStateSpace (..),
-                                              getNonZeroStates,
-                                              makeJointStateSpace, ModelState(..), ModelEvent(..),
-                                              validateModel, getNrOfPops, getRegularizationPenalty,
-                                              EventType(..), ModelSpec(..), makeInitModelState)
+import           Rarecoal.StateSpace         (JointStateSpace (..), JointState, 
+                                              fillUpStateSpace,
+                                              makeJointStateSpace, ModelEvent(..),
+                                              validateModel, getRegularizationPenalty,
+                                              EventType(..), ModelSpec(..))
 import Rarecoal.Utils (choose, chooseCont)
 import           Control.Error.Safe          (assertErr)
 import           Control.Exception.Base      (assert)
-import           Control.Monad               (filterM, foldM, forM, forM_, when,
-                                              (>=>))
+import Data.Foldable (foldl')
+import           Control.Monad               (filterM, forM, forM_, when, (>=>))
 import           Control.Monad.ST            (ST, runST)
-import           Data.List                   (nub)
+import           Data.List                   (nub, sortBy)
 import           Data.STRef                  (STRef, modifySTRef, newSTRef,
                                               readSTRef, writeSTRef)
+import Data.MemoCombinators (wrap, integral)
+-- import Data.MemoTrie (memo3, mup)
 import qualified Data.Text as T
 import Turtle (format, (%), w)
 import qualified Data.Vector.Unboxed         as V
 import qualified Data.Vector.Unboxed.Mutable as VM
--- import Debug.Trace (trace)
+import Debug.Trace (trace)
 
 type VecDoub = V.Vector Double
-type VecDoubM s = VM.Vector s Double
+type VecDoubM s = VM.MVector s Double
 
 data ModelState s = ModelState {
     msA              :: VecDoubM s,
@@ -48,7 +50,7 @@ getProb modelSpec nVec config = do
     let dd = runST $ do
             ms <- makeInitState modelSpec nVec config
             propagateStates ms
-            readSTRef (_csD cs)
+            readSTRef (msD ms)
         combFac = product $ zipWith choose nVec config
         discoveryRateFactor =
             product [if c > 0 then d' else 1.0 |
@@ -61,7 +63,7 @@ getProb modelSpec nVec config = do
 
 makeInitState :: ModelSpec -> [Int] -> [Int] -> ST s (ModelState s)
 makeInitState modelSpec nVec config = do
-    a <- V.thaw . V.fromList $ nVec
+    a <- V.thaw . V.map fromIntegral . V.fromList $ nVec
     let initialState = V.fromList config
         maxAf = sum config
         nrPop = length nVec
@@ -72,8 +74,7 @@ makeInitState modelSpec nVec config = do
     -- trace (show ("makeInitCoalState", _jsNrStates jointStateSpace, initialState, initialId)) $
     --        return ()
     VM.write b initialId 1.0
-    nonZeroStates <- newSTRef (getNonZeroStates jointStateSpace [initialId])
-    bTemp <- VM.new (_jsNrStates jointStateSpace)
+    nonZeroStates <- newSTRef [initialId]
     dd <- newSTRef 0.0
     t <- newSTRef 0.0
     sortedEvents <- newSTRef $
@@ -81,27 +82,43 @@ makeInitState modelSpec nVec config = do
                 time1 `compare` time2) (mEvents modelSpec)
     popSize <- VM.replicate nrPop 1.0
     freezeState <- VM.replicate nrPop False
-    return $ ModelState a b bTemp dd t nonZeroStates jointStateSpace eventQ popSize freezeState
+    return $ ModelState a b bTemp dd t nonZeroStates jointStateSpace sortedEvents popSize 
+        freezeState
 
 propagateStates :: ModelState s -> ST s ()
-propagateStates ms@(ModelState aVec bVec bVecTemp d t nonZeroStates stateSpace eventQ _ _) = do
-    currentT <- readSTRef t
-    eq <- readSTRef eventQ
+propagateStates ms = do
+    currentT <- readSTRef (msT ms)
+    eq <- readSTRef (msEventQueue ms)
     case eq of
         [] -> propagateToInfinity ms
-        (ModelEvent nextT _: rest) -> do
+        (ModelEvent nextT _: _) -> do
             let deltaT = nextT - currentT
-            aOld <- V.freeze $ aVec
-            propagateA ms deltaT
-            propagateB ms aOld
-            writeSTRef (msT ms) nextT
+            when (deltaT > 0) $ do
+                -- reportState "Before Prop" ms
+                aOld <- V.freeze (msA ms)
+                propagateA ms deltaT
+                propagateB ms aOld
+                writeSTRef (msT ms) nextT
+                -- reportState "After Prop" ms
             performEvent ms
+            -- reportState "After event" ms
             propagateStates ms
+
+reportState :: String -> ModelState s -> ST s ()
+reportState name ms = do
+    aVec <- V.freeze (msA ms)
+    t <- readSTRef (msT ms)
+    d <- readSTRef (msD ms)
+    nonZeroStates <- readSTRef (msNonZeroStates ms)
+    probs <- mapM (\xId -> VM.read (msB ms) xId) nonZeroStates
+    let xs = [_jsIdToState (msStateSpace ms) xId | xId <- nonZeroStates]
+    trace (name ++ ": t=" ++ show t ++ "; d=" ++ show d ++
+        "; aVec=" ++ show aVec ++ "; b=" ++ show (zip xs probs)) (return ())
 
 propagateToInfinity :: ModelState s -> ST s ()
 propagateToInfinity ms = do
     allHaveCoalesced <- checkIfAllHaveCoalesced ms
-    when (not $ allHaveCoalesced ms) $ error "model specification results in uncoalesced lineages. \
+    when (not allHaveCoalesced) $ error "model specification results in uncoalesced lineages. \
         \Check whether all branches join at some point"
     let stateSpace = msStateSpace ms
         idToState = _jsIdToState stateSpace
@@ -111,11 +128,11 @@ propagateToInfinity ms = do
     popSize <- VM.read (msPopSize ms) popIndex
     nonZeroIds <- readSTRef (msNonZeroStates ms)
     let nonZeroStates = map idToState nonZeroIds
-    probs <- mapM (VM.read (msB cs)) nonZeroIds
+    probs <- mapM (VM.read (msB ms)) nonZeroIds
     let additionalBranchLength =
             sum [prob * goState popSize nrA state | (state, prob) <- zip nonZeroStates probs]
-    -- trace ("shortcut: " ++ show additionalBranchLength ++ "; " ++ show nrA ++ "; " ++
-    --        show (zip nonZeroStates probs)) (return ())
+    -- trace ("prob " ++ show probs) $ return ()
+    -- trace ("additional Branch Length " ++ show additionalBranchLength) $ return ()
     VM.set (msB ms) 0.0
     modifySTRef (msD ms) (+additionalBranchLength)
     VM.write (msA ms) popIndex 1.0
@@ -130,7 +147,7 @@ checkIfAllHaveCoalesced ms = do
     let idToState = _jsIdToState . msStateSpace $ ms
         allDerivedHaveCoalesced =
             and [(V.length . V.filter (>0)) (idToState xId) == 1 | xId <- nonZeroStates]
-    a <- V.freeze $ msA cs
+    a <- V.freeze $ msA ms
     let allAncestralHaveCoalesced = (V.length . V.filter (>0.0)) a == 1
     e <- readSTRef $ msEventQueue ms
     return $ allDerivedHaveCoalesced && allAncestralHaveCoalesced && null e
@@ -138,17 +155,18 @@ checkIfAllHaveCoalesced ms = do
 singlePopMutBranchLength :: Double -> Double -> Int -> Double
 singlePopMutBranchLength popSize nrA nrDerived =
     let withCombinatorics = 2.0 * popSize / fromIntegral nrDerived
-        combFactor = chooseCont (nrA + fromIntegral nrDerived) nrDerived
+        combFactor = chooseCont nrA nrDerived
     in  withCombinatorics / combFactor
 
 propagateA :: ModelState s -> Double -> ST s ()
 propagateA ms deltaT = do
-    nrPop <- VM.length (msA ms)
+    let nrPop = VM.length (msA ms)
     forM_ [0 .. nrPop - 1] $ \k -> do
         popSizeK <- VM.read (msPopSize ms) k
         freezeStateK <- VM.read (msFreezeState ms) k
         aK <- VM.read (msA ms) k
         let newA = if freezeStateK || aK < 1.0 then aK else propagateSingleA deltaT popSizeK aK
+        -- trace ("newA=" ++ show newA ++ ", deltaT=" ++ show deltaT) $ return ()
         VM.write (msA ms) k newA
 
 propagateSingleA :: Double -> Double -> Double -> Double
@@ -157,23 +175,29 @@ propagateSingleA deltaT popSize a0 =
 
 propagateB :: ModelState s -> VecDoub -> ST s ()
 propagateB ms aVecOld = do
-    let nrPop = _jsNrPop $ msStateSpace ms
     nonZeroStateIds <- readSTRef (msNonZeroStates ms)
     VM.set (msBtemp ms) 0.0
     popSizeVec <- V.freeze $ msPopSize ms
     aVec <- V.freeze (msA ms)
-    forM_ nonZeroStateIds $ \xId -> do
+    -- trace ("aVecOld=" ++ show aVecOld ++ ", aVec=" ++ show aVec) $ return ()
+    newNonZeroStates <- fmap concat . forM nonZeroStateIds $ \xId -> do
         let xVecOld = _jsIdToState (msStateSpace ms) xId
         prob <- VM.read (msB ms) xId
-        mutBranchInf = computeMutBranchInfForState xVecOld aVecOld popSizeVec
-        mutBranchSubtract <- forM nonZeroStateIds $ \xIdNew -> do
-            let xVec = _jsIdToState (msStateSpace ms) xIdNew
-                rFactor = computeRfactorVec xVec aVec xVecOld aVecOld
-            VM.modify bTemp xIdNew (\v -> v + rFactor * prob)
-            if mutBranchInf > 0.0
-            then return $ rFactor * computeMutBranchInfForState xVec aVecOld popSizeVec
-            else return 0.0
-        modifySTRef dRef (\v -> v + prob * (mutBranchInf - sum mutBranchSubtract))
+        if (prob > 0.0) then do
+            let mutBranchInf = computeMutBranchInfForState xVecOld aVecOld popSizeVec
+                allTargetStates = fillUpStateSpace (msStateSpace ms) [xId]
+            mutBranchSubtract <- forM allTargetStates $ \xIdNew -> do
+                let xVec = _jsIdToState (msStateSpace ms) xIdNew
+                    rFactor = computeRfactorVec xVec aVec xVecOld aVecOld
+                VM.modify (msBtemp ms) (\v -> v + rFactor * prob) xIdNew 
+                if mutBranchInf > 0.0
+                then return $ rFactor * computeMutBranchInfForState xVec aVecOld popSizeVec
+                else return 0.0
+            modifySTRef (msD ms) (\v -> v + prob * (mutBranchInf - sum mutBranchSubtract))
+            return allTargetStates
+        else return []
+    writeSTRef (msNonZeroStates ms) (nub newNonZeroStates)
+    VM.copy (msB ms) (msBtemp ms) 
 
 computeMutBranchInfForState :: JointState -> VecDoub -> VecDoub -> Double
 computeMutBranchInfForState xVec aVec popSize = 
@@ -184,35 +208,43 @@ computeMutBranchInfForState xVec aVec popSize =
         then singlePopMutBranchLength (popSize V.! maxIndex) (aVec V.! maxIndex) sumDerived
         else 0.0
 
-computeRfactorVec :: JointState -> VecDoub -> JointState -> VecDoub
+computeRfactorVec :: JointState -> VecDoub -> JointState -> VecDoub -> Double
 computeRfactorVec xVec aVec xVecOld aVecOld =
     product . V.toList $ V.zipWith4 computeRfactorCont xVec aVec xVecOld aVecOld
 
-computeRfactorCont :: Int -> Double -> Int -> Double
-computeRfactorCont x a xP aP =
+computeRfactorCont :: Int -> Double -> Int -> Double -> Double
+computeRfactorCont x a xP aP = if aP < 1 then 1.0 else
     let a0 = floor a
         a1 = a0 + 1
         aP0 = floor aP
         aP1 = aP0 + 1
-        vec11 = a1 - a
-        vec12 = a - a0
-        vec21 = aP1 - aP
-        vec22 = aP - aP0
+        vec11 = fromIntegral a1 - a
+        vec12 = a - fromIntegral a0
+        vec21 = fromIntegral aP1 - aP
+        vec22 = aP - fromIntegral aP0
         mat11 = rFac x a0 xP aP0
         mat12 = rFac x a0 xP aP1
         mat21 = rFac x a1 xP aP0
         mat22 = rFac x a1 xP aP1
     in  vec11 * (mat11 * vec21 + mat12 * vec22) + vec12 * (mat21 * vec21 + mat22 * vec22)
 
-rFac :: Int -> Int -> Int -> Int
-rFac x a xP aP | x == xP && a == aP = 1
-               | xP < x || (aP - xP) < (a - x) = 0
-               | otherwise =
-                   term1 * rFac x a (xP - 1) aP + term2 * rFac x a xP (aP - 1)
+rFac :: Int -> Int -> Int -> Int -> Double
+rFac !x !a !xP !aP | x == xP && a == aP = 1
+                   | xP < x || (aP - xP) < (a - x) = 0
+                   | otherwise = term1 * rFac x a (xP - 1) (aP - 1) + term2 * rFac x a xP (aP - 1)
   where
     term1 = fromIntegral (xP * (xP - 1)) / fromIntegral (aP * (aP - 1))
     term2 = fromIntegral ((aP - xP) * (aP - xP - 1)) / fromIntegral (aP * (aP - 1))
-        
+
+-- rFacMemo :: Int -> Int -> Int -> Int -> Double
+-- rFacMemo x a xP aP = rFacMemoT (x, xP, a, aP)
+
+-- rFacMemoT :: (Int, Int, Int, Int) -> Double
+-- rFacMemoT = wrap intToTuple tupleToInt integral
+--   where
+--     intToTuple i =
+--     tupleToInt (x', a', xP', aP') = x'
+
 performEvent :: ModelState s -> ST s ()
 performEvent ms = do
     events <- readSTRef (msEventQueue ms)
@@ -225,7 +257,7 @@ performEvent ms = do
             popJoinB (msB ms) (msBtemp ms) (msNonZeroStates ms) (msStateSpace ms) k l
         Split k l m -> do
             popSplitA (msA ms) k l m
-            popSplitB (msB ms) (msNonZeroStates ms) (msStateSpace ms) k l m
+            popSplitB (msB ms) (msBtemp ms) (msNonZeroStates ms) (msStateSpace ms) k l m
         SetPopSize k p -> VM.write (msPopSize ms) k p
         SetFreeze k b -> VM.write (msFreezeState ms) k b
     writeSTRef (msEventQueue ms) $ tail events
@@ -252,7 +284,7 @@ popJoinB bVec bVecTemp nonZeroStateRef stateSpace k l = do
         VM.write bVecTemp xId' (val + oldProb)
         return xId'
     VM.copy bVec bVecTemp
-    writeSTRef nonZeroStateRef $ getNonZeroStates stateSpace (nub newNonZeroStateIds)
+    writeSTRef nonZeroStateRef (nub newNonZeroStateIds)
 
 popSplitA :: VecDoubM s -> Int -> Int -> Double -> ST s ()
 popSplitA aVec k l m = do
@@ -280,5 +312,4 @@ popSplitB bVec bVecTemp nonZeroStateRef stateSpace k l m = do
             return xId'
     VM.copy bVec bVecTemp
     filteredNonZeroStates <- filterM (VM.read bVec >=> (\x -> return $ x>0.0)) newNonZeroStateIds
-    writeSTRef nonZeroStateRef $ getNonZeroStates stateSpace (nub filteredNonZeroStates)
-
+    writeSTRef nonZeroStateRef (nub filteredNonZeroStates)

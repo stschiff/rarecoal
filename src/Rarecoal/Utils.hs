@@ -19,7 +19,7 @@ import Turtle (format, d, (%), w)
 type Branch = Text
 
 data GeneralOptions = GeneralOptions {
-    optCoreFunc :: CoreFunc
+    optCoreFunc :: CoreFunc,
     optTheta :: Double,
     optNrThreads :: Int,
     optNoShortcut :: Bool,

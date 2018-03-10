@@ -51,7 +51,8 @@ runMaxl opts = do
     let finalModelParams = [(n, r) | ((n, _), r) <- zip modelParams (V.toList minResult)]
     finalModelSpec <- tryRight $ instantiateModel (maGeneralOpts opts) modelTemplate 
         finalModelParams
-    finalSpectrum <- tryRight $ computeFrequencySpectrum finalModelSpec hist modelBranchNames
+    finalSpectrum <- tryRight $ computeFrequencySpectrum finalModelSpec
+        (optCoreFunc . maGeneralOpts $ opts) hist modelBranchNames
     scriptIO $ do
         writeFullFitTable outFullFitTableFN finalSpectrum
         writeSummaryFitTable outSummaryTableFN finalSpectrum hist

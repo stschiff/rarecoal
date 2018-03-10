@@ -3,7 +3,7 @@ module Rarecoal.Core (getProb, ModelEvent(..), EventType(..), ModelSpec(..), pop
     popJoinB, popSplitA, popSplitB) where
 
 import           Rarecoal.StateSpace         (JointStateSpace (..),
-                                              getNonZeroStates,
+                                              fillUpStateSpace,
                                               makeJointStateSpace, ModelEvent(..),
                                               validateModel,
                                               EventType(..), ModelSpec(..))
@@ -74,7 +74,7 @@ makeInitCoalState nVec config = do
     -- trace (show ("makeInitCoalState", _jsNrStates jointStateSpace, initialState, initialId)) $
     --        return ()
     VM.write b initialId 1.0
-    nonZeroStates <- newSTRef (getNonZeroStates jointStateSpace [initialId])
+    nonZeroStates <- newSTRef (fillUpStateSpace jointStateSpace [initialId])
     bTemp <- VM.new (_jsNrStates jointStateSpace)
     dd <- newSTRef 0.0
     return $ CoalState a b bTemp nonZeroStates dd jointStateSpace
@@ -195,7 +195,7 @@ popJoinB bVec bVecTemp nonZeroStateRef stateSpace k l = do
         VM.write bVecTemp xId' (val + oldProb)
         return xId'
     VM.copy bVec bVecTemp
-    writeSTRef nonZeroStateRef $ getNonZeroStates stateSpace (nub newNonZeroStateIds)
+    writeSTRef nonZeroStateRef $ fillUpStateSpace stateSpace (nub newNonZeroStateIds)
 
 popSplit :: CoalState s -> Int -> Int -> Double -> ST s ()
 popSplit cs k l m = do
@@ -228,7 +228,7 @@ popSplitB bVec bVecTemp nonZeroStateRef stateSpace k l m = do
             return xId'
     VM.copy bVec bVecTemp
     filteredNonZeroStates <- filterM (VM.read bVec >=> (\x -> return $ x>0.0)) newNonZeroStateIds
-    writeSTRef nonZeroStateRef $ getNonZeroStates stateSpace (nub filteredNonZeroStates)
+    writeSTRef nonZeroStateRef $ fillUpStateSpace stateSpace (nub filteredNonZeroStates)
 
 updateCoalState :: ModelState s -> CoalState s -> Double -> ST s ()
 updateCoalState ms cs deltaT = do

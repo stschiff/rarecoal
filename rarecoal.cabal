@@ -20,7 +20,7 @@ library
   build-depends:       base, containers, errors, text, attoparsec, pipes-text,
                        transformers, turtle, parallel, foldl,
                        pipes-attoparsec, vector, data-memocombinators, tasty, tasty-quickcheck, parsec, parsec3-numbers,
-                       QuickCheck, split, MissingH, tasty-hunit, mtl, sequence-formats
+                       QuickCheck, split, MissingH, tasty-hunit, mtl, sequence-formats, MemoTrie
   default-language:    Haskell2010
   ghc-options:         -O
 
@@ -31,13 +31,13 @@ Test-Suite rarecoalTest
   build-depends:       base, rarecoal, tasty, vector
   default-language:    Haskell2010
 
--- Benchmark coreBench
---   type:                exitcode-stdio-1.0
---   main-is:             Main.hs
---   hs-source-dirs:      src-bench
---   build-depends:       base, rarecoal, criterion
---   default-language:    Haskell2010
---   ghc-options:         -O -with-rtsopts=-A200m
+Benchmark coreBench
+  type:                exitcode-stdio-1.0
+  main-is:             Main.hs
+  hs-source-dirs:      src-bench
+  build-depends:       base, rarecoal, criterion
+  default-language:    Haskell2010
+  ghc-options:         -O -with-rtsopts=-A200m
 
 executable rarecoal
   main-is:             Main.hs

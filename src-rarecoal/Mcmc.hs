@@ -79,7 +79,8 @@ runMcmc opts = do
     let finalModelParams = [(n, r) | ((n, _), r) <- zip modelParams (V.toList minPoint)]
     finalModelSpec <- tryRight $ instantiateModel (mcGeneralOpts opts) modelTemplate 
         finalModelParams
-    finalSpectrum <- tryRight $ computeFrequencySpectrum finalModelSpec hist modelBranchNames
+    finalSpectrum <- tryRight $ computeFrequencySpectrum finalModelSpec
+        (optCoreFunc . mcGeneralOpts $ opts) hist modelBranchNames
     scriptIO $ do
         writeFullFitTable outFullFitTableFN finalSpectrum
         writeSummaryFitTable outSummaryTableFN finalSpectrum hist
@@ -112,7 +113,7 @@ mcmcCycle posterior = do
     mapM_ (updateMCMC posterior) order
     newVal <- gets mcmcCurrentValue
     modify (\s -> s {mcmcNrCycles = c + 1, mcmcScoreList = newVal:scoreValues})
-    -- liftIO (infoM "rarecoal" $ showStateLog state)
+    liftIO (errLn . T.pack $ showStateLog state)
     when ((c + 1) `mod` 10 == 0) $ do
         liftIO (errLn . T.pack $ showStateLog state)
         forM_ [0..k-1] adaptStepWidths
