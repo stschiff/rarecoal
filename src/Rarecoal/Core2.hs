@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings, RankNTypes, BangPatterns #-}
 module Rarecoal.Core2 (getProb, validateModel,
     choose, ModelEvent(..), EventType(..), ModelSpec(..), popJoinA,
+    -- intToTuple, tupleToInt, getLeftMostDigitWithBase, rFacT, rFacMemoT,
     popJoinB, popSplitA, popSplitB, getRegularizationPenalty) where
 
 import           Rarecoal.StateSpace         (JointStateSpace (..), JointState, 
@@ -11,19 +12,17 @@ import           Rarecoal.StateSpace         (JointStateSpace (..), JointState,
 import Rarecoal.Utils (choose, chooseCont)
 import           Control.Error.Safe          (assertErr)
 import           Control.Exception.Base      (assert)
-import Data.Foldable (foldl')
 import           Control.Monad               (filterM, forM, forM_, when, (>=>))
 import           Control.Monad.ST            (ST, runST)
 import           Data.List                   (nub, sortBy)
+import Data.MemoCombinators (wrap, integral, Memo)
 import           Data.STRef                  (STRef, modifySTRef, newSTRef,
                                               readSTRef, writeSTRef)
-import Data.MemoCombinators (wrap, integral)
--- import Data.MemoTrie (memo3, mup)
 import qualified Data.Text as T
+-- import Debug.Trace (trace)
 import Turtle (format, (%), w)
 import qualified Data.Vector.Unboxed         as V
 import qualified Data.Vector.Unboxed.Mutable as VM
-import Debug.Trace (trace)
 
 type VecDoub = V.Vector Double
 type VecDoubM s = VM.MVector s Double
@@ -104,16 +103,16 @@ propagateStates ms = do
             -- reportState "After event" ms
             propagateStates ms
 
-reportState :: String -> ModelState s -> ST s ()
-reportState name ms = do
-    aVec <- V.freeze (msA ms)
-    t <- readSTRef (msT ms)
-    d <- readSTRef (msD ms)
-    nonZeroStates <- readSTRef (msNonZeroStates ms)
-    probs <- mapM (\xId -> VM.read (msB ms) xId) nonZeroStates
-    let xs = [_jsIdToState (msStateSpace ms) xId | xId <- nonZeroStates]
-    trace (name ++ ": t=" ++ show t ++ "; d=" ++ show d ++
-        "; aVec=" ++ show aVec ++ "; b=" ++ show (zip xs probs)) (return ())
+-- reportState :: String -> ModelState s -> ST s ()
+-- reportState name ms = do
+--     aVec <- V.freeze (msA ms)
+--     t <- readSTRef (msT ms)
+--     d <- readSTRef (msD ms)
+--     nonZeroStates <- readSTRef (msNonZeroStates ms)
+--     probs <- mapM (\xId -> VM.read (msB ms) xId) nonZeroStates
+--     let xs = [_jsIdToState (msStateSpace ms) xId | xId <- nonZeroStates]
+--     trace (name ++ ": t=" ++ show t ++ "; d=" ++ show d ++
+--         "; aVec=" ++ show aVec ++ "; b=" ++ show (zip xs probs)) (return ())
 
 propagateToInfinity :: ModelState s -> ST s ()
 propagateToInfinity ms = do
@@ -191,11 +190,11 @@ propagateB ms aVecOld = do
                     rFactor = computeRfactorVec xVec aVec xVecOld aVecOld
                 VM.modify (msBtemp ms) (\v -> v + rFactor * prob) xIdNew 
                 if mutBranchInf > 0.0
-                then return $ rFactor * computeMutBranchInfForState xVec aVecOld popSizeVec
+                then return $ rFactor * computeMutBranchInfForState xVec aVec popSizeVec
                 else return 0.0
-            modifySTRef (msD ms) (\v -> v + prob * (mutBranchInf - sum mutBranchSubtract))
+            modifySTRef (msD ms) (\v -> v + prob * (max (mutBranchInf - sum mutBranchSubtract) 0))
             return allTargetStates
-        else return []
+        else return [] -- this should never be the case, actually.
     writeSTRef (msNonZeroStates ms) (nub newNonZeroStates)
     VM.copy (msB ms) (msBtemp ms) 
 
@@ -228,6 +227,34 @@ computeRfactorCont x a xP aP = if aP < 1 then 1.0 else
         mat22 = rFac x a1 xP aP1
     in  vec11 * (mat11 * vec21 + mat12 * vec22) + vec12 * (mat21 * vec21 + mat22 * vec22)
 
+-- rFacMemoT :: (Int, Int, Int, Int) -> Double
+-- rFacMemoT = wrapTupleMemo rFacT
+--
+-- wrapTupleMemo :: Memo (Int, Int, Int, Int)
+-- wrapTupleMemo = wrap intToTuple tupleToInt integral
+--
+-- intToTuple :: Int -> (Int, Int, Int, Int)
+-- intToTuple num =
+--     let (x, rest3) = getLeftMostDigitWithBase base4 num
+--         (a, rest2) = getLeftMostDigitWithBase base3 rest3
+--         (xP, rest1) = getLeftMostDigitWithBase base2 rest2
+--         (aP, _) = getLeftMostDigitWithBase base1 rest1
+--     in  (x, a, xP, aP)
+-- tupleToInt :: (Int, Int, Int, Int) -> Int
+-- tupleToInt (x, a, xP, aP) = x * base4 + a * base3 + xP * base2 + aP * base1
+-- base4 = base3 * (maxA + 1)
+-- base3 = base2 * (maxX + 1)
+-- base2 = base1 * (maxA + 1)
+-- base1 = 1
+-- maxX = 4
+-- maxA = 500
+--
+-- getLeftMostDigitWithBase :: Int -> Int -> (Int, Int)
+-- getLeftMostDigitWithBase base x = (x `div` base, x `mod` base)
+--
+-- rFacT :: (Int, Int, Int, Int) -> Double
+-- rFacT (!x, !a, !xP, !aP) = rFac x a xP aP
+
 rFac :: Int -> Int -> Int -> Int -> Double
 rFac !x !a !xP !aP | x == xP && a == aP = 1
                    | xP < x || (aP - xP) < (a - x) = 0
@@ -235,15 +262,6 @@ rFac !x !a !xP !aP | x == xP && a == aP = 1
   where
     term1 = fromIntegral (xP * (xP - 1)) / fromIntegral (aP * (aP - 1))
     term2 = fromIntegral ((aP - xP) * (aP - xP - 1)) / fromIntegral (aP * (aP - 1))
-
--- rFacMemo :: Int -> Int -> Int -> Int -> Double
--- rFacMemo x a xP aP = rFacMemoT (x, xP, a, aP)
-
--- rFacMemoT :: (Int, Int, Int, Int) -> Double
--- rFacMemoT = wrap intToTuple tupleToInt integral
---   where
---     intToTuple i =
---     tupleToInt (x', a', xP', aP') = x'
 
 performEvent :: ModelState s -> ST s ()
 performEvent ms = do

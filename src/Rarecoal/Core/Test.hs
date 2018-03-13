@@ -31,8 +31,11 @@ tests = testGroup "Core Tests" [
     testProperty "full split equals join for B" prop_fullSplitIsJoinForB,
     testProperty "Core -> total probabilities are all positive" prop_getProbTest,
     testProperty "Core2 -> total probabilities are all positive" prop_getProb2Test,
+    -- testProperty "Core2 -> tupleWrapper tests" prop_rFacTupleTest,
     testCase "testing consistency with previous versions"
-        assertConsistentProbs]
+        assertConsistentProbs,
+    testCase "testing approximate consistency with previous versions via Core2"
+        assertConsistentProbsWithCore2]
 
 prop_joinPopsA :: Property
 prop_joinPopsA = forAll (suchThat gen (\(_, k, l) -> k /= l)) go
@@ -158,13 +161,22 @@ prop_getProb2Test = forAll genInput go
     modelSpec = makeTestModelSpec
     nVec = [100, 100, 100, 100, 100]
 
+-- prop_rFacTupleTest :: Property
+-- prop_rFacTupleTest = forAll genInput $ \t -> C2.rFacT t == C2.rFacMemoT t
+--   where
+--     genInput = genRawInput `suchThat` (\(x, a, xP, aP) -> x <= xP && a <= aP)
+--     genRawInput = (,,,) <$> genX <*> genA <*> genX <*> genA
+--     genX = choose (1, 4)
+--     genA = choose (1, 200)
+
 assertConsistentProbs :: Assertion
 assertConsistentProbs =
     forM_ resultData $ \(state, previous) -> do
         let current = case C.getProb modelSpec nVec state of
                 Left _ -> -1.0
                 Right res -> res
-        let msg = "failed for state " ++ show state ++ ": " ++ show previous ++ " (previous) vs. " ++ show current ++ " (current)"
+        let msg = "failed for state " ++ show state ++ ": " ++ show previous ++
+                " (previous) vs. " ++ show current ++ " (current)"
         assertBool msg $ (abs (previous - current) / previous) < 1.0e-8
   where
     resultData = [ ([0,1,2,0,1], 2.009581497800885e-6),
@@ -176,5 +188,22 @@ assertConsistentProbs =
     modelSpec = makeTestModelSpec
     nVec = [100, 100, 100, 100, 100]
 
--- running prob with this modelSpec
--- rarecoal prob -j 0.0025,0,1 -j 0.006,2,3 -j 0.0075,2,4 -j 0.01,0,2 <NVEC> <CONFIG>
+assertConsistentProbsWithCore2 :: Assertion
+assertConsistentProbsWithCore2 =
+    forM_ resultData $ \(state, previous) -> do
+        let current = case C2.getProb modelSpec nVec state of
+                Left _ -> -1.0
+                Right res -> res
+        let msg = "failed for state " ++ show state ++ ": " ++ show previous ++
+                " (previous) vs. " ++ show current ++ " (current)"
+        -- assuming up to 5 percent deviation between Core1 and Core2 calculations
+        assertBool msg $ (abs (previous - current) / previous) < 0.05
+  where
+    resultData = [ ([0,1,2,0,1], 2.009581497800885e-6),
+                   ([1,1,1,1,1], 1.5455236177098954e-6),
+                   ([2,3,0,0,0], 7.503194796424192e-6),
+                   ([1,0,2,3,2], 4.355291335648456e-7),
+                   ([0,1,0,0,1], 1.2611453629387214e-5)
+                 ]
+    modelSpec = makeTestModelSpec
+    nVec = [100, 100, 100, 100, 100]

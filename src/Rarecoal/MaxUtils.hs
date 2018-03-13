@@ -24,6 +24,7 @@ import Data.STRef (newSTRef, modifySTRef, readSTRef)
 import qualified Data.Text as T
 import qualified Data.Vector.Unboxed as V
 import qualified Data.Vector.Unboxed.Mutable as VM
+-- import Debug.Trace (trace)
 import System.IO (withFile, IOMode(..), hPutStrLn)
 import Turtle (format, (%), w, s)
 
@@ -98,6 +99,7 @@ computeFrequencySpectrum modelSpec coreFunc histogram modelBranchNames = do
         turnHistPatternIntoModelPattern (raNames histogram) modelBranchNames nVec
     patternProbs <- sequence $
         parMap rdeepseq (coreFunc modelSpec nVecModelMapped) standardOrderModelMapped
+    -- trace (show $ zip standardOrderModelMapped patternProbs) $ return ()
     let patternCounts = [Map.findWithDefault 0 k (raCounts histogram) | k <- standardOrder]
         totalCounts = raTotalNrSites histogram
         patternFreqs = [fromIntegral c / fromIntegral totalCounts | c <- patternCounts]

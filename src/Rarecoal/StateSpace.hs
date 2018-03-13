@@ -106,8 +106,6 @@ genericX1 n k = V.replicate n 0 V.// [(k, 1)]
 fillUpStateSpace :: JointStateSpace -> [Int] -> [Int]
 fillUpStateSpace jointStateSpace nonZeroStates =
     let states = map (_jsIdToState jointStateSpace) nonZeroStates
-        nrPop = _jsNrPop jointStateSpace
-        maxAf = _jsMaxAf jointStateSpace
         allStates = concatMap expandPattern states
         allStateIds = map (_jsStateToId jointStateSpace) allStates
     in  nub allStateIds

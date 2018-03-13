@@ -97,7 +97,7 @@ parseGeneralOpts = GeneralOptions <$> parseCoreFunc <*> parseTheta <*> parseNrTh
     parseNoShortcut <*> parseRegularization <*> parseN0 <*> parseLinGen <*> parseTmax
   where
     parseCoreFunc = (\c -> if c then Core2.getProb else Core.getProb) <$>
-        OP.switch (OP.long "core2" <> OP.hidden <> OP.help "use the new Core2 algorithm (in beta)")
+        OP.switch (OP.long "core2" <> OP.hidden <> OP.help "Use the new Core2 algorithm (in beta)")
     parseTheta = OP.option OP.auto $ OP.long "theta" <>
         OP.hidden <> OP.metavar "FLOAT" <> OP.value 0.0005 <>
         OP.showDefault <> OP.help "set the scaled mutation rate. This is only \
