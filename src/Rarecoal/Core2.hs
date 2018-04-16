@@ -19,7 +19,7 @@ import Data.MemoCombinators (wrap, integral, Memo)
 import           Data.STRef                  (STRef, modifySTRef, newSTRef,
                                               readSTRef, writeSTRef)
 import qualified Data.Text as T
--- import Debug.Trace (trace)
+import Debug.Trace (trace)
 import Turtle (format, (%), w)
 import qualified Data.Vector.Unboxed         as V
 import qualified Data.Vector.Unboxed.Mutable as VM
@@ -93,26 +93,26 @@ propagateStates ms = do
         (ModelEvent nextT _: _) -> do
             let deltaT = nextT - currentT
             when (deltaT > 0) $ do
-                -- reportState "Before Prop" ms
+                reportState "Before Prop" ms
                 aOld <- V.freeze (msA ms)
                 propagateA ms deltaT
                 propagateB ms aOld
                 writeSTRef (msT ms) nextT
-                -- reportState "After Prop" ms
+                reportState "After Prop" ms
             performEvent ms
-            -- reportState "After event" ms
+            reportState "After event" ms
             propagateStates ms
 
--- reportState :: String -> ModelState s -> ST s ()
--- reportState name ms = do
---     aVec <- V.freeze (msA ms)
---     t <- readSTRef (msT ms)
---     d <- readSTRef (msD ms)
---     nonZeroStates <- readSTRef (msNonZeroStates ms)
---     probs <- mapM (\xId -> VM.read (msB ms) xId) nonZeroStates
---     let xs = [_jsIdToState (msStateSpace ms) xId | xId <- nonZeroStates]
---     trace (name ++ ": t=" ++ show t ++ "; d=" ++ show d ++
---         "; aVec=" ++ show aVec ++ "; b=" ++ show (zip xs probs)) (return ())
+reportState :: String -> ModelState s -> ST s ()
+reportState name ms = do
+    aVec <- V.freeze (msA ms)
+    t <- readSTRef (msT ms)
+    d <- readSTRef (msD ms)
+    nonZeroStates <- readSTRef (msNonZeroStates ms)
+    probs <- mapM (\xId -> VM.read (msB ms) xId) nonZeroStates
+    let xs = [_jsIdToState (msStateSpace ms) xId | xId <- nonZeroStates]
+    trace (name ++ ": t=" ++ show t ++ "; d=" ++ show d ++
+        "; aVec=" ++ show aVec ++ "; b=" ++ show (zip xs probs)) (return ())
 
 propagateToInfinity :: ModelState s -> ST s ()
 propagateToInfinity ms = do
@@ -155,7 +155,7 @@ singlePopMutBranchLength :: Double -> Double -> Int -> Double
 singlePopMutBranchLength popSize nrA nrDerived =
     let withCombinatorics = 2.0 * popSize / fromIntegral nrDerived
         -- combFactor = chooseCont nrA nrDerived
-        combFactor = choose (round nrA) nrDerived
+        combFactor = choose (max nrDerived (round nrA)) nrDerived
     in  withCombinatorics / combFactor
 
 propagateA :: ModelState s -> Double -> ST s ()
