@@ -154,7 +154,8 @@ checkIfAllHaveCoalesced ms = do
 singlePopMutBranchLength :: Double -> Double -> Int -> Double
 singlePopMutBranchLength popSize nrA nrDerived =
     let withCombinatorics = 2.0 * popSize / fromIntegral nrDerived
-        combFactor = chooseCont nrA nrDerived
+        -- combFactor = chooseCont nrA nrDerived
+        combFactor = choose (round nrA) nrDerived
     in  withCombinatorics / combFactor
 
 propagateA :: ModelState s -> Double -> ST s ()
@@ -211,21 +212,40 @@ computeRfactorVec :: JointState -> VecDoub -> JointState -> VecDoub -> Double
 computeRfactorVec xVec aVec xVecOld aVecOld =
     product . V.toList $ V.zipWith4 computeRfactorCont xVec aVec xVecOld aVecOld
 
+-- computeRfactorVec xVec aVec xVecOld aVecOld =
+--     let aVecLo = V.map floor aVec
+--         aVecHi = V.map (+1) aVecLo
+--         aVecOldLo = V.map floor aVecOld
+--         aVecOldHi = V.map (+1) aVecOldLo
+--
+--     product . V.toList $ V.zipWith4 computeRfactorCont xVec aVec xVecOld aVecOld
+--
+
 computeRfactorCont :: Int -> Double -> Int -> Double -> Double
-computeRfactorCont x a xP aP = if aP < 1 then 1.0 else
-    let a0 = floor a
-        a1 = a0 + 1
-        aP0 = floor aP
-        aP1 = aP0 + 1
-        vec11 = fromIntegral a1 - a
-        vec12 = a - fromIntegral a0
-        vec21 = fromIntegral aP1 - aP
-        vec22 = aP - fromIntegral aP0
-        mat11 = rFac x a0 xP aP0
-        mat12 = rFac x a0 xP aP1
-        mat21 = rFac x a1 xP aP0
-        mat22 = rFac x a1 xP aP1
-    in  vec11 * (mat11 * vec21 + mat12 * vec22) + vec12 * (mat21 * vec21 + mat22 * vec22)
+computeRfactorCont x a xP aP =
+    let aInt = round a
+        aPint = round aP
+    in  rFac x aInt xP aPint
+-- computeRfactorCont x a xP aP = if aP < 1 then 1.0 else
+--     let a0 = floor a
+--         a1 = a0 + 1
+--         aP0 = floor aP
+--         aP1 = aP0 + 1
+--     in  bilinearInterpolation (\arg1 arg2 -> rFac x arg1 xP arg2) (a0, a1) (aP0, aP1) a aP
+
+-- bilinearInterpolation :: (Int -> Int -> Double) -> (Int, Int) -> (Int, Int) -> Double -> Double ->
+--     Double
+-- bilinearInterpolation fun (xLo, xHi) (yLo, yHi) x y =
+--     let xVec1 = fromIntegral xHi - x
+--         xVec2 = x - fromIntegral xLo
+--         yVec1 = fromIntegral yHi - y
+--         yVec2 = y - fromIntegral yLo
+--         mat11 = fun xLo yLo
+--         mat12 = fun xLo yHi
+--         mat21 = fun xHi yLo
+--         mat22 = fun xHi yHi
+--         norm = (fromIntegral xHi - fromIntegral xLo) * (fromIntegral yHi - fromIntegral yLo)
+--     in  (xVec1 * (mat11 * yVec1 + mat12 * yVec2) + xVec2 * (mat21 * yVec1 + mat22 * yVec2)) / norm
 
 -- rFacMemoT :: (Int, Int, Int, Int) -> Double
 -- rFacMemoT = wrapTupleMemo rFacT
