@@ -93,14 +93,14 @@ propagateStates ms = do
         (ModelEvent nextT _: _) -> do
             let deltaT = nextT - currentT
             when (deltaT > 0) $ do
-                reportState "Before Prop" ms
+                -- reportState "Before Prop" ms
                 aOld <- V.freeze (msA ms)
                 propagateA ms deltaT
                 propagateB ms aOld
                 writeSTRef (msT ms) nextT
-                reportState "After Prop" ms
+                -- reportState "After Prop" ms
             performEvent ms
-            reportState "After event" ms
+            -- reportState "After event" ms
             propagateStates ms
 
 reportState :: String -> ModelState s -> ST s ()
