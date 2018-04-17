@@ -51,9 +51,9 @@ makeInitialPoint modelTemplate modelParams = do
     return $ V.fromList vals
 
 
-minFunc :: GeneralOptions -> ModelTemplate -> RareAlleleHistogram -> V.Vector Double ->
+minFunc :: GeneralOptions -> ModelTemplate -> RareAlleleHistogram -> Double -> V.Vector Double ->
     Either T.Text Double
-minFunc generalOpts modelTemplate hist paramsVec = do
+minFunc generalOpts modelTemplate hist effNrSites paramsVec = do
     let paramNames = getParamNames modelTemplate
         paramsDict = zip paramNames . V.toList $ paramsVec
         coreFunc = optCoreFunc generalOpts
@@ -65,8 +65,7 @@ minFunc generalOpts modelTemplate hist paramsVec = do
         not (isInfinite val)
     assertErr (format ("likelihood NaN for params "%w) paramsVec) $
         not (isNaN val)
-    return (-val + regPenalty)
-    -- return (-val)
+    return $ (-val + regPenalty) * effNrSites
 
 computeLogLikelihood :: ModelSpec -> CoreFunc -> RareAlleleHistogram -> [Branch] ->
     Either T.Text Double

@@ -23,7 +23,8 @@ data MaxlOpt = MaxlOpt {
     maHistogramOpts :: HistogramOptions,
     maMaxCycles :: Int,
     maNrRestarts :: Int,
-    maOutPrefix :: FilePath
+    maOutPrefix :: FilePath,
+    maEffNrSites :: Double
 }
 
 runMaxl :: MaxlOpt -> Script ()
@@ -35,9 +36,11 @@ runMaxl opts = do
     _ <- tryRight $ instantiateModel (maGeneralOpts opts) modelTemplate modelParams
     let modelBranchNames = mtBranchNames modelTemplate
     hist <- loadHistogram (maHistogramOpts opts) modelBranchNames
-    let minFunc' = either (const penalty) id . minFunc (maGeneralOpts opts) modelTemplate hist
-        minimizationRoutine = minimizeV (maMaxCycles opts) minFunc'
     xInit <- tryRight $ makeInitialPoint modelTemplate modelParams
+    _ <- tryRight $ minFunc (maGeneralOpts opts) modelTemplate hist (maEffNrSites opts) xInit
+    let minFunc' = either (const penalty) id .
+            minFunc (maGeneralOpts opts) modelTemplate hist (maEffNrSites opts)
+        minimizationRoutine = minimizeV (maMaxCycles opts) minFunc'
     (minResult, trace) <- scriptIO $ minimizeWithRestarts (maNrRestarts opts)
         minimizationRoutine xInit
     let outMaxlFN = maOutPrefix opts ++ ".paramEstimates.txt"

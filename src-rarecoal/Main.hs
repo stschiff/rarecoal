@@ -201,7 +201,7 @@ parseMaxl = CmdMaxl <$> parseMaxlOpt
 parseMaxlOpt :: OP.Parser MaxlOpt
 parseMaxlOpt = MaxlOpt <$> parseGeneralOpts <*> parseModelOpts <*>
     parseParamOpts <*> parseHistOpts <*> parseMaxCycles <*> parseNrRestarts <*>
-    parseOutPrefix
+    parseOutPrefix <*> parseEffNrSites
   where
     parseMaxCycles = OP.option OP.auto $ OP.long "maxCycles"
                     <> OP.metavar "INT" <> OP.hidden
@@ -225,13 +225,18 @@ parseOutPrefix = OP.strOption $ OP.short 'o' <> OP.long "prefix" <>
 --     \parameters, comma-separated without spaces. Those parameters will not be \
 --     \estimated, but kept fixed to the initial values."
 
+parseEffNrSites :: OP.Parser Double
+parseEffNrSites = OP.option OP.auto $ OP.long "effectiveNrSites" <> OP.metavar "INT" <>
+    OP.value 1.0 <> OP.showDefault <> OP.help "a factor between 0 and 1 that reduces the number of \
+    \sites in the histogram to reflect genetic linkage."
+
 parseMcmc :: OP.Parser Command
 parseMcmc = CmdMcmc <$> parseMcmcOpt
 
 parseMcmcOpt :: OP.Parser McmcOpt
 parseMcmcOpt = McmcOpt <$> parseGeneralOpts <*> parseModelOpts <*>
     parseParamOpts <*> parseHistOpts <*> parseNrCycles <*> parseOutPrefix <*>
-    parseRandomSeed
+    parseRandomSeed <*> parseEffNrSites
   where
     parseRandomSeed = OP.option OP.auto $ OP.long "seed" <> OP.metavar "INT" <>
                       OP.value 0 <> OP.hidden <>
