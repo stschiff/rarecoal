@@ -242,7 +242,7 @@ makeParameterDict (ParamOptions maybeInputFile xSettings) =
             if (head . head $ l) == '#'
             then -- aha, have rarecoal mcmc output file
                 removeDuplicateKeys $
-                    xSettings ++ [(T.pack k, read $ v !! 2) | (k : v) <- map words . drop 3 $ l]
+                    xSettings ++ [(T.pack k, read $ v !! 0) | (k : v) <- map words . drop 3 $ l]
             else -- aha, have rarecoal maxl output file
                 removeDuplicateKeys $
                     xSettings ++ [(T.pack k, read v) | [k, v] <- map words l]
