@@ -30,10 +30,10 @@ runFitTable opts = do
     modelSpec <- tryRight $ instantiateModel (ftGeneralOpts opts )
         modelTemplate modelParams
     let modelBranchNames = mtBranchNames modelTemplate
-    hist <- loadHistogram histOpts modelBranchNames
+    (hist, siteRed) <- loadHistogram histOpts modelBranchNames
     spectrum <- tryRight $ computeFrequencySpectrum modelSpec (optCoreFunc . ftGeneralOpts $ opts) 
         hist modelBranchNames
-    let totalLogLikelihood = computeLogLikelihoodFromSpec (raTotalNrSites hist) spectrum
+    let totalLogLikelihood = computeLogLikelihoodFromSpec (raTotalNrSites hist) siteRed spectrum
     scriptIO . putStrLn $ "Log Likelihood:" ++ "\t" ++ show totalLogLikelihood
     scriptIO $ do
         writeFullFitTable outFullTable spectrum

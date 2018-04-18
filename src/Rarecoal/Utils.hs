@@ -34,7 +34,8 @@ data HistogramOptions = HistogramOptions {
     optMinAf :: Int,
     optMaxAf :: Int,
     optConditionOn :: [Int],
-    optExcludePatterns :: [SitePattern]
+    optExcludePatterns :: [SitePattern],
+    optSiteReduction :: Double
 }
 
 defaultTimes :: [Double]
@@ -131,14 +132,15 @@ computeStandardOrder histogram =
   where
     hasConditioning indices pat = all (\i -> pat !! i > 0) indices
 
-loadHistogram :: HistogramOptions -> [Branch] -> Script RareAlleleHistogram
+loadHistogram :: HistogramOptions -> [Branch] -> Script (RareAlleleHistogram, Double)
 loadHistogram histOpts modelBranches = do
-    let HistogramOptions path minAf maxAf conditionOn excludePatterns = histOpts
+    let HistogramOptions path minAf maxAf conditionOn excludePatterns siteRed = histOpts
     hist <- readHistogram path
     validateBranchNameCongruency modelBranches (raNames hist)
-    tryRight $ (filterMaxAf maxAf >=> filterGlobalMinAf minAf >=>
+    h <- tryRight $ (filterMaxAf maxAf >=> filterGlobalMinAf minAf >=>
         filterConditionOn conditionOn >=> filterExcludePatterns excludePatterns)
         hist
+    return (h, siteRed)
   where
     validateBranchNameCongruency modelBranchNames histBranchNames = do
         forM_ histBranchNames $ \histName ->

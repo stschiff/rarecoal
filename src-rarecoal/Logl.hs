@@ -21,8 +21,8 @@ runLogl opts = do
     modelParams <- scriptIO $ makeParameterDict (loParamOpts opts)
     modelSpec <- tryRight $ instantiateModel (loGeneralOpts opts) modelTemplate modelParams
     let modelBranchNames = mtBranchNames modelTemplate
-    hist <- loadHistogram (loHistogramOpts opts) modelBranchNames
+    (hist, siteRed) <- loadHistogram (loHistogramOpts opts) modelBranchNames
     totalLogLikelihood <- tryRight $ computeLogLikelihood modelSpec
-        (optCoreFunc . loGeneralOpts $ opts) hist modelBranchNames
+        (optCoreFunc . loGeneralOpts $ opts) hist modelBranchNames siteRed
     scriptIO . print $ totalLogLikelihood
 

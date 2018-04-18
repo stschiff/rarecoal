@@ -173,7 +173,7 @@ parseLoglOpt = LoglOpt <$> parseGeneralOpts <*> parseModelOpts <*>
 
 parseHistOpts :: OP.Parser HistogramOptions
 parseHistOpts = HistogramOptions <$> parseHistPath <*> parseMinAf <*>
-    parseMaxAf <*> parseConditioning <*> parseExcludePattern
+    parseMaxAf <*> parseConditioning <*> parseExcludePattern <*> parseEffSiteReduction
   where
     parseHistPath = OP.strOption $ OP.short 'i' <> OP.long "histogram" <>
         OP.metavar "FILE" <> OP.help "Input Histogram File, use - for stdin"
@@ -194,6 +194,11 @@ parseHistOpts = HistogramOptions <$> parseHistPath <*> parseMinAf <*>
         OP.metavar "[INT,INT,...]" <> OP.help "a comma-separated list without \
         \spaces and surrounded by square-brackets. Gives a pattern to exclude \
         \from fitting. Can be given multiple times" <> OP.hidden <> OP.value [] <> OP.showDefault
+    parseEffSiteReduction = OP.option OP.auto $ OP.long "effectiveSitesReduction" <>
+        OP.metavar "DOUBLE" <> OP.value 1.0 <> OP.showDefault <> OP.help "a factor between 0 and 1 \
+        \that reduces the number of sites in the histogram to reflect genetic linkage."
+
+    
 
 parseMaxl :: OP.Parser Command
 parseMaxl = CmdMaxl <$> parseMaxlOpt
@@ -201,7 +206,7 @@ parseMaxl = CmdMaxl <$> parseMaxlOpt
 parseMaxlOpt :: OP.Parser MaxlOpt
 parseMaxlOpt = MaxlOpt <$> parseGeneralOpts <*> parseModelOpts <*>
     parseParamOpts <*> parseHistOpts <*> parseMaxCycles <*> parseNrRestarts <*>
-    parseOutPrefix <*> parseEffNrSites
+    parseOutPrefix
   where
     parseMaxCycles = OP.option OP.auto $ OP.long "maxCycles"
                     <> OP.metavar "INT" <> OP.hidden
@@ -225,18 +230,13 @@ parseOutPrefix = OP.strOption $ OP.short 'o' <> OP.long "prefix" <>
 --     \parameters, comma-separated without spaces. Those parameters will not be \
 --     \estimated, but kept fixed to the initial values."
 
-parseEffNrSites :: OP.Parser Double
-parseEffNrSites = OP.option OP.auto $ OP.long "effectiveNrSites" <> OP.metavar "INT" <>
-    OP.value 1.0 <> OP.showDefault <> OP.help "a factor between 0 and 1 that reduces the number of \
-    \sites in the histogram to reflect genetic linkage."
-
 parseMcmc :: OP.Parser Command
 parseMcmc = CmdMcmc <$> parseMcmcOpt
 
 parseMcmcOpt :: OP.Parser McmcOpt
 parseMcmcOpt = McmcOpt <$> parseGeneralOpts <*> parseModelOpts <*>
     parseParamOpts <*> parseHistOpts <*> parseNrCycles <*> parseOutPrefix <*>
-    parseRandomSeed <*> parseEffNrSites
+    parseRandomSeed
   where
     parseRandomSeed = OP.option OP.auto $ OP.long "seed" <> OP.metavar "INT" <>
                       OP.value 0 <> OP.hidden <>

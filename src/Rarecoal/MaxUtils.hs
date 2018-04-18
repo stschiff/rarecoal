@@ -53,34 +53,34 @@ makeInitialPoint modelTemplate modelParams = do
 
 minFunc :: GeneralOptions -> ModelTemplate -> RareAlleleHistogram -> Double -> V.Vector Double ->
     Either T.Text Double
-minFunc generalOpts modelTemplate hist effNrSites paramsVec = do
+minFunc generalOpts modelTemplate hist siteRed paramsVec = do
     let paramNames = getParamNames modelTemplate
         paramsDict = zip paramNames . V.toList $ paramsVec
         coreFunc = optCoreFunc generalOpts
     modelSpec <- instantiateModel generalOpts modelTemplate paramsDict
     regPenalty <- getRegularizationPenalty modelSpec
     let modelBranchNames = mtBranchNames modelTemplate
-    val <- computeLogLikelihood modelSpec coreFunc hist modelBranchNames
+    val <- computeLogLikelihood modelSpec coreFunc hist modelBranchNames siteRed
     assertErr (format ("likelihood infinite for params "%w) paramsVec) $
         not (isInfinite val)
     assertErr (format ("likelihood NaN for params "%w) paramsVec) $
         not (isNaN val)
-    return $ (-val + regPenalty) * effNrSites
+    return $ (-val + siteRed * regPenalty)
 
-computeLogLikelihood :: ModelSpec -> CoreFunc -> RareAlleleHistogram -> [Branch] ->
+computeLogLikelihood :: ModelSpec -> CoreFunc -> RareAlleleHistogram -> [Branch] -> Double ->
     Either T.Text Double
-computeLogLikelihood modelSpec coreFunc histogram modelBranchNames =
+computeLogLikelihood modelSpec coreFunc histogram modelBranchNames siteRed =
     let totalNrSites = raTotalNrSites histogram
-    in  computeLogLikelihoodFromSpec totalNrSites <$>
+    in  computeLogLikelihoodFromSpec totalNrSites siteRed <$>
             computeFrequencySpectrum modelSpec coreFunc histogram modelBranchNames
 
-computeLogLikelihoodFromSpec :: Int64 -> Spectrum -> Double
-computeLogLikelihoodFromSpec totalNrSites spectrum =
+computeLogLikelihoodFromSpec :: Int64 -> Double -> Spectrum -> Double
+computeLogLikelihoodFromSpec totalNrSites siteRed spectrum =
     let ll = sum [log (spTheory e) * fromIntegral (spCount e) | e <- spectrum]
         patternCounts = map spCount spectrum
         patternProbs = map spTheory spectrum
         otherCounts = totalNrSites - sum patternCounts
-    in  ll + fromIntegral otherCounts * log (1.0 - sum patternProbs)
+    in  siteRed * (ll + fromIntegral otherCounts * log (1.0 - sum patternProbs))
 
 computeFrequencySpectrum :: ModelSpec -> CoreFunc -> RareAlleleHistogram -> [Branch] ->
     Either T.Text Spectrum

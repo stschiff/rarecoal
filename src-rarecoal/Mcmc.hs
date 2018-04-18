@@ -31,8 +31,7 @@ data McmcOpt = McmcOpt {
    mcHistogramOpts :: HistogramOptions,
    mcNrCycles :: Int,
    mcOutPrefix :: FilePath,
-   mcRandomSeed :: Int,
-   mcEffNrSites :: Double
+   mcRandomSeed :: Int
 }
 
 data MCMCstate = MCMCstate {
@@ -54,11 +53,11 @@ runMcmc opts = do
         fillParameterDictWithDefaults modelTemplate
     _ <- tryRight $ instantiateModel (mcGeneralOpts opts) modelTemplate modelParams
     let modelBranchNames = mtBranchNames modelTemplate
-    hist <- loadHistogram (mcHistogramOpts opts) modelBranchNames
+    (hist, siteRed) <- loadHistogram (mcHistogramOpts opts) modelBranchNames
     xInit <- tryRight $ makeInitialPoint modelTemplate modelParams
-    _ <- tryRight $ minFunc (mcGeneralOpts opts) modelTemplate hist (mcEffNrSites opts) xInit
+    _ <- tryRight $ minFunc (mcGeneralOpts opts) modelTemplate hist siteRed xInit
     let minFunc' = either (const penalty) id .
-            minFunc (mcGeneralOpts opts) modelTemplate hist (mcEffNrSites opts)
+            minFunc (mcGeneralOpts opts) modelTemplate hist siteRed
         initV = minFunc' xInit
         stepWidths = V.map (max 1.0e-8 . abs . (/100.0)) xInit
         successRates = V.replicate (V.length xInit) 0.44

@@ -9,17 +9,17 @@ import           Rarecoal.StateSpace         (JointStateSpace (..), JointState,
                                               makeJointStateSpace, ModelEvent(..),
                                               validateModel, getRegularizationPenalty,
                                               EventType(..), ModelSpec(..))
-import Rarecoal.Utils (choose, chooseCont)
+import Rarecoal.Utils (choose) --, chooseCont)
 import           Control.Error.Safe          (assertErr)
 import           Control.Exception.Base      (assert)
 import           Control.Monad               (filterM, forM, forM_, when, (>=>))
 import           Control.Monad.ST            (ST, runST)
 import           Data.List                   (nub, sortBy)
-import Data.MemoCombinators (wrap, integral, Memo)
+-- import Data.MemoCombinators (wrap, integral, Memo)
 import           Data.STRef                  (STRef, modifySTRef, newSTRef,
                                               readSTRef, writeSTRef)
 import qualified Data.Text as T
-import Debug.Trace (trace)
+-- import Debug.Trace (trace)
 import Turtle (format, (%), w)
 import qualified Data.Vector.Unboxed         as V
 import qualified Data.Vector.Unboxed.Mutable as VM
@@ -103,16 +103,16 @@ propagateStates ms = do
             -- reportState "After event" ms
             propagateStates ms
 
-reportState :: String -> ModelState s -> ST s ()
-reportState name ms = do
-    aVec <- V.freeze (msA ms)
-    t <- readSTRef (msT ms)
-    d <- readSTRef (msD ms)
-    nonZeroStates <- readSTRef (msNonZeroStates ms)
-    probs <- mapM (\xId -> VM.read (msB ms) xId) nonZeroStates
-    let xs = [_jsIdToState (msStateSpace ms) xId | xId <- nonZeroStates]
-    trace (name ++ ": t=" ++ show t ++ "; d=" ++ show d ++
-        "; aVec=" ++ show aVec ++ "; b=" ++ show (zip xs probs)) (return ())
+-- reportState :: String -> ModelState s -> ST s ()
+-- reportState name ms = do
+--     aVec <- V.freeze (msA ms)
+--     t <- readSTRef (msT ms)
+--     d <- readSTRef (msD ms)
+--     nonZeroStates <- readSTRef (msNonZeroStates ms)
+--     probs <- mapM (\xId -> VM.read (msB ms) xId) nonZeroStates
+--     let xs = [_jsIdToState (msStateSpace ms) xId | xId <- nonZeroStates]
+--     trace (name ++ ": t=" ++ show t ++ "; d=" ++ show d ++
+--         "; aVec=" ++ show aVec ++ "; b=" ++ show (zip xs probs)) (return ())
 
 propagateToInfinity :: ModelState s -> ST s ()
 propagateToInfinity ms = do
