@@ -237,8 +237,6 @@ computeRfactorCont2 x aCont xP aP =
 rFac :: Int -> Int -> Int -> Int -> Double
 rFac !x !a !xP !aP | x == xP && a == aP = 1
                    | aP < a = error "rFac called with illegal configuration"
-                   | aP == 1 = error "should not happen" -- this case should only be possible with 
-                                                         --aP=a=1 and xP=xs, should be covered above
                    | xP < x || (aP - xP) < (a - x) = 0
                    | otherwise = term1 * rFac x a (xP - 1) (aP - 1) + term2 * rFac x a xP (aP - 1)
   where
