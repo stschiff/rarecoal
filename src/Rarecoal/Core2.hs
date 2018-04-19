@@ -9,17 +9,16 @@ import           Rarecoal.StateSpace         (JointStateSpace (..), JointState,
                                               makeJointStateSpace, ModelEvent(..),
                                               validateModel, getRegularizationPenalty,
                                               EventType(..), ModelSpec(..))
-import Rarecoal.Utils (choose) --, chooseCont)
+import Rarecoal.Utils (choose, chooseCont)
 import           Control.Error.Safe          (assertErr)
 import           Control.Exception.Base      (assert)
 import           Control.Monad               (filterM, forM, forM_, when, (>=>))
 import           Control.Monad.ST            (ST, runST)
 import           Data.List                   (nub, sortBy)
--- import Data.MemoCombinators (wrap, integral, Memo)
 import           Data.STRef                  (STRef, modifySTRef, newSTRef,
                                               readSTRef, writeSTRef)
 import qualified Data.Text as T
--- import Debug.Trace (trace)
+import Debug.Trace (trace)
 import Turtle (format, (%), w)
 import qualified Data.Vector.Unboxed         as V
 import qualified Data.Vector.Unboxed.Mutable as VM
@@ -103,16 +102,16 @@ propagateStates ms = do
             -- reportState "After event" ms
             propagateStates ms
 
--- reportState :: String -> ModelState s -> ST s ()
--- reportState name ms = do
---     aVec <- V.freeze (msA ms)
---     t <- readSTRef (msT ms)
---     d <- readSTRef (msD ms)
---     nonZeroStates <- readSTRef (msNonZeroStates ms)
---     probs <- mapM (\xId -> VM.read (msB ms) xId) nonZeroStates
---     let xs = [_jsIdToState (msStateSpace ms) xId | xId <- nonZeroStates]
---     trace (name ++ ": t=" ++ show t ++ "; d=" ++ show d ++
---         "; aVec=" ++ show aVec ++ "; b=" ++ show (zip xs probs)) (return ())
+reportState :: String -> ModelState s -> ST s ()
+reportState name ms = do
+    aVec <- V.freeze (msA ms)
+    t <- readSTRef (msT ms)
+    d <- readSTRef (msD ms)
+    nonZeroStates <- readSTRef (msNonZeroStates ms)
+    probs <- mapM (\xId -> VM.read (msB ms) xId) nonZeroStates
+    let xs = [_jsIdToState (msStateSpace ms) xId | xId <- nonZeroStates]
+    trace (name ++ ": t=" ++ show t ++ "; d=" ++ show d ++
+        "; aVec=" ++ show aVec ++ "; b=" ++ show (zip xs probs)) (return ())
 
 propagateToInfinity :: ModelState s -> ST s ()
 propagateToInfinity ms = do
@@ -154,8 +153,8 @@ checkIfAllHaveCoalesced ms = do
 singlePopMutBranchLength :: Double -> Double -> Int -> Double
 singlePopMutBranchLength popSize nrA nrDerived =
     let withCombinatorics = 2.0 * popSize / fromIntegral nrDerived
-        -- combFactor = chooseCont nrA nrDerived
-        combFactor = choose (max nrDerived (round nrA)) nrDerived
+        combFactor = chooseCont nrA nrDerived
+        -- combFactor = choose (max nrDerived (round nrA)) nrDerived
     in  withCombinatorics / combFactor
 
 propagateA :: ModelState s -> Double -> ST s ()
@@ -210,73 +209,36 @@ computeMutBranchInfForState xVec aVec popSize =
 
 computeRfactorVec :: JointState -> VecDoub -> JointState -> VecDoub -> Double
 computeRfactorVec xVec aVec xVecOld aVecOld =
-    product . V.toList $ V.zipWith4 computeRfactorCont xVec aVec xVecOld aVecOld
+        product . V.toList $ V.zipWith4 computeRfactorCont1 xVec aVec xVecOld aVecOld
 
--- computeRfactorVec xVec aVec xVecOld aVecOld =
---     let aVecLo = V.map floor aVec
---         aVecHi = V.map (+1) aVecLo
---         aVecOldLo = V.map floor aVecOld
---         aVecOldHi = V.map (+1) aVecOldLo
---
---     product . V.toList $ V.zipWith4 computeRfactorCont xVec aVec xVecOld aVecOld
---
+computeRfactorCont1 :: Int -> Double -> Int -> Double -> Double
+computeRfactorCont1 x aCont xP aPcont =
+    let aP0 = floor aPcont
+        aP1 = aP0 + 1
+        prob_aP1 = aPcont - fromIntegral aP0
+        prob_aP0 = 1.0 - prob_aP1
+    in  prob_aP0 * computeRfactorCont2 x aCont xP aP0 +
+        prob_aP1 * computeRfactorCont2 x aCont xP aP1
 
-computeRfactorCont :: Int -> Double -> Int -> Double -> Double
-computeRfactorCont x a xP aP =
-    let aInt = round a
-        aPint = round aP
-    in  rFac x aInt xP aPint
--- computeRfactorCont x a xP aP = if aP < 1 then 1.0 else
---     let a0 = floor a
---         a1 = a0 + 1
---         aP0 = floor aP
---         aP1 = aP0 + 1
---     in  bilinearInterpolation (\arg1 arg2 -> rFac x arg1 xP arg2) (a0, a1) (aP0, aP1) a aP
-
--- bilinearInterpolation :: (Int -> Int -> Double) -> (Int, Int) -> (Int, Int) -> Double -> Double ->
---     Double
--- bilinearInterpolation fun (xLo, xHi) (yLo, yHi) x y =
---     let xVec1 = fromIntegral xHi - x
---         xVec2 = x - fromIntegral xLo
---         yVec1 = fromIntegral yHi - y
---         yVec2 = y - fromIntegral yLo
---         mat11 = fun xLo yLo
---         mat12 = fun xLo yHi
---         mat21 = fun xHi yLo
---         mat22 = fun xHi yHi
---         norm = (fromIntegral xHi - fromIntegral xLo) * (fromIntegral yHi - fromIntegral yLo)
---     in  (xVec1 * (mat11 * yVec1 + mat12 * yVec2) + xVec2 * (mat21 * yVec1 + mat22 * yVec2)) / norm
-
--- rFacMemoT :: (Int, Int, Int, Int) -> Double
--- rFacMemoT = wrapTupleMemo rFacT
---
--- wrapTupleMemo :: Memo (Int, Int, Int, Int)
--- wrapTupleMemo = wrap intToTuple tupleToInt integral
---
--- intToTuple :: Int -> (Int, Int, Int, Int)
--- intToTuple num =
---     let (x, rest3) = getLeftMostDigitWithBase base4 num
---         (a, rest2) = getLeftMostDigitWithBase base3 rest3
---         (xP, rest1) = getLeftMostDigitWithBase base2 rest2
---         (aP, _) = getLeftMostDigitWithBase base1 rest1
---     in  (x, a, xP, aP)
--- tupleToInt :: (Int, Int, Int, Int) -> Int
--- tupleToInt (x, a, xP, aP) = x * base4 + a * base3 + xP * base2 + aP * base1
--- base4 = base3 * (maxA + 1)
--- base3 = base2 * (maxX + 1)
--- base2 = base1 * (maxA + 1)
--- base1 = 1
--- maxX = 4
--- maxA = 500
---
--- getLeftMostDigitWithBase :: Int -> Int -> (Int, Int)
--- getLeftMostDigitWithBase base x = (x `div` base, x `mod` base)
---
--- rFacT :: (Int, Int, Int, Int) -> Double
--- rFacT (!x, !a, !xP, !aP) = rFac x a xP aP
+computeRfactorCont2 :: Int -> Double -> Int -> Int -> Double
+computeRfactorCont2 x aCont xP aP =
+    let a0 = floor aCont
+        a1 = a0 + 1
+    in  if a0 == aP -- this means that a0 == aP and a1 == aP0 + 1.
+        then rFac x a0 xP aP
+        else
+            case aP of
+                1 -> rFac x 1 xP aP
+                0 -> rFac x 0 xP aP
+                _ -> let prob_a1 = aCont - fromIntegral a0
+                         prob_a0 = 1.0 - prob_a1
+                     in  prob_a0 * rFac x a0 xP aP + prob_a1 * rFac x a1 xP aP
 
 rFac :: Int -> Int -> Int -> Int -> Double
 rFac !x !a !xP !aP | x == xP && a == aP = 1
+                   | aP < a = error "rFac called with illegal configuration"
+                   | aP == 1 = error "should not happen" -- this case should only be possible with 
+                                                         --aP=a=1 and xP=xs, should be covered above
                    | xP < x || (aP - xP) < (a - x) = 0
                    | otherwise = term1 * rFac x a (xP - 1) (aP - 1) + term2 * rFac x a xP (aP - 1)
   where
