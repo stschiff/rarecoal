@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Mcmc (runMcmc, McmcOpt(..)) where
 
 import Rarecoal.Utils (GeneralOptions(..), HistogramOptions(..), setNrProcessors)
@@ -18,6 +19,7 @@ import qualified Data.Text as T
 import Control.Error (Script, scriptIO, tryRight, errLn)
 import Data.Ord (comparing)
 import System.IO (withFile, Handle, IOMode(..), withFile, hPutStr, hPutStrLn)
+import Turtle (format, s, d, g, (%))
 
 (!) :: V.Vector Double -> Int -> Double
 (!) = (V.!)
@@ -66,7 +68,7 @@ runMcmc opts = do
               else return $ R.mkStdGen (mcRandomSeed opts)
     let initState = MCMCstate 0 0 initV xInit stepWidths successRates ranGen []
         pred_ = mcmcNotDone (mcNrCycles opts)
-        act = mcmcCycle minFunc'
+        act = mcmcCycle minFunc' (getParamNames modelTemplate)
     states <- evalStateT (whileM pred_ act) initState
 
     let outMcmcFN = mcOutPrefix opts ++ ".paramEstimates.txt"
@@ -99,25 +101,25 @@ mcmcNotDone requiredCycles = do
         in  return $ nrCycles - nrBurnins <= requiredCycles
 
 computeBurninCycles :: [Double] -> Int
-computeBurninCycles s =
-    let scoreBound = minimum s + 10.0
-    in  fst . head . filter ((<scoreBound) . snd) $ zip [0..] s
+computeBurninCycles vals =
+    let scoreBound = minimum vals + 10.0
+    in  fst . head . filter ((<scoreBound) . snd) $ zip [0..] vals
 
-mcmcCycle :: (V.Vector Double -> Double) -> StateT MCMCstate Script MCMCstate
-mcmcCycle posterior = do
+mcmcCycle :: (V.Vector Double -> Double) -> [T.Text] -> StateT MCMCstate Script MCMCstate
+mcmcCycle posterior paramNames = do
     state <- get
     let c = mcmcNrCycles state
         scoreValues = mcmcScoreList state
         k = V.length $ mcmcCurrentPoint state
         rng = mcmcRanGen state
         (order, rng') = shuffle rng [0..k-1]
-    modify (\s -> s {mcmcRanGen = rng'})
+    modify (\st -> st {mcmcRanGen = rng'})
     mapM_ (updateMCMC posterior) order
     newVal <- gets mcmcCurrentValue
-    modify (\s -> s {mcmcNrCycles = c + 1, mcmcScoreList = newVal:scoreValues})
-    liftIO (errLn . T.pack $ showStateLog state)
+    modify (\st -> st {mcmcNrCycles = c + 1, mcmcScoreList = newVal:scoreValues})
+    liftIO (errLn $ showStateLog state paramNames)
     when ((c + 1) `mod` 10 == 0) $ do
-        liftIO (errLn . T.pack $ showStateLog state)
+        liftIO (errLn $ showStateLog state paramNames)
         forM_ [0..k-1] adaptStepWidths
     get
 
@@ -148,8 +150,8 @@ propose i = do
     state <- get
     let currentPoint = mcmcCurrentPoint state
         rng = mcmcRanGen state
-        d = mcmcStepWidths state!i
-        (ran, rng') = R.randomR (-d, d) rng
+        delta = mcmcStepWidths state!i
+        (ran, rng') = R.randomR (-delta, delta) rng
         newPoint = currentPoint // [(i, currentPoint!i + ran)]
     put state {mcmcRanGen = rng'}
     return newPoint
@@ -170,7 +172,7 @@ accept newPoint newVal i = do
     successRate <- gets mcmcSuccesRate
     let newR = successRate!i * 0.975 + 0.025
         successRate' = successRate // [(i, newR)]
-    modify (\s -> s {mcmcCurrentPoint = newPoint, mcmcCurrentValue = newVal,
+    modify (\st -> st {mcmcCurrentPoint = newPoint, mcmcCurrentValue = newVal,
                      mcmcSuccesRate = successRate'})
 
 reject :: Int -> StateT MCMCstate Script ()
@@ -178,23 +180,24 @@ reject i = do
     successRate <- gets mcmcSuccesRate
     let newR = successRate!i * 0.975
         successRate' = successRate // [(i, newR)]
-    modify (\s -> s {mcmcSuccesRate = successRate'})
+    modify (\st -> st {mcmcSuccesRate = successRate'})
 
 adaptStepWidths :: Int -> StateT MCMCstate Script ()
 adaptStepWidths i = do
     state <- get
     let r = mcmcSuccesRate state!i
     when (r < 0.29 || r > 0.59) $ do
-        let d = mcmcStepWidths state!i
-            d' = if r < 0.29 then d / 1.5 else d * 1.5
-            newStepWidths = mcmcStepWidths state // [(i, d')]
+        let delta = mcmcStepWidths state!i
+            delta' = if r < 0.29 then delta / 1.5 else delta * 1.5
+            newStepWidths = mcmcStepWidths state // [(i, delta')]
         put state {mcmcStepWidths = newStepWidths}
 
-showStateLog :: MCMCstate -> String
-showStateLog state =
-    "Cycle: " ++ show (mcmcNrCycles state) ++
-    "; Value: " ++ show (mcmcCurrentValue state) ++
-    "; Point: " ++ show (mcmcCurrentPoint state)
+showStateLog :: MCMCstate -> [T.Text] -> T.Text
+showStateLog state paramNames =
+    format ("Cycle="%d%"\tValue="%g%"\t"%s) (mcmcNrCycles state) (mcmcCurrentValue state) params
+  where
+    params = T.intercalate "\t" [format (s%"="%g) key val |
+        (key, val) <- zip paramNames (V.toList $ mcmcCurrentPoint state)]
 
 reportPosteriorStats :: [String] -> [MCMCstate] -> Handle -> IO (V.Vector Double)
 reportPosteriorStats paramNames states h = do
@@ -206,7 +209,7 @@ reportPosteriorStats paramNames states h = do
         minIndex = snd $ minimumBy (comparing fst) $ zip scores [0..]
         orderStats = [getOrderStats minIndex $ map (!i) points | i <- [0..dim-1]]
         orderStatsScore = getOrderStats minIndex scores
-        paramLines = zipWith (\n s -> intercalate "\t" (n:map show s)) paramNames orderStats
+        paramLines = zipWith (\n st -> intercalate "\t" (n:map show st)) paramNames orderStats
         scoreLine = intercalate "\t" ("Score":map show orderStatsScore)
         headerLine = "Param\tMaxL\tLowerCI\tMedian\tUpperCI"
     hPutStrLn h $ "# Nr Burnin Cycles: " ++ show nrBurninCycles
@@ -223,9 +226,9 @@ reportPosteriorStats paramNames states h = do
 reportTrace :: [String] -> [MCMCstate] -> Handle -> IO ()
 reportTrace paramNames states h = do
     let body = do
-            s <- states
-            let l = [V.singleton (mcmcCurrentValue s), mcmcCurrentPoint s, mcmcStepWidths s,
-                     mcmcSuccesRate s]
+            st <- states
+            let l = [V.singleton (mcmcCurrentValue st), mcmcCurrentPoint st, mcmcStepWidths st,
+                     mcmcSuccesRate st]
             return . intercalate "\t" . map show . V.toList . V.concat $ l
         headerLine = intercalate "\t" $ ["Score"] ++ paramNames ++ map (++"_delta") paramNames ++
                      map (++"_success") paramNames
