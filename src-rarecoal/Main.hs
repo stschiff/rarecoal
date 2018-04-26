@@ -206,7 +206,7 @@ parseMaxl = CmdMaxl <$> parseMaxlOpt
 parseMaxlOpt :: OP.Parser MaxlOpt
 parseMaxlOpt = MaxlOpt <$> parseGeneralOpts <*> parseModelOpts <*>
     parseParamOpts <*> parseHistOpts <*> parseMaxCycles <*> parseNrRestarts <*>
-    parseOutPrefix
+    parseOutPrefix <*> parsePowell
   where
     parseMaxCycles = OP.option OP.auto $ OP.long "maxCycles"
                     <> OP.metavar "INT" <> OP.hidden
@@ -219,6 +219,8 @@ parseMaxlOpt = MaxlOpt <$> parseGeneralOpts <*> parseModelOpts <*>
                       \Each restart will start from the end point of the previous maximization. \
                       \From experience, five restarts are typically enough to get close to the \
                       \true maximum."
+    parsePowell = OP.switch $ OP.long "powell" <> OP.help "Use Powell's method instead of the \
+        \Nelder-Mead Simplex method for optimization (Default)"
 
 parseOutPrefix :: OP.Parser FilePath
 parseOutPrefix = OP.strOption $ OP.short 'o' <> OP.long "prefix" <>

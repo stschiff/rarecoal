@@ -6,6 +6,7 @@ import Rarecoal.ModelTemplate (ModelTemplate(..), instantiateModel, getModelTemp
 import Rarecoal.Utils (GeneralOptions(..), HistogramOptions(..), setNrProcessors, loadHistogram)
 import Rarecoal.MaxUtils (penalty, minFunc, computeFrequencySpectrum, 
     writeFullFitTable, writeSummaryFitTable, makeInitialPoint)
+import Rarecoal.Powell (powellV)
 
 import Control.Error (Script, scriptIO, tryRight, errLn)
 import Data.List (intercalate)
@@ -23,7 +24,8 @@ data MaxlOpt = MaxlOpt {
     maHistogramOpts :: HistogramOptions,
     maMaxCycles :: Int,
     maNrRestarts :: Int,
-    maOutPrefix :: FilePath
+    maOutPrefix :: FilePath,
+    maUsePowell :: Bool
 }
 
 runMaxl :: MaxlOpt -> Script ()
@@ -39,9 +41,13 @@ runMaxl opts = do
     _ <- tryRight $ minFunc (maGeneralOpts opts) modelTemplate hist siteRed xInit
     let minFunc' = either (const penalty) id .
             minFunc (maGeneralOpts opts) modelTemplate hist siteRed
-        minimizationRoutine = minimizeV (maMaxCycles opts) minFunc'
-    (minResult, trace) <- scriptIO $ minimizeWithRestarts (maNrRestarts opts)
-        minimizationRoutine xInit
+    (minResult, trace) <- if maUsePowell opts then do
+            (r, _, tr) <- scriptIO $ powellV 0.001 (maMaxCycles opts) minFunc' xInit
+            return (r, tr)
+        else do
+            let minimizationRoutine = minimizeV (maMaxCycles opts) minFunc'
+            scriptIO $ minimizeWithRestarts (maNrRestarts opts) minimizationRoutine xInit
+        
     let outMaxlFN = maOutPrefix opts ++ ".paramEstimates.txt"
         outTraceFN = maOutPrefix opts ++ ".trace.txt"
         outFullFitTableFN = maOutPrefix opts ++ ".frequencyFitTable.txt"
