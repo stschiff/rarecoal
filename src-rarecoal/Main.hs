@@ -222,7 +222,8 @@ parseMaxlOpt = MaxlOpt <$> parseGeneralOpts <*> parseModelOpts <*>
     parsePowell = OP.switch $ OP.long "powell" <> OP.help "Use Powell's method instead of the \
         \Nelder-Mead Simplex method for optimization (Default)"
     parsePowellTolerance = OP.option OP.auto $ OP.long "tolerance" <>
-        OP.metavar "absolute final tolerance for Powell's method" <> OP.value 10 <> OP.showDefault
+        OP.metavar "FLOAT" <> OP.help "absolute final tolerance for Powell's method" <>
+        OP.value 10 <> OP.showDefault
 
 parseOutPrefix :: OP.Parser FilePath
 parseOutPrefix = OP.strOption $ OP.short 'o' <> OP.long "prefix" <>
