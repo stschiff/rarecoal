@@ -213,12 +213,16 @@ computeRfactorVec xVec aVec xVecOld aVecOld =
 
 computeRfactorCont1 :: Int -> Double -> Int -> Double -> Double
 computeRfactorCont1 x aCont xP aPcont =
-    let aP0 = floor aPcont
-        aP1 = aP0 + 1
-        prob_aP1 = aPcont - fromIntegral aP0
-        prob_aP0 = 1.0 - prob_aP1
-    in  prob_aP0 * computeRfactorCont2 x aCont xP aP0 +
-        prob_aP1 * computeRfactorCont2 x aCont xP aP1
+    let a = round aCont
+        aP = round aPcont
+    in  rFac x a xP aP
+-- computeRfactorCont1 x aCont xP aPcont =
+--     let aP0 = floor aPcont
+--         aP1 = aP0 + 1
+--         prob_aP1 = aPcont - fromIntegral aP0
+--         prob_aP0 = 1.0 - prob_aP1
+--     in  prob_aP0 * computeRfactorCont2 x aCont xP aP0 +
+--         prob_aP1 * computeRfactorCont2 x aCont xP aP1
 
 computeRfactorCont2 :: Int -> Double -> Int -> Int -> Double
 computeRfactorCont2 x aCont xP aP =
