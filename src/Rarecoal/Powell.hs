@@ -157,7 +157,9 @@ powell ftol maxIter vecFunc p0 = do
             -- if (2.0 * (val - val1) <= ftol * (abs val + abs val1) + 1.0e-25)
             if val - val1 <= ftol
                 then return (p1, val1, trace)
-                else go (i + 1) (trace ++ [p1]) p1 val1 dir1
+                else
+                    let newTrace = trace ++ [fromList (val1:toList p1)]
+                    in  go (i + 1) newTrace p1 val1 dir1
 
 type VecDoub = V.Vector Double
 powellV :: (MonadIO m) => Double -> Int -> (VecDoub -> Double) -> VecDoub ->

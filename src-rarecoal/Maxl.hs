@@ -57,7 +57,10 @@ runMaxl opts = do
     scriptIO . withFile outMaxlFN WriteMode $ \h ->
         reportMaxResult modelTemplate minResult (minFunc' minResult) h
     scriptIO . withFile outTraceFN WriteMode $ \h ->
-        reportTrace modelTemplate trace h
+        if maUsePowell opts then
+            reportTracePowell modelTemplate trace h
+        else
+            reportTraceSimplex modelTemplate trace h
     let finalModelParams = [(n, r) | ((n, _), r) <- zip modelParams (V.toList minResult)]
     finalModelSpec <- tryRight $ instantiateModel (maGeneralOpts opts) modelTemplate 
         finalModelParams
@@ -96,9 +99,18 @@ reportMaxResult modelTemplate result minScore h = do
     hPutStr h . unlines $ zipWith (\p v -> T.unpack p ++ "\t" ++ show v) (getParamNames modelTemplate) 
         (V.toList result)
 
-reportTrace :: ModelTemplate -> [V.Vector Double] -> Handle -> IO ()
-reportTrace modelTemplate trace h = do
+reportTraceSimplex :: ModelTemplate -> [V.Vector Double] -> Handle -> IO ()
+reportTraceSimplex modelTemplate trace h = do
     let header = intercalate "\t" $ ["Nr", "-Log-Likelihood", "Simplex size"] ++
             map T.unpack (getParamNames modelTemplate)
         body = map (intercalate "\t" . map show . V.toList) trace
+    hPutStr h . unlines $ header : body
+
+reportTracePowell :: ModelTemplate -> [V.Vector Double] -> Handle -> IO ()
+reportTracePowell modelTemplate trace h = do
+    let header = intercalate "\t" $ ["Nr", "-Log-Likelihood"] ++
+            map T.unpack (getParamNames modelTemplate)
+        body = do
+            (i, t) <- zip [1..] trace
+            return $ intercalate "\t" (show i : [show par | par <- V.toList t])
     hPutStr h . unlines $ header : body
