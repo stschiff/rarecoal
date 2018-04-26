@@ -25,7 +25,8 @@ data MaxlOpt = MaxlOpt {
     maMaxCycles :: Int,
     maNrRestarts :: Int,
     maOutPrefix :: FilePath,
-    maUsePowell :: Bool
+    maUsePowell :: Bool,
+    maPowellTolerance :: Double
 }
 
 runMaxl :: MaxlOpt -> Script ()
@@ -42,7 +43,8 @@ runMaxl opts = do
     let minFunc' = either (const penalty) id .
             minFunc (maGeneralOpts opts) modelTemplate hist siteRed
     (minResult, trace) <- if maUsePowell opts then do
-            (r, _, tr) <- scriptIO $ powellV 0.001 (maMaxCycles opts) minFunc' xInit
+            (r, _, tr) <- scriptIO $
+                powellV (maPowellTolerance opts) (maMaxCycles opts) minFunc' xInit
             return (r, tr)
         else do
             let minimizationRoutine = minimizeV (maMaxCycles opts) minFunc'

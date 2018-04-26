@@ -206,7 +206,7 @@ parseMaxl = CmdMaxl <$> parseMaxlOpt
 parseMaxlOpt :: OP.Parser MaxlOpt
 parseMaxlOpt = MaxlOpt <$> parseGeneralOpts <*> parseModelOpts <*>
     parseParamOpts <*> parseHistOpts <*> parseMaxCycles <*> parseNrRestarts <*>
-    parseOutPrefix <*> parsePowell
+    parseOutPrefix <*> parsePowell <*> parsePowellTolerance
   where
     parseMaxCycles = OP.option OP.auto $ OP.long "maxCycles"
                     <> OP.metavar "INT" <> OP.hidden
@@ -221,6 +221,8 @@ parseMaxlOpt = MaxlOpt <$> parseGeneralOpts <*> parseModelOpts <*>
                       \true maximum."
     parsePowell = OP.switch $ OP.long "powell" <> OP.help "Use Powell's method instead of the \
         \Nelder-Mead Simplex method for optimization (Default)"
+    parsePowellTolerance = OP.option OP.auto $ OP.long "tolerance" <>
+        OP.metavar "absolute final tolerance for Powell's method" <> OP.value 10 <> OP.showDefault
 
 parseOutPrefix :: OP.Parser FilePath
 parseOutPrefix = OP.strOption $ OP.short 'o' <> OP.long "prefix" <>

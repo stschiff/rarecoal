@@ -154,7 +154,8 @@ powell ftol maxIter vecFunc p0 = do
             liftIO $ hPutStrLn stderr ("Powell's method (Iteration " ++ show i ++
                 "): Minimizing from point " ++ show p ++ " at function value " ++ show val)
             let (p1, val1, dir1) = powellIter vecFunc p val dir
-            if (2.0 * (val - val1) <= ftol * (abs val + abs val1) + 1.0e-25)
+            -- if (2.0 * (val - val1) <= ftol * (abs val + abs val1) + 1.0e-25)
+            if val - val1 <= ftol
                 then return (p1, val1, trace)
                 else go (i + 1) (trace ++ [p1]) p1 val1 dir1
 
