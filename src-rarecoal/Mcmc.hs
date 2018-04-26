@@ -117,9 +117,9 @@ mcmcCycle posterior paramNames = do
     mapM_ (updateMCMC posterior) order
     newVal <- gets mcmcCurrentValue
     modify (\st -> st {mcmcNrCycles = c + 1, mcmcScoreList = newVal:scoreValues})
-    liftIO (errLn $ showStateLog state paramNames)
+    -- liftIO (errLn $ showStateLog state paramNames)
     when ((c + 1) `mod` 10 == 0) $ do
-        liftIO (errLn $ showStateLog state paramNames)
+        showStateLog paramNames
         forM_ [0..k-1] adaptStepWidths
     get
 
@@ -192,11 +192,13 @@ adaptStepWidths i = do
             newStepWidths = mcmcStepWidths state // [(i, delta')]
         put state {mcmcStepWidths = newStepWidths}
 
-showStateLog :: MCMCstate -> [T.Text] -> T.Text
-showStateLog state paramNames =
-    format ("Cycle="%d%"\tValue="%g%"\t"%s) (mcmcNrCycles state) (mcmcCurrentValue state) params
+showStateLog :: [T.Text] -> StateT MCMCstate Script ()
+showStateLog paramNames = do
+    state <- get
+    liftIO . errLn $ format ("Cycle="%d%"\tValue="%g%"\t"%s) (mcmcNrCycles state)
+        (mcmcCurrentValue state) (params state)
   where
-    params = T.intercalate "\t" [format (s%"="%g) key val |
+    params state = T.intercalate "\t" [format (s%"="%g) key val |
         (key, val) <- zip paramNames (V.toList $ mcmcCurrentPoint state)]
 
 reportPosteriorStats :: [String] -> [MCMCstate] -> Handle -> IO (V.Vector Double)
