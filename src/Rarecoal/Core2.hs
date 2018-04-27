@@ -15,6 +15,7 @@ import           Control.Exception.Base      (assert)
 import           Control.Monad               (filterM, forM, forM_, when, (>=>))
 import           Control.Monad.ST            (ST, runST)
 import           Data.List                   (nub, sortBy)
+import qualified Data.MemoCombinators as M
 import           Data.STRef                  (STRef, modifySTRef, newSTRef,
                                               readSTRef, writeSTRef)
 import qualified Data.Text as T
@@ -213,16 +214,12 @@ computeRfactorVec xVec aVec xVecOld aVecOld =
 
 computeRfactorCont1 :: Int -> Double -> Int -> Double -> Double
 computeRfactorCont1 x aCont xP aPcont =
-    let a = round aCont
-        aP = round aPcont
-    in  rFac x a xP aP
--- computeRfactorCont1 x aCont xP aPcont =
---     let aP0 = floor aPcont
---         aP1 = aP0 + 1
---         prob_aP1 = aPcont - fromIntegral aP0
---         prob_aP0 = 1.0 - prob_aP1
---     in  prob_aP0 * computeRfactorCont2 x aCont xP aP0 +
---         prob_aP1 * computeRfactorCont2 x aCont xP aP1
+    let aP0 = floor aPcont
+        aP1 = aP0 + 1
+        prob_aP1 = aPcont - fromIntegral aP0
+        prob_aP0 = 1.0 - prob_aP1
+    in  prob_aP0 * computeRfactorCont2 x aCont xP aP0 +
+        prob_aP1 * computeRfactorCont2 x aCont xP aP1
 
 computeRfactorCont2 :: Int -> Double -> Int -> Int -> Double
 computeRfactorCont2 x aCont xP aP =
@@ -236,16 +233,26 @@ computeRfactorCont2 x aCont xP aP =
                 0 -> rFac x 0 xP aP
                 _ -> let prob_a1 = aCont - fromIntegral a0
                          prob_a0 = 1.0 - prob_a1
-                     in  prob_a0 * rFac x a0 xP aP + prob_a1 * rFac x a1 xP aP
+                     in  prob_a0 * rFacM x a0 xP aP + prob_a1 * rFacM x a1 xP aP
 
 rFac :: Int -> Int -> Int -> Int -> Double
-rFac !x !a !xP !aP | x == xP && a == aP = 1
+rFac !x !a !xP !aP = rFacR x a xP aP
+
+rFacR :: Int -> Int -> Int -> Int -> Double
+rFacR !x !a !xP !aP | x == xP && a == aP = 1
                    | aP < a = error "rFac called with illegal configuration"
                    | xP < x || (aP - xP) < (a - x) = 0
-                   | otherwise = term1 * rFac x a (xP - 1) (aP - 1) + term2 * rFac x a xP (aP - 1)
+                   | otherwise = term1 * rFacR x a (xP - 1) (aP - 1) + term2 * rFacR x a xP (aP - 1)
   where
     term1 = fromIntegral (xP * (xP - 1)) / fromIntegral (aP * (aP - 1))
     term2 = fromIntegral ((aP - xP) * (aP - xP - 1)) / fromIntegral (aP * (aP - 1))
+
+memo4 :: M.Memo a -> M.Memo b -> M.Memo c -> M.Memo d ->
+    (a -> b -> c -> d -> r) -> (a -> b -> c -> d -> r)
+memo4 a b c d = a . (M.memo3 b c d .)
+
+rFacM :: Int -> Int -> Int -> Int -> Double
+rFacM = memo4 M.integral M.integral M.integral M.integral rFac
 
 performEvent :: ModelState s -> ST s ()
 performEvent ms = do
