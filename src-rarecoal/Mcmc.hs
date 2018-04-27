@@ -83,8 +83,9 @@ runMcmc opts = do
     let finalModelParams = [(n, r) | ((n, _), r) <- zip modelParams (V.toList minPoint)]
     finalModelSpec <- tryRight $ instantiateModel (mcGeneralOpts opts) modelTemplate 
         finalModelParams
-    finalSpectrum <- tryRight $ computeFrequencySpectrum finalModelSpec
-        (optCoreFunc . mcGeneralOpts $ opts) hist modelBranchNames
+    let useCore2 = optUseCore2 . mcGeneralOpts $ opts
+    finalSpectrum <- tryRight $ computeFrequencySpectrum finalModelSpec useCore2 hist 
+        modelBranchNames
     scriptIO $ do
         writeFullFitTable outFullFitTableFN finalSpectrum
         writeSummaryFitTable outSummaryTableFN finalSpectrum hist

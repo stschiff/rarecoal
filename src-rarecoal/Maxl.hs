@@ -64,8 +64,9 @@ runMaxl opts = do
     let finalModelParams = [(n, r) | ((n, _), r) <- zip modelParams (V.toList minResult)]
     finalModelSpec <- tryRight $ instantiateModel (maGeneralOpts opts) modelTemplate 
         finalModelParams
-    finalSpectrum <- tryRight $ computeFrequencySpectrum finalModelSpec
-        (optCoreFunc . maGeneralOpts $ opts) hist modelBranchNames
+    let useCore2 = optUseCore2 . maGeneralOpts $ opts
+    finalSpectrum <- tryRight $ computeFrequencySpectrum finalModelSpec useCore2 hist 
+        modelBranchNames
     scriptIO $ do
         writeFullFitTable outFullFitTableFN finalSpectrum
         writeSummaryFitTable outSummaryTableFN finalSpectrum hist
@@ -111,6 +112,6 @@ reportTracePowell modelTemplate trace h = do
     let header = intercalate "\t" $ ["Nr", "-Log-Likelihood"] ++
             map T.unpack (getParamNames modelTemplate)
         body = do
-            (i, t) <- zip [1..] trace
+            (i, t) <- zip [(1::Int)..] trace
             return $ intercalate "\t" (show i : [show par | par <- V.toList t])
     hPutStr h . unlines $ header : body

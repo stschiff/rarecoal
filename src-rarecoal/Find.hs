@@ -8,7 +8,6 @@ import Rarecoal.Utils (loadHistogram, Branch)
 import Rarecoal.MaxUtils (computeLogLikelihood)
 import Rarecoal.ModelTemplate (getModelTemplate, makeParameterDict, ModelOptions(..), 
     instantiateModel, ParamOptions(..), ModelTemplate(..))
-import Rarecoal.StateSpace (CoreFunc)
 
 import Control.Error (Script, scriptIO, tryAssert, tryRight, tryJust)
 import Data.List (maximumBy, elemIndex)
@@ -55,7 +54,8 @@ runFind opts = do
             return (branch, time)
     allLikelihoods <- sequence $ do
         (k, t) <- allParamPairs
-        return $ computeLogLikelihoodIO hist siteRed modelSpec' (optCoreFunc . fiGeneralOpts $ opts)
+        let useCore2 = optUseCore2 . fiGeneralOpts $ opts
+        return $ computeLogLikelihoodIO hist siteRed modelSpec' useCore2
             (mtBranchNames modelTemplate) k l t
     scriptIO $ writeResult (fiEvalPath opts) allParamPairs allLikelihoods
     let ((minBranch, minTime), minLL) = maximumBy (\(_, ll1) (_, ll2) -> ll1 `compare` ll2) $
@@ -81,13 +81,13 @@ getJoinTimes modelSpec deltaT maxT branchAge k =
         leaveTimes = [t | ModelEvent t (Join _ l) <- mEvents modelSpec, k == l]
     in  if null leaveTimes then allTimes else filter (<head leaveTimes) allTimes
 
-computeLogLikelihoodIO :: RareAlleleHistogram -> Double -> ModelSpec -> CoreFunc -> [Branch] ->
+computeLogLikelihoodIO :: RareAlleleHistogram -> Double -> ModelSpec -> Bool -> [Branch] ->
     Int -> Int -> Double -> Script Double
-computeLogLikelihoodIO hist siteRed modelSpec coreFunc modelBranchNames k l t = do
+computeLogLikelihoodIO hist siteRed modelSpec useCore2 modelBranchNames k l t = do
     let e = mEvents modelSpec
         newE = ModelEvent t (Join k l)
         modelSpec' = modelSpec {mEvents = newE : e}
-    ll <- tryRight $ computeLogLikelihood modelSpec' coreFunc hist modelBranchNames siteRed
+    ll <- tryRight $ computeLogLikelihood modelSpec' useCore2 hist modelBranchNames siteRed
     scriptIO $ hPutStrLn stderr ("branch=" ++ show k ++ ", time=" ++ show t ++ ", ll=" ++ show ll)
     return ll
 

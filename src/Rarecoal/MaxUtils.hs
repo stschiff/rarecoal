@@ -1,12 +1,13 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, RankNTypes #-}
 
 module Rarecoal.MaxUtils (penalty, makeInitialPoint, minFunc, computeLogLikelihood, 
     computeFrequencySpectrum, computeLogLikelihoodFromSpec, SpectrumEntry(..), Spectrum, 
     writeFullFitTable, writeSummaryFitTable) 
 where
 
-import Rarecoal.Core (ModelSpec(..))
-import Rarecoal.StateSpace (getRegularizationPenalty, CoreFunc)
+import qualified Rarecoal.Core as C1
+import qualified Rarecoal.Core2 as C2
+import Rarecoal.StateSpace (getRegularizationPenalty)
 import Rarecoal.Utils (GeneralOptions(..), computeStandardOrder, turnHistPatternIntoModelPattern,
     Branch)
 import Rarecoal.ModelTemplate (ModelTemplate(..), getParamNames, instantiateModel)
@@ -20,6 +21,7 @@ import Control.Parallel.Strategies (rdeepseq, parMap)
 import Data.Int (Int64)
 import Data.List (zipWith5, intercalate, zip4)
 import qualified Data.Map.Strict as Map
+import qualified Data.MemoCombinators as M
 import Data.STRef (newSTRef, modifySTRef, readSTRef)
 import qualified Data.Text as T
 import qualified Data.Vector.Unboxed as V
@@ -56,23 +58,22 @@ minFunc :: GeneralOptions -> ModelTemplate -> RareAlleleHistogram -> Double -> V
 minFunc generalOpts modelTemplate hist siteRed paramsVec = do
     let paramNames = getParamNames modelTemplate
         paramsDict = zip paramNames . V.toList $ paramsVec
-        coreFunc = optCoreFunc generalOpts
     modelSpec <- instantiateModel generalOpts modelTemplate paramsDict
     regPenalty <- getRegularizationPenalty modelSpec
     let modelBranchNames = mtBranchNames modelTemplate
-    val <- computeLogLikelihood modelSpec coreFunc hist modelBranchNames siteRed
+    val <- computeLogLikelihood modelSpec (optUseCore2 generalOpts) hist modelBranchNames siteRed
     assertErr (format ("likelihood infinite for params "%w) paramsVec) $
         not (isInfinite val)
     assertErr (format ("likelihood NaN for params "%w) paramsVec) $
         not (isNaN val)
     return $ (-val + siteRed * regPenalty)
 
-computeLogLikelihood :: ModelSpec -> CoreFunc -> RareAlleleHistogram -> [Branch] -> Double ->
+computeLogLikelihood :: C1.ModelSpec -> Bool -> RareAlleleHistogram -> [Branch] -> Double ->
     Either T.Text Double
-computeLogLikelihood modelSpec coreFunc histogram modelBranchNames siteRed =
+computeLogLikelihood modelSpec useCore2 histogram modelBranchNames siteRed =
     let totalNrSites = raTotalNrSites histogram
     in  computeLogLikelihoodFromSpec totalNrSites siteRed <$>
-            computeFrequencySpectrum modelSpec coreFunc histogram modelBranchNames
+            computeFrequencySpectrum modelSpec useCore2 histogram modelBranchNames
 
 computeLogLikelihoodFromSpec :: Int64 -> Double -> Spectrum -> Double
 computeLogLikelihoodFromSpec totalNrSites siteRed spectrum =
@@ -82,9 +83,9 @@ computeLogLikelihoodFromSpec totalNrSites siteRed spectrum =
         otherCounts = totalNrSites - sum patternCounts
     in  siteRed * (ll + fromIntegral otherCounts * log (1.0 - sum patternProbs))
 
-computeFrequencySpectrum :: ModelSpec -> CoreFunc -> RareAlleleHistogram -> [Branch] ->
+computeFrequencySpectrum :: C1.ModelSpec -> Bool -> RareAlleleHistogram -> [Branch] ->
     Either T.Text Spectrum
-computeFrequencySpectrum modelSpec coreFunc histogram modelBranchNames = do
+computeFrequencySpectrum modelSpec useCore2 histogram modelBranchNames = do
     assertErr "minFreq must be greater than 0" $ raMinAf histogram > 0
     let standardOrder = computeStandardOrder histogram
     -- scriptIO . putStrLn $
@@ -96,8 +97,14 @@ computeFrequencySpectrum modelSpec coreFunc histogram modelBranchNames = do
     let nVec = raNVec histogram
     nVecModelMapped <-
         turnHistPatternIntoModelPattern (raNames histogram) modelBranchNames nVec
+    let coreFunc = if useCore2
+            then
+                let rFacM = memo4 M.integral M.integral M.integral M.integral C2.rFac
+                in  C2.getProbWithMemo rFacM modelSpec nVecModelMapped
+            else
+                C1.getProb modelSpec nVecModelMapped
     patternProbs <- sequence $
-        parMap rdeepseq (coreFunc modelSpec nVecModelMapped) standardOrderModelMapped
+        parMap rdeepseq coreFunc standardOrderModelMapped
     -- trace (show $ zip standardOrderModelMapped patternProbs) $ return ()
     let patternCounts = [Map.findWithDefault 0 k (raCounts histogram) | k <- standardOrder]
         totalCounts = raTotalNrSites histogram
@@ -107,6 +114,10 @@ computeFrequencySpectrum modelSpec coreFunc histogram modelBranchNames = do
                 [Just . snd $ Map.findWithDefault (0, 0) k errMap | k <- standardOrder]
             Nothing -> [Nothing | _ <- standardOrder]
     return $ zipWith5 SpectrumEntry standardOrder patternCounts patternFreqs errors patternProbs
+
+memo4 :: M.Memo a -> M.Memo b -> M.Memo c -> M.Memo d ->
+    (a -> b -> c -> d -> r) -> (a -> b -> c -> d -> r)
+memo4 a b c d = a . (M.memo3 b c d .)
 
 writeFullFitTable :: FilePath -> Spectrum -> IO ()
 writeFullFitTable outFN spectrum = do

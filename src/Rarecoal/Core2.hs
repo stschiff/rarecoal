@@ -1,8 +1,8 @@
-{-# LANGUAGE OverloadedStrings, RankNTypes, BangPatterns #-}
-module Rarecoal.Core2 (getProb, validateModel,
+{-# LANGUAGE OverloadedStrings, BangPatterns #-}
+module Rarecoal.Core2 (getProb, getProbWithMemo, validateModel,
     choose, ModelEvent(..), EventType(..), ModelSpec(..), popJoinA,
     -- intToTuple, tupleToInt, getLeftMostDigitWithBase, rFacT, rFacMemoT,
-    popJoinB, popSplitA, popSplitB, getRegularizationPenalty) where
+    popJoinB, popSplitA, popSplitB, getRegularizationPenalty, rFac) where
 
 import           Rarecoal.StateSpace         (JointStateSpace (..), JointState, 
                                               fillUpStateSpace,
@@ -15,7 +15,6 @@ import           Control.Exception.Base      (assert)
 import           Control.Monad               (filterM, forM, forM_, when, (>=>))
 import           Control.Monad.ST            (ST, runST)
 import           Data.List                   (nub, sortBy)
-import qualified Data.MemoCombinators as M
 import           Data.STRef                  (STRef, modifySTRef, newSTRef,
                                               readSTRef, writeSTRef)
 import qualified Data.Text as T
@@ -27,6 +26,8 @@ import qualified Data.Vector.Unboxed.Mutable as VM
 type VecDoub = V.Vector Double
 type VecDoubM s = VM.MVector s Double
 
+type RFacFunc = Int -> Int -> Int -> Int -> Double
+
 data ModelState s = ModelState {
     msA              :: VecDoubM s,
     msB              :: VecDoubM s,
@@ -37,17 +38,18 @@ data ModelState s = ModelState {
     msStateSpace     :: JointStateSpace,
     msEventQueue     :: STRef s [ModelEvent],
     msPopSize        :: VecDoubM s,
-    msFreezeState    :: VM.MVector s Bool
+    msFreezeState    :: VM.MVector s Bool,
+    msRfactorMemo    :: RFacFunc
 }
 
-getProb :: ModelSpec -> [Int] -> [Int] -> Either T.Text Double
-getProb modelSpec nVec config = do
+getProbWithMemo :: RFacFunc -> ModelSpec -> [Int] -> [Int] -> Either T.Text Double
+getProbWithMemo rFacMemo modelSpec nVec config = do
     validateModel modelSpec
     let nrPops = mNrPops modelSpec
     assertErr "illegal sample configuration given" $
         length nVec == length config && length nVec == nrPops
     let dd = runST $ do
-            ms <- makeInitState modelSpec nVec config
+            ms <- makeInitState rFacMemo modelSpec nVec config
             propagateStates ms
             readSTRef (msD ms)
         combFac = product $ zipWith choose nVec config
@@ -60,8 +62,11 @@ getProb modelSpec nVec config = do
   where
     err = format ("Overflow Error in getProb for nVec="%w%", kVec="%w) nVec config
 
-makeInitState :: ModelSpec -> [Int] -> [Int] -> ST s (ModelState s)
-makeInitState modelSpec nVec config = do
+getProb :: ModelSpec -> [Int] -> [Int] -> Either T.Text Double
+getProb = getProbWithMemo rFac
+
+makeInitState :: RFacFunc -> ModelSpec -> [Int] -> [Int] -> ST s (ModelState s)
+makeInitState rFacMemo modelSpec nVec config = do
     a <- V.thaw . V.map fromIntegral . V.fromList $ nVec
     let initialState = V.fromList config
         maxAf = sum config
@@ -82,7 +87,7 @@ makeInitState modelSpec nVec config = do
     popSize <- VM.replicate nrPop 1.0
     freezeState <- VM.replicate nrPop False
     return $ ModelState a b bTemp dd t nonZeroStates jointStateSpace sortedEvents popSize 
-        freezeState
+        freezeState rFacMemo
 
 propagateStates :: ModelState s -> ST s ()
 propagateStates ms = do
@@ -180,6 +185,7 @@ propagateB ms aVecOld = do
     popSizeVec <- V.freeze $ msPopSize ms
     aVec <- V.freeze (msA ms)
     -- trace ("aVecOld=" ++ show aVecOld ++ ", aVec=" ++ show aVec) $ return ()
+    let rFacMemo = msRfactorMemo ms
     newNonZeroStates <- fmap concat . forM nonZeroStateIds $ \xId -> do
         let xVecOld = _jsIdToState (msStateSpace ms) xId
         prob <- VM.read (msB ms) xId
@@ -188,7 +194,7 @@ propagateB ms aVecOld = do
                 allTargetStates = fillUpStateSpace (msStateSpace ms) [xId]
             mutBranchSubtract <- forM allTargetStates $ \xIdNew -> do
                 let xVec = _jsIdToState (msStateSpace ms) xIdNew
-                    rFactor = computeRfactorVec xVec aVec xVecOld aVecOld
+                    rFactor = computeRfactorVec rFacMemo xVec aVec xVecOld aVecOld
                 VM.modify (msBtemp ms) (\v -> v + rFactor * prob) xIdNew 
                 if mutBranchInf > 0.0
                 then return $ rFactor * computeMutBranchInfForState xVec aVec popSizeVec
@@ -208,21 +214,21 @@ computeMutBranchInfForState xVec aVec popSize =
         then singlePopMutBranchLength (popSize V.! maxIndex) (aVec V.! maxIndex) sumDerived
         else 0.0
 
-computeRfactorVec :: JointState -> VecDoub -> JointState -> VecDoub -> Double
-computeRfactorVec xVec aVec xVecOld aVecOld =
-        product . V.toList $ V.zipWith4 computeRfactorCont1 xVec aVec xVecOld aVecOld
+computeRfactorVec :: RFacFunc -> JointState -> VecDoub -> JointState -> VecDoub -> Double
+computeRfactorVec rFacMemo xVec aVec xVecOld aVecOld =
+        product . V.toList $ V.zipWith4 (computeRfactorCont1 rFacMemo) xVec aVec xVecOld aVecOld
 
-computeRfactorCont1 :: Int -> Double -> Int -> Double -> Double
-computeRfactorCont1 x aCont xP aPcont =
+computeRfactorCont1 :: RFacFunc -> Int -> Double -> Int -> Double -> Double
+computeRfactorCont1 rFacMemo x aCont xP aPcont =
     let aP0 = floor aPcont
         aP1 = aP0 + 1
         prob_aP1 = aPcont - fromIntegral aP0
         prob_aP0 = 1.0 - prob_aP1
-    in  prob_aP0 * computeRfactorCont2 x aCont xP aP0 +
-        prob_aP1 * computeRfactorCont2 x aCont xP aP1
+    in  prob_aP0 * computeRfactorCont2 rFacMemo x aCont xP aP0 +
+        prob_aP1 * computeRfactorCont2 rFacMemo x aCont xP aP1
 
-computeRfactorCont2 :: Int -> Double -> Int -> Int -> Double
-computeRfactorCont2 x aCont xP aP =
+computeRfactorCont2 :: RFacFunc -> Int -> Double -> Int -> Int -> Double
+computeRfactorCont2 rFacMemo x aCont xP aP =
     let a0 = floor aCont
         a1 = a0 + 1
     in  if a0 == aP -- this means that a0 == aP and a1 == aP0 + 1.
@@ -233,7 +239,7 @@ computeRfactorCont2 x aCont xP aP =
                 0 -> rFac x 0 xP aP
                 _ -> let prob_a1 = aCont - fromIntegral a0
                          prob_a0 = 1.0 - prob_a1
-                     in  prob_a0 * rFacM x a0 xP aP + prob_a1 * rFacM x a1 xP aP
+                     in  prob_a0 * rFacMemo x a0 xP aP + prob_a1 * rFacMemo x a1 xP aP
 
 rFac :: Int -> Int -> Int -> Int -> Double
 rFac !x !a !xP !aP = rFacR x a xP aP
@@ -246,13 +252,6 @@ rFacR !x !a !xP !aP | x == xP && a == aP = 1
   where
     term1 = fromIntegral (xP * (xP - 1)) / fromIntegral (aP * (aP - 1))
     term2 = fromIntegral ((aP - xP) * (aP - xP - 1)) / fromIntegral (aP * (aP - 1))
-
-memo4 :: M.Memo a -> M.Memo b -> M.Memo c -> M.Memo d ->
-    (a -> b -> c -> d -> r) -> (a -> b -> c -> d -> r)
-memo4 a b c d = a . (M.memo3 b c d .)
-
-rFacM :: Int -> Int -> Int -> Int -> Double
-rFacM = memo4 M.integral M.integral M.integral M.integral rFac
 
 performEvent :: ModelState s -> ST s ()
 performEvent ms = do
