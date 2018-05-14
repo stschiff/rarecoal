@@ -2,6 +2,7 @@ module Rarecoal.Powell (powell, powellV) where
 
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import qualified Data.Vector.Unboxed as V
+-- import Debug.Trace (trace)
 import Numeric.GSL.Minimization (uniMinimize, UniMinimizeMethod(..))
 import Numeric.LinearAlgebra.Data (Vector, R, scalar, toLists, size, toColumns, ident, 
     fromList, toList)
@@ -34,8 +35,10 @@ bracket a b func =
                 error ("Error(1) in Bracketing method. Result: " ++ show ret)
             else
                 if r_ax <= r_bx && r_bx <= r_cx
+                -- then trace (show ("bracket result " ++ show ret)) (r_ax, r_bx, r_cx)
                 then (r_ax, r_bx, r_cx)
                 else if r_cx <= r_bx && r_bx <= r_ax
+                     -- then trace (show ("bracket result " ++ show ret)) (r_cx, r_bx, r_ax)
                      then (r_cx, r_bx, r_ax)
                      else
                          error ("Error(2) in Bracketing method. Result: " ++ show ret)
@@ -98,10 +101,12 @@ brent0 ftol maxIter func =
 f1dim :: Vector R -> Vector R -> (Vector R -> Double) -> (Double -> Double)
 f1dim point0 direction vecFunc x = 
     let point = point0 + scalar x * direction
+    -- in  trace ("evaluating vecFunc at point " ++ show point ++ ", val=" ++ show (vecFunc point)) (vecFunc point)
     in  vecFunc point
     
 linmin :: Double -> Int -> Vector R -> Vector R -> (Vector R -> Double) -> (Vector R, Double)
 linmin ftol maxIter point0 direction vecFunc =
+    -- let (xMin, _) = trace ("calling brent0 from point " ++ show point0 ++ " into direction " ++ show direction) (brent0 ftol maxIter (f1dim point0 direction vecFunc))
     let (xMin, _) = brent0 ftol maxIter (f1dim point0 direction vecFunc)
         minPoint = point0 + scalar xMin * direction
         minVal = vecFunc minPoint
