@@ -2,7 +2,7 @@ module Rarecoal.Powell (powell, powellV) where
 
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import qualified Data.Vector.Unboxed as V
--- import Debug.Trace (trace)
+import Debug.Trace (trace)
 import Numeric.GSL.Minimization (uniMinimize, UniMinimizeMethod(..))
 import Numeric.LinearAlgebra.Data (Vector, R, scalar, toLists, size, toColumns, ident, 
     fromList, toList)
@@ -106,11 +106,11 @@ f1dim point0 direction vecFunc x =
     
 linmin :: Double -> Int -> Vector R -> Vector R -> (Vector R -> Double) -> (Vector R, Double)
 linmin ftol maxIter point0 direction vecFunc =
-    -- let (xMin, _) = trace ("calling brent0 from point " ++ show point0 ++ " into direction " ++ show direction) (brent0 ftol maxIter (f1dim point0 direction vecFunc))
-    let (xMin, _) = brent0 ftol maxIter (f1dim point0 direction vecFunc)
+    let (xMin, _) = trace ("calling brent0 from point " ++ show point0 ++ " into direction " ++ show direction) (brent0 ftol maxIter (f1dim point0 direction vecFunc))
+    -- let (xMin, _) = brent0 ftol maxIter (f1dim point0 direction vecFunc)
         minPoint = point0 + scalar xMin * direction
         minVal = vecFunc minPoint
-    in  (minPoint, minVal)
+    in  trace ("xMin=" ++ show xMin ++ ", minVal=" ++ show minVal) (minPoint, minVal)
 
 powellIter :: (Vector R -> Double) -> Vector R -> Double -> [Vector R] ->
     (Vector R, Double, [Vector R])
