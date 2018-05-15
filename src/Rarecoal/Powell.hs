@@ -127,7 +127,7 @@ powellIter vecFunc point val directions =
                     maxDelta * (val - extrapolatedVal)^^(2::Int)
             in  if t < 0.0
                 then
-                    let (finalPoint, finalVal) = linmin 0.01 30 newPoint newDirection vecFunc
+                    let (finalPoint, finalVal) = linmin 3e-8 30 newPoint newDirection vecFunc
                         newDirections =
                             let (ys, zs) = splitAt maxDeltaIndex directions
                             in  ys ++ (tail zs) ++ [newDirection]
