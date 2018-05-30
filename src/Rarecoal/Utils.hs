@@ -146,8 +146,7 @@ filterGlobalMinAf minAf hist = do
 
 computeStandardOrder :: RareAlleleHistogram -> [SitePattern]
 computeStandardOrder histogram =
-    let nrPop = length $ raNVec histogram
-        nVec = raNVec histogram
+    let nVec = raNVec histogram
     in  filter (\p -> sum p >= raMinAf histogram &&
             hasConditioning (raConditionOn histogram) p &&
             p `notElem` raExcludePatterns histogram) $

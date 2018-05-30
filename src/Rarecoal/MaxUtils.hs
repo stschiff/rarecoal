@@ -7,7 +7,7 @@ where
 
 import qualified Rarecoal.Core as C1
 import qualified Rarecoal.Core2 as C2
-import Rarecoal.StateSpace (getRegularizationPenalty)
+import Rarecoal.StateSpace (getRegularizationPenalty, makeJointStateSpace)
 import Rarecoal.Utils (GeneralOptions(..), computeStandardOrder, turnHistPatternIntoModelPattern,
     Branch)
 import Rarecoal.ModelTemplate (ModelTemplate(..), getParamNames, instantiateModel)
@@ -97,12 +97,13 @@ computeFrequencySpectrum modelSpec useCore2 histogram modelBranchNames = do
     let nVec = raNVec histogram
     nVecModelMapped <-
         turnHistPatternIntoModelPattern (raNames histogram) modelBranchNames nVec
+    let jointStateSpace = makeJointStateSpace (C1.mNrPops modelSpec) (raMaxAf histogram)
     let coreFunc = if useCore2
             then
                 let rFacM = memo4 M.integral M.integral M.integral M.integral C2.rFac
-                in  C2.getProbWithMemo rFacM modelSpec nVecModelMapped
+                in  C2.getProbWithMemo rFacM modelSpec jointStateSpace nVecModelMapped
             else
-                C1.getProb modelSpec nVecModelMapped
+                C1.getProb modelSpec jointStateSpace nVecModelMapped
     patternProbs <- sequence $
         parMap rdeepseq coreFunc standardOrderModelMapped
     -- trace (show $ zip standardOrderModelMapped patternProbs) $ return ()

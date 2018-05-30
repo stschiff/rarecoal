@@ -4,7 +4,7 @@ module Rarecoal.Core (getProb, ModelEvent(..), EventType(..), ModelSpec(..), pop
 
 import           Rarecoal.StateSpace         (JointStateSpace (..),
                                               fillUpStateSpace,
-                                              makeJointStateSpace, ModelEvent(..),
+                                              ModelEvent(..),
                                               validateModel,
                                               EventType(..), ModelSpec(..))
 import Rarecoal.Utils (choose, chooseCont)
@@ -18,10 +18,10 @@ import           Data.STRef                  (STRef, modifySTRef, newSTRef,
                                               readSTRef, writeSTRef)
 import Data.List (sortBy)
 import qualified Data.Text as T
+-- import Debug.Trace (trace)
 import Turtle (format, (%), w)
 import qualified Data.Vector.Unboxed         as V
 import qualified Data.Vector.Unboxed.Mutable as VM
-import Debug.Trace (trace)
 
 data ModelState s = ModelState {
     _msT              :: STRef s Double,
@@ -39,8 +39,8 @@ data CoalState s = CoalState {
     _csStateSpace    :: JointStateSpace
 }
 
-getProb :: ModelSpec -> [Int] -> [Int] -> Either T.Text Double
-getProb modelSpec nVec config = do
+getProb :: ModelSpec -> JointStateSpace -> [Int] -> [Int] -> Either T.Text Double
+getProb modelSpec jointStateSpace nVec config = do
     validateModel modelSpec
     let nrPops = mNrPops modelSpec
     assertErr "illegal sample configuration given" $
@@ -48,7 +48,7 @@ getProb modelSpec nVec config = do
     let timeSteps = mTimeSteps modelSpec
         dd = runST $ do
             ms <- makeInitModelState modelSpec
-            cs <- makeInitCoalState nVec config
+            cs <- makeInitCoalState jointStateSpace nVec config
             propagateStates ms cs timeSteps (mNoShortcut modelSpec)
             readSTRef (_csD cs)
         combFac = product $ zipWith choose nVec config
@@ -62,13 +62,10 @@ getProb modelSpec nVec config = do
     err = format ("Overflow Error in getProb for nVec="%w%", kVec="%w) nVec
         config
 
-makeInitCoalState :: [Int] -> [Int] -> ST s (CoalState s)
-makeInitCoalState nVec config = do
+makeInitCoalState :: JointStateSpace -> [Int] -> [Int] -> ST s (CoalState s)
+makeInitCoalState jointStateSpace nVec config = do
     a <- V.thaw . V.fromList $ zipWith (\n c -> fromIntegral $ n - c) nVec config
     let initialState = V.fromList config
-        maxAf = sum config
-        nrPop = length nVec
-        jointStateSpace = makeJointStateSpace nrPop maxAf
         initialId = _jsStateToId jointStateSpace initialState
     b <- VM.replicate (_jsNrStates jointStateSpace) 0.0
     -- trace (show ("makeInitCoalState", _jsNrStates jointStateSpace, initialState, initialId)) $

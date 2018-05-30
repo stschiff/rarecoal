@@ -6,7 +6,7 @@ module Rarecoal.Core2 (getProb, getProbWithMemo, validateModel,
 
 import           Rarecoal.StateSpace         (JointStateSpace (..), JointState, 
                                               fillUpStateSpace,
-                                              makeJointStateSpace, ModelEvent(..),
+                                              ModelEvent(..),
                                               validateModel, getRegularizationPenalty,
                                               EventType(..), ModelSpec(..))
 import Rarecoal.Utils (choose, chooseCont)
@@ -42,14 +42,15 @@ data ModelState s = ModelState {
     msRfactorMemo    :: RFacFunc
 }
 
-getProbWithMemo :: RFacFunc -> ModelSpec -> [Int] -> [Int] -> Either T.Text Double
-getProbWithMemo rFacMemo modelSpec nVec config = do
+getProbWithMemo :: RFacFunc -> ModelSpec -> JointStateSpace -> [Int] -> [Int] ->
+    Either T.Text Double
+getProbWithMemo rFacMemo modelSpec jointStateSpace nVec config = do
     validateModel modelSpec
     let nrPops = mNrPops modelSpec
     assertErr "illegal sample configuration given" $
         length nVec == length config && length nVec == nrPops
     let dd = runST $ do
-            ms <- makeInitState rFacMemo modelSpec nVec config
+            ms <- makeInitState rFacMemo modelSpec jointStateSpace nVec config
             propagateStates ms
             readSTRef (msD ms)
         combFac = product $ zipWith choose nVec config
@@ -62,16 +63,14 @@ getProbWithMemo rFacMemo modelSpec nVec config = do
   where
     err = format ("Overflow Error in getProb for nVec="%w%", kVec="%w) nVec config
 
-getProb :: ModelSpec -> [Int] -> [Int] -> Either T.Text Double
+getProb :: ModelSpec -> JointStateSpace -> [Int] -> [Int] -> Either T.Text Double
 getProb = getProbWithMemo rFac
 
-makeInitState :: RFacFunc -> ModelSpec -> [Int] -> [Int] -> ST s (ModelState s)
-makeInitState rFacMemo modelSpec nVec config = do
+makeInitState :: RFacFunc -> ModelSpec -> JointStateSpace -> [Int] -> [Int] -> ST s (ModelState s)
+makeInitState rFacMemo modelSpec jointStateSpace nVec config = do
     a <- V.thaw . V.map fromIntegral . V.fromList $ nVec
     let initialState = V.fromList config
-        maxAf = sum config
         nrPop = length nVec
-        jointStateSpace = makeJointStateSpace nrPop maxAf
         initialId = _jsStateToId jointStateSpace initialState
     b <- VM.replicate (_jsNrStates jointStateSpace) 0.0
     bTemp <- VM.new (_jsNrStates jointStateSpace)
