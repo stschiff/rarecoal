@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Rarecoal.Utils (computeAllConfigs, computeStandardOrder,
+module Rarecoal.Utils (computeAllConfigs, computeAllConfigsCrude, computeStandardOrder,
     turnHistPatternIntoModelPattern, defaultTimes, getTimeSteps,
     setNrProcessors, filterConditionOn, filterExcludePatterns, filterMaxAf,
     filterGlobalMinAf, GeneralOptions(..), HistogramOptions(..), loadHistogram, Branch, choose, 
@@ -61,11 +61,34 @@ setNrProcessors generalOpts = do
     nrThreads' <- getNumCapabilities
     errLn $ format ("running on "%d%" processors") nrThreads'
 
-computeAllConfigs :: Int -> Int -> [Int] -> [SitePattern]
-computeAllConfigs nrPop maxFreq nVec =
+computeAllConfigsCrude :: Int -> [Int] -> [SitePattern]
+computeAllConfigsCrude maxFreq nVec =
    let maxPowerNum = (maxFreq + 1) ^ nrPop
        order = map (digitize (maxFreq + 1) nrPop) [1..maxPowerNum]
    in  filter (\v -> (sum v <= maxFreq) && and (zipWith (<=) v nVec)) order
+  where
+    nrPop = length nVec
+    digitize :: Int -> Int -> Int -> [Int]
+    digitize base nrDigit num
+        | nrDigit == 1 = [num]
+        | otherwise    = let digitBase = base ^ (nrDigit - 1)
+                             digit = div num digitBase
+                             rest = num - digit * digitBase
+                         in  (digit:digitize base (nrDigit - 1) rest)
+    
+computeAllConfigs :: Int -> [Int] -> [SitePattern]
+computeAllConfigs maxAf nVec =
+    filter (\v -> and (zipWith (<=) v nVec)) $ concatMap (allPatternsForAF nrPops) [1..maxAf]
+  where
+    nrPops = length nVec
+
+allPatternsForAF :: Int -> Int -> [SitePattern]
+allPatternsForAF nrPops af = map getDiffs $ allSubsets (nrPops + af - 1) (nrPops - 1)
+  where
+    getDiffs :: [Int] -> [Int]
+    getDiffs subset = go [] ([0] ++ subset ++ [nrPops + af])
+    go res (x1:x2:xs) = go (res ++ [x2 - x1 - 1]) (x2:xs)
+    go res _ = res
 
 turnHistPatternIntoModelPattern :: [Branch] -> [Branch] -> SitePattern -> Either Text SitePattern
 turnHistPatternIntoModelPattern histBranches modelBranches histPattern =
@@ -74,13 +97,14 @@ turnHistPatternIntoModelPattern histBranches modelBranches histPattern =
             Just i -> return (histPattern !! i)
             Nothing -> return 0 -- ghost branch
 
-digitize :: Int -> Int -> Int -> [Int]
-digitize base nrDigit num
-    | nrDigit == 1 = [num]
-    | otherwise    = let digitBase = base ^ (nrDigit - 1)
-                         digit = div num digitBase
-                         rest = num - digit * digitBase
-                     in  (digit:digitize base (nrDigit - 1) rest)
+allSubsets :: Int -> Int -> [[Int]]
+allSubsets n k =
+    if k == 0
+    then return []
+    else do
+        True <- return $ n > 0
+        allSubsets (n - 1) k ++ map (++[n]) (allSubsets (n - 1) (k - 1))
+
 
 filterConditionOn :: [Int] -> RareAlleleHistogram ->
     Either Text RareAlleleHistogram
@@ -127,7 +151,7 @@ computeStandardOrder histogram =
     in  filter (\p -> sum p >= raMinAf histogram &&
             hasConditioning (raConditionOn histogram) p &&
             p `notElem` raExcludePatterns histogram) $
-            computeAllConfigs nrPop (raMaxAf histogram) nVec
+            computeAllConfigs (raMaxAf histogram) nVec
   where
     hasConditioning indices pat = all (\i -> pat !! i > 0) indices
 
@@ -160,3 +184,4 @@ choose n k = product [fromIntegral (n + 1 - j) / fromIntegral j | j <- [1..k]]
 chooseCont :: Double -> Int -> Double
 chooseCont _ 0 = 1
 chooseCont n k = product [(n + 1.0 - fromIntegral j) / fromIntegral j | j <- [1..k]]
+

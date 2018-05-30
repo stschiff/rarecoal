@@ -8,7 +8,7 @@ main :: IO ()
 main = defaultMain tests
 
 tests :: TestTree
-tests = testGroup "Tests" [Rarecoal.Core.Test.tests
-                          , Rarecoal.StateSpace.Test.tests
-                          , Rarecoal.ModelTemplate.Test.tests]
+tests = testGroup "Tests" [Rarecoal.StateSpace.Test.tests,
+                           Rarecoal.Core.Test.tests,
+                           Rarecoal.ModelTemplate.Test.tests]
 

@@ -12,6 +12,7 @@ import Data.STRef (newSTRef, STRef)
 import Data.List (nub)
 import qualified Data.Vector.Unboxed as V
 import qualified Data.Vector.Unboxed.Mutable as VM
+import Debug.Trace (trace)
 import Test.Tasty.QuickCheck (testProperty)
 import Test.Tasty.HUnit (testCase, Assertion, assertBool)
 import Test.Tasty (TestTree, testGroup)
@@ -32,8 +33,7 @@ tests = testGroup "Core Tests" [
     testProperty "Core -> total probabilities are all positive" prop_getProbTest,
     testProperty "Core2 -> total probabilities are all positive" prop_getProb2Test,
     -- testProperty "Core2 -> tupleWrapper tests" prop_rFacTupleTest,
-    testCase "testing consistency with previous versions"
-        assertConsistentProbs,
+    testCase "testing consistency with previous versions" assertConsistentProbs,
     testCase "testing approximate consistency with previous versions via Core2"
         assertConsistentProbsWithCore2]
 
@@ -143,7 +143,7 @@ prop_getProbTest :: Property
 prop_getProbTest = forAll genInput go
   where
     genInput = genStates `suchThat` (\v -> V.sum v > 0 && V.sum v <= maxAf)
-    go state = get5popProb (V.toList state)
+    go = get5popProb . V.toList
     get5popProb config = case C.getProb modelSpec nVec config of
         Left _ -> False
         Right res -> res >= 0.0

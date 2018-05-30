@@ -21,7 +21,7 @@ import qualified Data.Text as T
 import Turtle (format, (%), w)
 import qualified Data.Vector.Unboxed         as V
 import qualified Data.Vector.Unboxed.Mutable as VM
--- import Debug.Trace (trace)
+import Debug.Trace (trace)
 
 data ModelState s = ModelState {
     _msT              :: STRef s Double,

@@ -1,6 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Rarecoal.StateSpace (JointState, JointStateSpace(..), makeJointStateSpace, genericStateToId, 
-    genericNrStates, genericIdToState, genericX1Up, genericX1, fillUpStateSpace, 
+module Rarecoal.StateSpace (JointState, JointStateSpace(..), makeJointStateSpace,
+    genericStateToId,  genericNrStates,  genericIdToState,
+    genericStateToId2, genericNrStates2, genericIdToState2, genericX1Up, genericX1, 
+    fillUpStateSpace, 
     ModelEvent(..), EventType(..), ModelSpec(..), validateModel, CoreFunc,
     getRegularizationPenalty)
 where
@@ -8,9 +10,10 @@ where
 import Control.Exception.Base (assert)
 import Control.Monad (foldM, when)
 import Data.List (nub, sortBy)
-import Data.MemoCombinators (arrayRange)
+import Data.MemoCombinators (arrayRange, integral, wrap)
 import qualified Data.Text as T
 import qualified Data.Vector.Unboxed as V
+import Rarecoal.Utils (computeAllConfigs)
 import Turtle (format, (%), w, d, g)
 
 
@@ -49,19 +52,39 @@ data ModelSpec = ModelSpec {
 
 type CoreFunc = ModelSpec -> [Int] -> [Int] -> Either T.Text Double
 
+-- makeJointStateSpace :: Int -> Int -> JointStateSpace
+-- makeJointStateSpace nrPop maxAf =
+--     let stateToId = genericStateToId maxAf
+--         idToState = genericIdToState maxAf nrPop
+--         x1up xId =
+--             let states = (genericX1Up . idToState) xId
+--             in  V.fromList [if V.all (<=maxAf) s then (stateToId s) else -1 | s <- states]
+--         x1 = stateToId . genericX1 nrPop
+--         nrStates = genericNrStates maxAf nrPop
+--         (idToStateMemo, x1upMemo, x1Memo) = if nrStates < 20000
+--             then
+--                 (arrayRange (0, nrStates - 1) idToState,
+--                  arrayRange (0, nrStates - 1) x1up,
+--                  arrayRange (0, nrStates - 1) x1)
+--             else
+--                 (integral idToState, integral x1up, integral x1)
+--     in  JointStateSpace stateToId idToStateMemo x1upMemo x1Memo nrPop maxAf nrStates
+
 makeJointStateSpace :: Int -> Int -> JointStateSpace
 makeJointStateSpace nrPop maxAf =
-    let stateToId = genericStateToId maxAf
-        idToState = genericIdToState maxAf nrPop
-        x1up xId = 
+    let stateToId = genericStateToId2 maxAf nrPop
+        idToState = genericIdToState2 maxAf nrPop
+        x1up xId =
             let states = (genericX1Up . idToState) xId
-            in  V.fromList [if V.all (<=maxAf) s then (stateToId s) else -1 | s <- states]
+            in  V.fromList [if V.sum s <= maxAf then (stateToId s) else -1 | s <- states]
         x1 = stateToId . genericX1 nrPop
-        nrStates = genericNrStates maxAf nrPop
+        nrStates = genericNrStates2 maxAf nrPop
+        stateToIdMemo =
+            wrap (genericIdToState maxAf nrPop) (genericStateToId maxAf) integral stateToId
         idToStateMemo = arrayRange (0, nrStates - 1) idToState
         x1upMemo = arrayRange (0, nrStates - 1) x1up
         x1Memo = arrayRange (0, nrStates - 1) x1
-    in  JointStateSpace stateToId idToStateMemo x1upMemo x1Memo nrPop maxAf nrStates
+    in  JointStateSpace stateToIdMemo idToStateMemo x1upMemo x1Memo nrPop maxAf nrStates
 
 genericStateToId :: Int -> JointState -> Int
 genericStateToId maxAf state = ass $ V.ifoldl (\v i x -> v + x * (maxAf + 1) ^ i) 0 state
@@ -77,6 +100,22 @@ genericIdToState maxAf nrPop id_ = ass $ V.fromList (take nrPop (go id_))
     go x = x `mod` (maxAf + 1) : go (x `div` (maxAf + 1))
     ass = assert (id_ < nrStates)
     nrStates = genericNrStates maxAf nrPop
+
+genericStateToId2 :: Int -> Int -> JointState -> Int
+genericStateToId2 maxAf nrPop state =
+    let allPatterns = computeAllConfigs maxAf (replicate nrPop maxAf)
+        filtered = filter ((==stateV) . snd) . zip [0..] $ allPatterns    
+    in  if null filtered
+        then error $ "cannot find state " ++ show state
+        else fst . head $ filtered
+  where
+    stateV = V.toList state
+
+genericNrStates2 :: Int -> Int -> Int
+genericNrStates2 maxAf nrPop = length $ computeAllConfigs maxAf (replicate nrPop maxAf)
+
+genericIdToState2 :: Int -> Int -> Int -> JointState
+genericIdToState2 maxAf nrPop = V.fromList . ((computeAllConfigs maxAf (replicate nrPop maxAf)) !!)
 
 genericX1Up :: JointState -> [JointState]
 genericX1Up x = [x V.// [(k, x V.! k + 1)] | k <- [0..V.length x - 1]]
