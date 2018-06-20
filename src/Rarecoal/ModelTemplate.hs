@@ -80,7 +80,7 @@ parseBranchNames = PC.string "BRANCHES" *> PC.spaces *> PC.char '=' *> PC.spaces
     PC.spaces
 
 branchNameP :: Parser T.Text
-branchNameP = T.pack <$> P.many1 PC.alphaNum
+branchNameP = T.pack <$> P.many1 (PC.satisfy (\c -> isAlphaNum c || c == '_'))
 
 parseEvents :: Parser [MTEvent]
 parseEvents = PC.string "EVENTS" *> PC.spaces *> PC.char '=' *> PC.spaces *> PC.char '[' *> 
