@@ -99,6 +99,7 @@ propagateStates ms = do
             when (deltaT > 0) $ do
                 -- reportState "Before Prop" ms
                 aOld <- V.freeze (msA ms)
+                accumulateSFS ms deltaT
                 propagateA ms deltaT
                 propagateB ms aOld
                 writeSTRef (msT ms) nextT
@@ -142,7 +143,7 @@ propagateToInfinity ms = do
   where
     goState popSize nrA x =
         let nrDerived = assert ((V.length . V.filter (>0)) x == 1) $ V.sum x
-        in  singlePopMutBranchLength popSize nrA nrDerived
+        in  sfsCont popSize nrA nrDerived
        
 checkIfAllHaveCoalesced :: ModelState s -> ST s Bool
 checkIfAllHaveCoalesced ms = do
@@ -155,12 +156,62 @@ checkIfAllHaveCoalesced ms = do
     e <- readSTRef $ msEventQueue ms
     return $ allDerivedHaveCoalesced && allAncestralHaveCoalesced && null e
 
-singlePopMutBranchLength :: Double -> Double -> Int -> Double
-singlePopMutBranchLength popSize nrA nrDerived =
+sfsCont :: Double -> Double -> Int -> Double
+sfsCont popSize nrA nrDerived =
     let withCombinatorics = 2.0 * popSize / fromIntegral nrDerived
         combFactor = chooseCont nrA nrDerived
         -- combFactor = choose (max nrDerived (round nrA)) nrDerived
     in  withCombinatorics / combFactor
+
+
+accumulateSFS :: ModelState s -> Double -> ST s ()
+accumulateSFS ms deltaT = do
+    nonZeroStates <- readSTRef (msNonZeroStates ms)
+    popSizeVec <- V.freeze $ msPopSize ms
+    aVec <- V.freeze (msA ms)
+    forM_ nonZeroStates $ \xId -> do
+        let xVec = _jsIdToState (msStateSpace ms) xId
+        prob <- VM.read (msB ms) xId
+        let sumDerived = V.sum xVec
+            maxDerived = V.maximum xVec
+            maxIndex = V.maxIndex xVec
+            popSize = popSizeVec V.! maxIndex
+            a = aVec V.! maxIndex
+            addSFS = if   sumDerived == maxDerived
+                     then conditionalSFScont popSize deltaT a sumDerived
+                     else 0.0
+        modifySTRef (msD ms) (\v -> v + prob * addSFS)
+
+conditionalSFScont :: Double -> Double -> Double -> Int -> Double
+conditionalSFScont popSize tau a i = 
+    let a0 = floor a
+        a1 = a0 + 1
+        r0 = conditionalSFS popSize tau a0 i
+        r1 = conditionalSFS popSize tau a1 i
+    in  (a - fromIntegral a0) * r1 + (fromIntegral a1 - a) * r0
+
+-- see Mathematica notebook for theory
+conditionalSFS :: Double -> Double -> Int -> Int -> Double
+conditionalSFS popSize tau m i =
+    let rawSFS = (2.0 * popSize / fromIntegral i) / choose (m - 1) i * sum_
+        combFactor = choose m i
+    in  rawSFS / combFactor
+  where
+    sum_ = sum $ do
+        k <- [2..(m - i + 1)]
+        return $ choose k 2 * choose (m - k) (i - 1) * interCoalTime m k tau (1.0 / popSize)
+
+interCoalTime :: Int -> Int -> Double -> Double -> Double
+interCoalTime m k tau lambda
+    | m == k    = 1.0 / (lambda * k2) * (1.0 - exp (-k2 * lambda * tau))
+    | otherwise = (interCoalTime (m - 1) k tau lambda - interCoalTime m (k + 1) tau lambda *
+        fromIntegral (k * (k + 1)) / fromIntegral (m * (m - 1))) / norm
+  where
+    k2 = choose k 2
+    norm = 1.0 - fromIntegral (k * (k - 1)) / fromIntegral (m * (m - 1))
+-----------------------------
+
+
 
 propagateA :: ModelState s -> Double -> ST s ()
 propagateA ms deltaT = do
@@ -181,7 +232,6 @@ propagateB :: ModelState s -> VecDoub -> ST s ()
 propagateB ms aVecOld = do
     nonZeroStateIds <- readSTRef (msNonZeroStates ms)
     VM.set (msBtemp ms) 0.0
-    popSizeVec <- V.freeze $ msPopSize ms
     aVec <- V.freeze (msA ms)
     -- trace ("aVecOld=" ++ show aVecOld ++ ", aVec=" ++ show aVec) $ return ()
     let rFacMemo = msRfactorMemo ms
@@ -189,29 +239,15 @@ propagateB ms aVecOld = do
         let xVecOld = _jsIdToState (msStateSpace ms) xId
         prob <- VM.read (msB ms) xId
         if (prob > 0.0) then do
-            let mutBranchInf = computeMutBranchInfForState xVecOld aVecOld popSizeVec
-                allTargetStates = fillUpStateSpace (msStateSpace ms) [xId]
-            mutBranchSubtract <- forM allTargetStates $ \xIdNew -> do
+            let allTargetStates = fillUpStateSpace (msStateSpace ms) [xId]
+            forM_ allTargetStates $ \xIdNew -> do
                 let xVec = _jsIdToState (msStateSpace ms) xIdNew
                     rFactor = computeRfactorVec rFacMemo xVec aVec xVecOld aVecOld
                 VM.modify (msBtemp ms) (\v -> v + rFactor * prob) xIdNew 
-                if mutBranchInf > 0.0
-                then return $ rFactor * computeMutBranchInfForState xVec aVec popSizeVec
-                else return 0.0
-            modifySTRef (msD ms) (\v -> v + prob * (max (mutBranchInf - sum mutBranchSubtract) 0))
             return allTargetStates
         else return [] -- this should never be the case, actually.
     writeSTRef (msNonZeroStates ms) (nub newNonZeroStates)
     VM.copy (msB ms) (msBtemp ms) 
-
-computeMutBranchInfForState :: JointState -> VecDoub -> VecDoub -> Double
-computeMutBranchInfForState xVec aVec popSize = 
-    let sumDerived = V.sum xVec
-        maxDerived = V.maximum xVec
-        maxIndex = V.maxIndex xVec
-    in  if sumDerived == maxDerived
-        then singlePopMutBranchLength (popSize V.! maxIndex) (aVec V.! maxIndex) sumDerived
-        else 0.0
 
 computeRfactorVec :: RFacFunc -> JointState -> VecDoub -> JointState -> VecDoub -> Double
 computeRfactorVec rFacMemo xVec aVec xVecOld aVecOld =
