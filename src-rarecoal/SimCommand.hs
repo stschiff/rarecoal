@@ -2,33 +2,42 @@
 
 module SimCommand (SimCommandOpt(..), runSimCommand) where
 
+import Rarecoal.Utils (GeneralOptions(..))
 import Rarecoal.Core (ModelSpec(..), ModelEvent(..), EventType(..))
-import Rarecoal.ModelTemplate (ModelDesc, getModelSpec)
+import Rarecoal.ModelTemplate (ModelOptions(..), ParamOptions(..),
+                               getModelTemplate, makeParameterDict,
+                               instantiateModel)
 
-import Control.Error (Script)
+import Control.Error (Script, scriptIO, tryRight)
 import Data.List (sortOn)
 import Data.Text (Text, unwords)
+import qualified Data.Text.IO as T
 import Prelude hiding (unwords)
-import Turtle (echo, format, d, g, s, (%))
+import Turtle (format, d, g, s, (%))
 
 data SimCommandOpt = SimCommandOpt {
-    _ftModelDesc :: ModelDesc,
-    _ftBranchNames :: [String],
+    _ftGeneralOpts :: GeneralOptions,
+    _ftModelOpts :: ModelOptions,
+    _ftParamOpts :: ParamOptions,
     _ftNrHaps :: [Int],
     _ftRecomb :: Double,
     _ftL :: Int
 }
 
 runSimCommand :: SimCommandOpt -> Script ()
-runSimCommand (SimCommandOpt modelDesc names nrHaps rho chromLength) = do
-    (ModelSpec _ theta _ _ events) <- getModelSpec modelDesc names
-    let thetaL = 2.0 * theta * fromIntegral chromLength
-    echo $ format ("scrm "%d%" 1 -t "%g%" -r "%g%" "%d%" -l 100000 "%s%" "%s)
-        nSamples thetaL rhoL chromLength (makeSubPopSpec nrHaps)
+runSimCommand opts = do
+    modelTemplate <- getModelTemplate (_ftModelOpts opts)
+    modelParams <- scriptIO $ makeParameterDict (_ftParamOpts opts)
+    modelSpec <- tryRight $ instantiateModel (_ftGeneralOpts opts) modelTemplate modelParams
+    let (ModelSpec _ _ theta _ _ _ events) = modelSpec
+    let thetaL = 2.0 * theta * fromIntegral (_ftL opts)
+    scriptIO . T.putStr $ format ("scrm "%d%" 1 -t "%g%" -r "%g%" "%d%
+        " -l 100000 "%s%" "%s) nSamples thetaL rhoL (_ftL opts)
+        (makeSubPopSpec (_ftNrHaps opts))
         (makeModelOpts events)
   where
-    nSamples = sum nrHaps
-    rhoL = 2.0 * rho * fromIntegral chromLength
+    nSamples = sum $ _ftNrHaps opts
+    rhoL = 2.0 * _ftRecomb opts * fromIntegral (_ftL opts)
 
 makeSubPopSpec :: [Int] -> Text
 makeSubPopSpec nrHaps = format ("-I "%d%" "%s) nPops nInds

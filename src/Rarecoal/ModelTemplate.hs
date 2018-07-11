@@ -1,372 +1,278 @@
-module Rarecoal.ModelTemplate (getInitialParams, ModelTemplate(..),
-                               readModelTemplate,
-                               instantiateModel, ModelDesc(..),
-                               getModelSpec, EventTemplate(..),
-                               BranchSpec, makeFixedParamsTemplate,
-                               reportGhostPops, ConstraintTemplate(..)) where
+{-# LANGUAGE OverloadedStrings #-}
+module Rarecoal.ModelTemplate (ModelOptions(..), ParamOptions(..),
+    ModelTemplate(..), MTEvent(..), MTConstraint(..), ParamSpec(..), getModelTemplate, 
+    instantiateModel, makeParameterDict, getRegularizationPenalty, getParamNames,
+    fillParameterDictWithDefaults, ConstraintOperator(..))
+where
 
-import           Rarecoal.Core        (EventType (..), ModelEvent (..),
-                                       ModelSpec (..), getTimeSteps,
-                                       getNrOfPops)
+import           Rarecoal.Utils                       (getTimeSteps,
+                                                       GeneralOptions (..),
+                                                       Branch)
+import           Rarecoal.Core              (EventType(..), ModelSpec(..), ModelEvent (..))
+import Rarecoal.StateSpace (getRegularizationPenalty)
 
-import           Control.Applicative  ((<|>))
-import           Control.Error        (Script, assertErr, justErr, scriptIO,
-                                       tryRight, errLn)
-import           Control.Monad        (forM, when)
-import           Control.Monad.Except (throwError)
-import qualified Data.Attoparsec.Text as A
-import           Data.Char            (isAlphaNum)
+import           Control.Applicative                  ((<|>))
+import           Control.Error                        (Script, errLn,
+                                                       justErr, scriptIO)
+import           Control.Monad                        (forM, when)
+import           Control.Monad.Trans.Except           (throwE)
+import           Data.Char                            (isAlphaNum)
 -- import Debug.Trace (trace)
-import           Data.List            (elemIndex, nub)
-import           Data.Text            (unpack)
-import qualified Data.Text.IO         as T
-import qualified Data.Vector.Unboxed  as V
-import           System.Log.Logger    (infoM)
+import           Data.List                            (elemIndex, nub)
+import qualified Data.Text                            as T
+import qualified Data.Text.IO                         as T
+import qualified Text.Parsec                          as P
+import qualified Text.Parsec.Char                     as PC
+import           Text.Parsec.Number                   (floating, sign)
+import           Text.Parsec.Text                     (Parser)
+import           Turtle                               (format, w, (%), g)
 
-data ModelTemplate = ModelTemplate {
-    mtParams              :: [String],
-    mtTheta               :: Double,
-    mtTimeSteps           :: [Double],
-    mtDiscoveryRate       :: [(BranchSpec, ParamSpec)],
-    mtPopSizeReg          :: Double,
-    mtEventTemplates      :: [EventTemplate],
-    mtConstraintTemplates :: [ConstraintTemplate]
-} deriving (Eq, Show)
+data ModelOptions = ModelByFile FilePath | ModelByText T.Text
 
-type ParamSpec = Either Double String
-type BranchSpec = Either Int String
-
-data EventTemplate =
-    JoinEventTemplate ParamSpec BranchSpec BranchSpec |
-    SplitEventTemplate ParamSpec BranchSpec BranchSpec ParamSpec |
-    PopSizeEventTemplate ParamSpec BranchSpec ParamSpec |
-    JoinPopSizeEventTemplate ParamSpec BranchSpec BranchSpec ParamSpec
-    deriving (Eq, Show)
-
-data ConstraintTemplate =
-    SmallerConstraintTemplate ParamSpec ParamSpec |
-    GreaterConstraintTemplate ParamSpec ParamSpec
-    deriving (Eq, Show)
-
-data ModelDesc = ModelDesc {
-    mdDiscoveryRates :: [(String, Double)],
-    mdReg :: Double,
-    mdTheta :: Double,
-    mdLinGen :: Int,
-    mdEvents :: [ModelEvent],
-    mdMaybeTemplate :: Maybe (FilePath, Maybe FilePath, [(String, Double)])
+data ParamOptions = ParamOptions {
+    optMaybeParamInputFile :: Maybe FilePath,
+    optParameterSettings   :: [(T.Text, Double)]
 }
 
--- type ParamsDesc = Either (FilePath, [(String, Double)]) [Double]
+data ModelTemplate = ModelTemplate {
+    mtBranchNames :: [T.Text],
+    mtEvents :: [MTEvent],
+    mtConstraints :: [MTConstraint]
+} deriving (Show, Eq)
 
-getInitialParams :: ModelTemplate -> Maybe FilePath -> [(String, Double)] ->
-    Script (V.Vector Double)
-getInitialParams modelTemplate maybeInputFile paramsList =
+data MTEvent = MTPopSizeChange ParamSpec Branch ParamSpec
+             | MTJoin ParamSpec Branch Branch
+             | MTJoinPopSizeChange ParamSpec Branch Branch ParamSpec
+             | MTSplit ParamSpec Branch Branch ParamSpec
+             | MTFreeze ParamSpec Branch Bool deriving (Eq, Show)
+
+data MTConstraint = MTConstraint ParamSpec ParamSpec ConstraintOperator deriving (Eq, Show)               
+data ParamSpec = ParamFixed Double | ParamVariable T.Text deriving (Eq, Show)
+
+data ConstraintOperator = ConstraintOpGreater | ConstraintOpSmaller deriving (Eq, Show)
+
+getModelTemplate :: ModelOptions -> Script ModelTemplate
+getModelTemplate mo = do
+    mt <- case mo of
+        ModelByFile fp -> do
+            input' <- scriptIO $ T.readFile fp
+            case P.parse modelTemplateP "" input' of
+                Left e  -> throwE (format w e)
+                Right v -> return v
+        ModelByText input -> case P.parse modelTemplateP "" input of
+            Left e  -> throwE (format w e)
+            Right v -> return v
+    reportModelTemplate mt
+    return mt
+  where
+    reportModelTemplate mt@(ModelTemplate n e c) = do
+        let paramNames = getParamNames mt
+        scriptIO . errLn $ format ("loaded model template with branch names "%w%", events "%w%
+            ", constraints "%w%" and parameters "%w) n e c paramNames
+
+modelTemplateP :: Parser ModelTemplate
+modelTemplateP = ModelTemplate <$> parseBranchNames <*> parseEvents <*>
+    (parseConstraints <|> pure [])
+
+parseBranchNames :: Parser [T.Text]
+parseBranchNames = PC.string "BRANCHES" *> PC.spaces *> PC.char '=' *> PC.spaces *> PC.char '[' *> 
+    PC.spaces *> (branchNameP `P.sepBy1` (PC.char ',' *> PC.spaces)) <* PC.spaces <* PC.char ']' <* 
+    PC.spaces
+
+branchNameP :: Parser T.Text
+branchNameP = T.pack <$> P.many1 (PC.satisfy (\c -> isAlphaNum c || c == '_'))
+
+parseEvents :: Parser [MTEvent]
+parseEvents = PC.string "EVENTS" *> PC.spaces *> PC.char '=' *> PC.spaces *> PC.char '[' *> 
+    PC.spaces *> (eventP `P.sepBy` (PC.char ';' *> PC.spaces)) <* PC.spaces <* PC.char ']' <* 
+    PC.spaces
+
+eventP :: Parser MTEvent
+eventP = P.try popSizeChangeCmdP <|>
+         P.try joinCmdP <|>
+         P.try joinPopSizeCmdP <|>
+         P.try splitCmdP <|>
+         freezeCmdP
+
+parseConstraints :: Parser [MTConstraint]
+parseConstraints = PC.string "CONSTRAINTS" *> PC.spaces *> PC.char '=' *> PC.spaces *>
+    PC.char '[' *> PC.spaces *> (constraintCmdP `P.sepBy` (PC.char ';' *> PC.spaces)) <*
+    PC.spaces <* PC.char ']' <* PC.spaces
+
+popSizeChangeCmdP :: Parser MTEvent
+popSizeChangeCmdP = MTPopSizeChange <$> (PC.char 'P' *> spaces1 *> paramSpecP <* spaces1) <*>
+    (branchNameP <* spaces1) <*> paramSpecP
+
+paramSpecP :: Parser ParamSpec
+paramSpecP = P.try (ParamFixed <$> (sign <*> floating)) <|>
+             (ParamVariable <$> variableP)
+
+variableP :: Parser T.Text
+variableP = T.pack <$> (PC.char '<' *> P.many1 (PC.satisfy (\c -> isAlphaNum c || c == '_')) <* PC.char '>')
+
+spaces1 :: Parser ()
+spaces1 = P.skipMany1 PC.space
+
+joinCmdP :: Parser MTEvent
+joinCmdP = MTJoin <$> (PC.char 'J' *> spaces1 *> paramSpecP <* spaces1) <*>
+    (branchNameP <* spaces1) <*> branchNameP
+
+joinPopSizeCmdP :: Parser MTEvent
+joinPopSizeCmdP = MTJoinPopSizeChange <$> (PC.char 'K' *> spaces1 *> paramSpecP <* spaces1) <*>
+    (branchNameP <* spaces1) <*> (branchNameP <* spaces1) <*> paramSpecP
+
+splitCmdP :: Parser MTEvent
+splitCmdP = MTSplit <$> (PC.char 'S' *> spaces1 *> paramSpecP <* spaces1) <*>
+    (branchNameP <* spaces1) <*> (branchNameP <* spaces1) <*> paramSpecP
+
+freezeCmdP :: Parser MTEvent
+freezeCmdP = MTFreeze <$> (PC.char 'F' *> spaces1 *> paramSpecP <* spaces1) <*>
+    (branchNameP <* spaces1) <*> boolP
+  where
+    boolP = P.try (read <$> PC.string "True") <|> (read <$> PC.string "False")
+
+constraintCmdP :: Parser MTConstraint
+constraintCmdP = P.try smallerConstraintP <|> greaterConstraintP
+  where
+    smallerConstraintP = MTConstraint <$> (PC.char 'C' *> spaces1 *> paramSpecP <* PC.spaces) <*>
+        (PC.char '<' *> PC.spaces *> paramSpecP) <*> pure ConstraintOpSmaller
+    greaterConstraintP = MTConstraint <$> (PC.char 'C' *> spaces1 *> paramSpecP <* PC.spaces) <*>
+        (PC.char '>' *> PC.spaces *> paramSpecP) <*> pure ConstraintOpGreater
+
+getParamNames :: ModelTemplate -> [T.Text]
+getParamNames mt = reverse . nub $ go [] (mtEvents mt)
+  where
+    go res [] = res
+    go res (cmd:rest) = case cmd of
+        MTPopSizeChange (ParamFixed _) _ (ParamFixed _) -> go res rest
+        MTPopSizeChange (ParamVariable n) _ (ParamFixed _) -> go (n:res) rest
+        MTPopSizeChange (ParamFixed _) _ (ParamVariable n) -> go (n:res) rest
+        MTPopSizeChange (ParamVariable n1) _ (ParamVariable n2) ->
+            go (n2:n1:res) rest
+        MTJoin (ParamFixed _) _ _ -> go res rest
+        MTJoin (ParamVariable n) _ _ -> go (n:res) rest
+        MTJoinPopSizeChange (ParamFixed _) _ _ (ParamFixed _) -> go res rest
+        MTJoinPopSizeChange (ParamVariable n) _ _ (ParamFixed _) ->
+            go (n:res) rest
+        MTJoinPopSizeChange (ParamFixed _) _ _ (ParamVariable n) ->
+            go (n:res) rest
+        MTJoinPopSizeChange (ParamVariable n1) _ _ (ParamVariable n2) ->
+            go (n2:n1:res) rest
+        MTSplit (ParamFixed _) _ _ (ParamFixed _) -> go res rest
+        MTSplit (ParamVariable n) _ _ (ParamFixed _) ->
+            go (n:res) rest
+        MTSplit (ParamFixed _) _ _ (ParamVariable n) ->
+            go (n:res) rest
+        MTSplit (ParamVariable n1) _ _ (ParamVariable n2) ->
+            go (n2:n1:res) rest
+        MTFreeze (ParamVariable n) _ _ -> go (n:res) rest
+        _ -> go res rest
+
+instantiateModel :: GeneralOptions -> ModelTemplate -> [(T.Text, Double)] ->
+    Either T.Text ModelSpec
+instantiateModel opts (ModelTemplate branchNames _mtEvents _mtConstraints) paramsDict = do
+    events <- reverse <$> getEvents branchNames _mtEvents []
+    validateConstraints paramsDict _mtConstraints
+    let timeSteps = getTimeSteps (optN0 opts) (optLinGen opts) (optTMax opts)
+        nrPops = length branchNames
+    return $ ModelSpec nrPops timeSteps (optTheta opts) [1.0 | _ <- [0..(nrPops - 1)]] 
+        (optRegPenalty opts) (optNoShortcut opts) events
+  where
+    getEvents _ [] res = return res
+    getEvents bN (cmd:rest) res = case cmd of
+        MTJoin tSpec toSpec fromSpec -> do
+            t <- getParam paramsDict tSpec
+            e <- Join <$> getBranchIndex bN toSpec <*>
+                getBranchIndex bN fromSpec
+            getEvents bN rest (ModelEvent t e:res)
+        MTPopSizeChange tSpec bSpec pSpec -> do
+            t <- getParam paramsDict tSpec
+            e <- SetPopSize <$> getBranchIndex bN bSpec <*>
+                getParam paramsDict pSpec
+            getEvents bN rest (ModelEvent t e:res)
+        MTJoinPopSizeChange tSpec toSpec fromSpec pSpec -> do
+            t <- getParam paramsDict tSpec
+            e1 <- Join <$> getBranchIndex bN toSpec <*>
+                getBranchIndex bN fromSpec
+            e2 <- SetPopSize <$> getBranchIndex bN toSpec <*>
+                getParam paramsDict pSpec
+            getEvents bN rest (ModelEvent t e2:ModelEvent t e1:res)
+        MTSplit tSpec toSpec fromSpec rateSpec -> do
+            t <- getParam paramsDict tSpec
+            e <- Split <$> getBranchIndex bN toSpec <*>
+                getBranchIndex bN fromSpec <*>
+                getParam paramsDict rateSpec
+            getEvents bN rest (ModelEvent t e:res)
+        MTFreeze tSpec bSpec v -> do
+            t <- getParam paramsDict tSpec
+            e <- SetFreeze <$> getBranchIndex bN bSpec <*> pure v
+            getEvents bN rest (ModelEvent t e:res)
+
+getBranchIndex :: [T.Text] -> Branch -> Either T.Text Int
+getBranchIndex branchNames branch = justErr (format ("did not find branch name "%w) branch) $
+    elemIndex branch branchNames
+
+getParam :: [(T.Text, Double)] -> ParamSpec -> Either T.Text Double
+getParam _ (ParamFixed val) = return val
+getParam paramsDict (ParamVariable n) =
+    case n `lookup` paramsDict of
+        Nothing ->
+            Left $ format ("Error in Template: could not find parameter "%w) n
+        Just val -> return val
+
+validateConstraints :: [(T.Text, Double)] -> [MTConstraint] -> Either T.Text ()
+validateConstraints _ [] = return ()
+validateConstraints paramsDict (c@(MTConstraint pSpec1 pSpec2 op):rest) = do
+    p1 <- getParam paramsDict pSpec1
+    p2 <- getParam paramsDict pSpec2
+    case op of
+        ConstraintOpGreater ->
+            when (p1 <= p2) $
+                Left (format ("constraint violated: "%w) c)
+        ConstraintOpSmaller ->
+            when (p1 >= p2) $
+                Left (format ("constraint violated: "%w) c)
+    validateConstraints paramsDict rest
+
+makeParameterDict :: ParamOptions -> IO [(T.Text, Double)]
+makeParameterDict (ParamOptions maybeInputFile xSettings) =
     case maybeInputFile of
         Just paramsFile -> do
-            l <- lines <$> (scriptIO . readFile $ paramsFile)
-            ret <- if (head . head $ l) == '#'
-                then -- aha, have rarecoal mcmc output file
-                    loadFromDict
-                        [(k, read $ v !! 2) | (k : v) <- map words . drop 3 $ l]
-                else -- aha, have rarecoal maxl output file
-                    loadFromDict
-                        [(k, read v) | [k, v] <- map words l]
-            scriptIO . infoM "rarecoal" $ "initial parameters: " ++ show ret
-            return ret
-        Nothing -> loadFromDict []
+            l <- lines <$> readFile paramsFile
+            if (head . head $ l) == '#'
+            then -- aha, have rarecoal mcmc output file
+                removeDuplicateKeys $
+                    xSettings ++ [(T.pack k, read $ v !! 0) | (k : v) <- map words . drop 3 $ l]
+            else -- aha, have rarecoal maxl output file
+                removeDuplicateKeys $
+                    xSettings ++ [(T.pack k, read v) | [k, v] <- map words l]
+        Nothing -> removeDuplicateKeys xSettings
   where
-    loadFromDict :: [(String, Double)] -> Script (V.Vector Double)
-    loadFromDict dict = V.fromList <$> mapM (paramLookup dict) (mtParams modelTemplate)
-    paramLookup :: [(String, Double)] -> String -> Script Double
-    paramLookup dict p =
-        case p `lookup` paramsList of
-            Just x -> return x
-            Nothing -> do
-                case p `lookup` dict of
-                    Just v -> return v
-                    Nothing -> do
-                        if head p == 'p'
-                        then do
-                            scriptIO $ errLn $ "assuming " ++ p ++
-                                " denotes a population size. Initializing to 1"
-                            return 1.0
-                        else
-                            if take 3 p == "adm"
-                            then do
-                                scriptIO $ errLn $ "assuming " ++ p ++
-                                    " denotes an admixture rate. Initializing to 0.05"
-                                return 0.05
-                            else
-                                throwError $ "Don't know how to initialize parameter " ++ p ++
-                                    ". Please provide initial value via -X " ++ p ++ "=?"
-                            
-readModelTemplate :: FilePath -> Double -> [Double] -> Double ->
-    Script ModelTemplate
-readModelTemplate path theta timeSteps reg = do
-    c <- scriptIO $ T.readFile path
-    (names, discoveryRates, events, constraints) <- tryRight $
-        A.parseOnly (parseModelTemplate <* A.endOfInput) c
-    scriptIO $ errLn "found the following parameters in the model template:"
-    scriptIO $ mapM_ errLn names
-    return $
-        ModelTemplate names theta timeSteps discoveryRates reg events
-            constraints
-
-reportGhostPops :: ModelTemplate -> [String] -> V.Vector Double -> Script ()
-reportGhostPops modelTemplate branchNames x = do
-    modelSpec <- tryRight $ instantiateModel modelTemplate x branchNames
-    nrPops <- tryRight $ getNrOfPops (mEvents modelSpec)
-    when (length branchNames /= nrPops) . scriptIO $
-        errLn ("found " ++ show (nrPops - length branchNames) ++
-        " ghost populations")
-
-parseModelTemplate :: A.Parser ([String], [(BranchSpec, ParamSpec)],
-    [EventTemplate], [ConstraintTemplate])
-parseModelTemplate = do
-    discoveryRates <- A.many' parseDiscoveryRate
-    events <- parseEvents
-    constraints <- parseConstraints
-    let names = pullOutAllParamNames discoveryRates events
-    return (names, discoveryRates, events, constraints)
-
-pullOutAllParamNames :: [(BranchSpec, ParamSpec)] -> [EventTemplate] -> [String]
-pullOutAllParamNames dRates eTemplates = reverse . nub $ go [] dRates eTemplates
-  where
-    go res (dR:dRs) ets = case dR of
-        (_, Left _) -> go res dRs ets
-        (_, Right n) -> go (n:res) dRs ets
-    go res [] (et:ets) = case et of
-        JoinEventTemplate (Left _) _ _                     -> go res [] ets
-        JoinEventTemplate (Right n) _ _                    -> go (n:res) [] ets
-        SplitEventTemplate (Left _) _ _ (Left _)           -> go res [] ets
-        SplitEventTemplate (Left _) _ _ (Right n)          -> go (n:res) [] ets
-        SplitEventTemplate (Right n) _ _ (Left _)          -> go (n:res) [] ets
-        SplitEventTemplate (Right n1) _ _ (Right n2)       -> go (n2:n1:res) [] ets
-        PopSizeEventTemplate (Left _) _ (Left _)           -> go res [] ets 
-        PopSizeEventTemplate (Left _) _ (Right n)          -> go (n:res) [] ets 
-        PopSizeEventTemplate (Right n) _ (Left _)          -> go (n:res) [] ets 
-        PopSizeEventTemplate (Right n1) _ (Right n2)       -> go (n2:n1:res) [] ets 
-        JoinPopSizeEventTemplate (Left _) _ _ (Left _)     -> go res [] ets
-        JoinPopSizeEventTemplate (Left _) _ _ (Right n)    -> go (n:res) [] ets
-        JoinPopSizeEventTemplate (Right n) _ _ (Left _)    -> go (n:res) [] ets
-        JoinPopSizeEventTemplate (Right n1) _ _ (Right n2) -> go (n2:n1:res) [] ets
-    go res [] [] = res
-
-parseDiscoveryRate :: A.Parser (BranchSpec, ParamSpec)
-parseDiscoveryRate = do
-    _ <- A.char 'D'
-    _ <- A.space
-    k <- parseEitherBranch
-    _ <- A.char ','
-    d <- parseEitherParam
-    A.endOfLine
-    return (k, d)
-
-parseParamName :: A.Parser String
-parseParamName = unpack <$> A.takeWhile (\c -> isAlphaNum c || c == '_')
-
-parseEvents :: A.Parser [EventTemplate]
-parseEvents = A.many' (parsePopSizeEvent <|> parseJoinEvent <|>
-    parseSplitEvent <|> parseJoinPopSizeEvent)
-
-parsePopSizeEvent :: A.Parser EventTemplate
-parsePopSizeEvent = PopSizeEventTemplate <$> (A.char 'P' *> A.space *>
-    parseEitherParam) <* A.char ',' <*> parseEitherBranch <* A.char ',' <*>
-    parseEitherParam <* A.endOfLine
-
-parseEitherParam :: A.Parser ParamSpec
-parseEitherParam = (Left <$> A.double) <|>
-    (Right <$> (A.char '<' *> parseParamName <* A.char '>'))
-
-parseEitherBranch :: A.Parser BranchSpec
-parseEitherBranch = (Left <$> A.decimal) <|>
-    (Right <$> (A.char '"' *> parseBranchName <* A.char '"'))
-  where
-    parseBranchName = parseParamName
-
-parseJoinEvent :: A.Parser EventTemplate
-parseJoinEvent = JoinEventTemplate <$> (A.char 'J' *> A.space *>
-    parseEitherParam) <* A.char ',' <*> parseEitherBranch <* A.char ',' <*>
-    parseEitherBranch <* A.endOfLine
-
-parseSplitEvent :: A.Parser EventTemplate
-parseSplitEvent = SplitEventTemplate <$> (A.char 'S' *> A.space *>
-    parseEitherParam) <* A.char ',' <*> parseEitherBranch <* A.char ',' <*>
-    parseEitherBranch <* A.char ',' <*> parseEitherParam <* A.endOfLine
-
-parseJoinPopSizeEvent :: A.Parser EventTemplate
-parseJoinPopSizeEvent = JoinPopSizeEventTemplate <$> (A.char 'K' *> A.space *>
-    parseEitherParam) <* A.char ',' <*> parseEitherBranch <* A.char ',' <*>
-    parseEitherBranch <* A.char ',' <*> parseEitherParam <* A.endOfLine
-
-parseConstraints :: A.Parser [ConstraintTemplate]
-parseConstraints = A.many' (A.try parseSmallerConstraint <|>
-    parseGreaterConstraint)
-  where
-    parseSmallerConstraint = SmallerConstraintTemplate <$> (A.char 'C' *>
-        A.space *> parseEitherParam) <* A.char '<' <*> parseEitherParam <*
-        A.endOfLine
-    parseGreaterConstraint = GreaterConstraintTemplate <$> (A.char 'C' *>
-        A.space *> parseEitherParam) <* A.char '>' <*> parseEitherParam <*
-        A.endOfLine
-
-instantiateModel :: ModelTemplate -> V.Vector Double -> [String] ->
-    Either String ModelSpec
-instantiateModel mt params branchNames = do
-    let (ModelTemplate pNames theta timeSteps drates reg ets cts) = mt
-        params' = V.toList params
-    events <- concat <$> mapM (instantiateEvent pNames params' branchNames) ets
-    nrPops <- getNrOfPops events
-    dr <- do
-        indexValuePairs <-
-            mapM (instantiateDiscoveryRates pNames params' branchNames) drates
-        return . V.toList $ V.replicate nrPops 1.0 V.//
-            indexValuePairs
-    mapM_ (validateConstraint pNames params') cts
-    return $ ModelSpec timeSteps theta dr reg events
-
-instantiateDiscoveryRates :: [String] -> [Double] -> [String] ->
-    (BranchSpec, ParamSpec) -> Either String (Int, Double)
-instantiateDiscoveryRates pnames params branchNames (k, r) = do
-    k' <- substituteBranch branchNames k
-    r' <- substituteParam pnames params r
-    return (k', r')
-
-instantiateEvent :: [String] -> [Double] -> [String] -> EventTemplate ->
-    Either String [ModelEvent]
-instantiateEvent pnames params branchNames et =
-    case et of
-        PopSizeEventTemplate t k n -> do
-            (t', k', n') <- (,,) <$> getEitherParam t <*> getEitherBranch k <*>
-                getEitherParam n
-            return [ModelEvent t' (SetPopSize k' n')]
-        JoinEventTemplate t k l -> do
-            (t', k', l') <- (,,) <$> getEitherParam t <*> getEitherBranch k <*>
-                getEitherBranch l
-            return [ModelEvent t' (Join k' l')]
-        SplitEventTemplate t k l m -> do
-            (t', k', l', m') <- (,,,) <$> getEitherParam t <*>
-                getEitherBranch k <*> getEitherBranch l <*> getEitherParam m
-            return [ModelEvent t' (Split k' l' m')]
-        JoinPopSizeEventTemplate t k l n -> do
-            (t', k', l', n') <- (,,,) <$> getEitherParam t <*>
-                getEitherBranch k <*> getEitherBranch l <*> getEitherParam n
-            return [ModelEvent t' (Join k' l'),
-                ModelEvent t' (SetPopSize k' n')]
-  where
-    getEitherParam = substituteParam pnames params
-    getEitherBranch = substituteBranch branchNames
-
-substituteBranch :: [String] -> BranchSpec -> Either String Int
-substituteBranch branchNames branchSpec = case branchSpec of
-    Left k' -> return k'
-    Right n -> justErr ("did not find branch name " ++ n) $
-        elemIndex n branchNames
-
-substituteParam :: [String] -> [Double] -> ParamSpec -> Either String Double
-substituteParam _ _ (Left val) = Right val
-substituteParam pnames params (Right param) = do
-    when (length params /= length pnames) $ Left ("number of parameter values \
-        \does not match number of parameters in template. Values: " ++ show params ++ ", parameters: " ++ show pnames)
-    case foundParam of
-        Nothing -> Left $ "Error in Template: could not find parameter \
-            \named " ++ param
-        Just val -> Right val
-  where
-    foundParam = lookup param (zip pnames params)
-
-validateConstraint :: [String] -> [Double] -> ConstraintTemplate ->
-    Either String ()
-validateConstraint pNames params ct =
-    case ct of
-        SmallerConstraintTemplate maybeParam1 maybeParam2 -> do
-            p1 <- substituteParam pNames params maybeParam1
-            p2 <- substituteParam pNames params maybeParam2
-            assertErr ("Constrained failed: " ++ show p1 ++ " < " ++ show p2)
-                (p1 < p2)
-        GreaterConstraintTemplate maybeParam1 maybeParam2 -> do
-            p1 <- substituteParam pNames params maybeParam1
-            p2 <- substituteParam pNames params maybeParam2
-            assertErr ("Constrained failed: " ++ show p1 ++ " > " ++ show p2)
-                (p1 > p2)
-
-getModelSpec :: ModelDesc -> [String] -> Script ModelSpec
-getModelSpec modelDesc branchNames = do
-    let ModelDesc discoveryRates reg theta lingen events maybeTemplate =
-            modelDesc
-    indexValuePairs <- forM discoveryRates $ \(branchName, rate) -> do
-        k <- tryRight $ substituteBranch branchNames (Right branchName)
-        return (k, rate)
-    (events', dr') <- case maybeTemplate of
+    removeDuplicateKeys settings = go settings []
+    go [] res = return res
+    go ((key, val):rest) res = case key `lookup` res of
         Nothing -> do
-            nrPops <- tryRight $ getNrOfPops events
-            let dr = V.toList $
-                    V.replicate nrPops 1.0 V.// indexValuePairs
-            return (events, dr)
-        Just (mtF, iF, params) -> do
-            template <- readModelTemplate mtF theta (times lingen) reg
-            x' <- getInitialParams template iF params
-            modelSpec <-
-                tryRight $ instantiateModel template x' branchNames
-            let e = mEvents modelSpec
-                d = V.fromList $ mDiscoveryRates modelSpec
-                d' = V.toList $ d V.// indexValuePairs
-            return (e ++ events, d')
-    let modelSpec = ModelSpec (times lingen) theta dr' reg events'
-    nrPops <- tryRight $ getNrOfPops (mEvents modelSpec)
-    when (nrPops /= length branchNames) . scriptIO $
-        errLn ("found " ++ show (nrPops - length branchNames) ++
-            " ghost populations")
-    return modelSpec
-  where
-    times lingen = getTimeSteps 20000 lingen 20.0
+            errLn $ format ("setting parameter "%w%" = "%g) key val
+            go rest ((key, val):res)
+        Just _ -> go rest res
 
-makeFixedParamsTemplate :: ModelTemplate -> [String] -> V.Vector Double ->
-    Either String ModelTemplate
-makeFixedParamsTemplate modelTemplate fixedParams initialValues = do
-    let p = mtParams modelTemplate
-        et = mtEventTemplates modelTemplate
-        ct = mtConstraintTemplates modelTemplate
-    newEventTemplates <- mapM convertEventTemplate et
-    newConstraintTemplates <- mapM convertConstraintTemplate ct
-    let newParams = filter (`notElem` fixedParams) p
-    return $ modelTemplate {
-        mtParams = newParams,
-        mtEventTemplates = newEventTemplates,
-        mtConstraintTemplates = newConstraintTemplates
-    }
-  where
-    convertEventTemplate et =
-        case et of
-            PopSizeEventTemplate t k n -> do
-                newT <- maybeFixParam t
-                newN <- maybeFixParam n
-                return $ PopSizeEventTemplate newT k newN
-            JoinEventTemplate t k l -> do
-                newT <- maybeFixParam t
-                return $ JoinEventTemplate newT k l
-            SplitEventTemplate t k l m -> do
-                newT <- maybeFixParam t
-                newM <- maybeFixParam m
-                return $ SplitEventTemplate newT k l newM
-            JoinPopSizeEventTemplate t k l n -> do
-                newT <- maybeFixParam t
-                newN <- maybeFixParam n
-                return $ JoinPopSizeEventTemplate newT k l newN
-    maybeFixParam paramSpec =
-        case paramSpec of
-            Left _ -> return paramSpec
-            Right pname ->
-                if   pname `elem` fixedParams
-                then Left <$> substituteParam (mtParams modelTemplate)
-                    (V.toList initialValues) paramSpec
-                else return paramSpec
-    convertConstraintTemplate ct =
-        case ct of
-            SmallerConstraintTemplate ps1 ps2 ->
-                SmallerConstraintTemplate <$> maybeFixParam ps1 <*>
-                    maybeFixParam ps2
-            GreaterConstraintTemplate ps1 ps2 ->
-                GreaterConstraintTemplate <$> maybeFixParam ps1 <*>
-                    maybeFixParam ps2
+fillParameterDictWithDefaults :: ModelTemplate -> [(T.Text, Double)] ->
+    Script [(T.Text, Double)]
+fillParameterDictWithDefaults mt paramsDict = do
+    let paramNames = getParamNames mt
+    forM paramNames $ \p ->
+        case p `lookup` paramsDict of
+            Just v -> return (p, v)
+            Nothing | T.head p == 'p' -> do
+                        scriptIO . errLn $
+                            format ("setting parameter "%w%" = 1.0 (default)") p
+                        return (p, 1.0)
+                    | T.take 3 p == "adm" -> do
+                        scriptIO . errLn $ format ("setting parameter "%w%
+                            " = 0.05 (default)") p
+                        return (p, 0.05)
+                    | otherwise ->
+                        throwE $ format ("Don't know how to initialize \
+                        \parameter "%w%". Please provide initial \
+                        \value via -X "%w%"=...") p p
+

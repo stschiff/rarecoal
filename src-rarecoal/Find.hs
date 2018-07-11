@@ -1,56 +1,49 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Find (runFind, FindOpt(..)) where
 
+import Rarecoal.Utils (GeneralOptions(..), HistogramOptions(..), setNrProcessors)
 import Rarecoal.Core (ModelSpec(..), ModelEvent(..), EventType(..))
-import Rarecoal.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern)
-import Rarecoal.Utils (loadHistogram)
-import Rarecoal.ModelTemplate (getModelSpec, ModelDesc, BranchSpec)
+import SequenceFormats.RareAlleleHistogram (RareAlleleHistogram(..))
+import Rarecoal.Utils (loadHistogram, Branch)
+import Rarecoal.MaxUtils (computeLogLikelihood)
+import Rarecoal.ModelTemplate (getModelTemplate, makeParameterDict, ModelOptions(..), 
+    instantiateModel, ParamOptions(..), ModelTemplate(..))
 
-import Control.Error (Script, scriptIO, tryAssert, tryRight, err, tryJust)
+import Control.Error (Script, scriptIO, tryAssert, tryRight, tryJust)
 import Data.List (maximumBy, elemIndex)
-import GHC.Conc (getNumCapabilities, setNumCapabilities, getNumProcessors)
-import Logl (computeLogLikelihood)
 import System.IO (stderr, hPutStrLn, openFile, IOMode(..), hClose)
+import Turtle (format, s, (%), d)
 
 data FindOpt = FindOpt {
-    fiQueryBranch :: BranchSpec,
-    -- fiBranchPopSize :: Double,
+    fiGeneralOpts :: GeneralOptions,
+    fiModelOpts :: ModelOptions,
+    fiParamOpts :: ParamOptions,
+    fiHistOpts :: HistogramOptions,
+    fiQueryBranch :: Branch,
     fiEvalPath :: FilePath,
     fiBranchAge :: Double,
     fiDeltaTime :: Double,
-    fiMaxTime :: Double,
-    fiModelDesc :: ModelDesc,
-    fiMinAf :: Int,
-    fiMaxAf :: Int,
-    fiConditionOn :: [Int],
-    fiExcludePatterns :: [SitePattern],
-    fiHistPath :: FilePath,
-    fiNoShortcut :: Bool,
-    fiNrThreads :: Int
+    fiMaxTime :: Double
 }
 
 runFind :: FindOpt -> Script ()
 runFind opts = do
-    nrProc <- scriptIO getNumProcessors
-    if   fiNrThreads opts == 0
-    then scriptIO $ setNumCapabilities nrProc
-    else scriptIO $ setNumCapabilities (fiNrThreads opts)
-    nrThreads <- scriptIO getNumCapabilities
-    scriptIO $ err ("running on " ++ show nrThreads ++ " processors\n")
-    hist <- loadHistogram (fiMinAf opts) (fiMaxAf opts) (fiConditionOn opts)
-        (fiExcludePatterns opts) (fiHistPath opts)
-    let names = raNames hist
-    modelSpec <- getModelSpec (fiModelDesc opts) names
+    scriptIO $ setNrProcessors (fiGeneralOpts opts)
+    modelTemplate <- getModelTemplate (fiModelOpts opts)
+    modelParams <- scriptIO $ makeParameterDict (fiParamOpts opts)
+    modelSpec <- tryRight $ instantiateModel (fiGeneralOpts opts) modelTemplate modelParams
+    (hist, siteRed) <- loadHistogram (fiHistOpts opts) (mtBranchNames modelTemplate)
     l <- findQueryIndex (raNames hist) (fiQueryBranch opts)
+    tryAssert (format ("model must have free branch "%d) l) $ hasFreeBranch l modelSpec
     let modelSpec' =
             if fiBranchAge opts > 0.0
             then
-                let events = ModelEvent 0.0 (SetFreeze l True) : mEvents modelSpec
+                let events = ModelEvent 0.0 (SetFreeze l True) :
+                             ModelEvent (fiBranchAge opts) (SetFreeze l False) :
+                             mEvents modelSpec
                 in  modelSpec {mEvents = events}
             else
                 modelSpec
-                -- let events = ModelEvent 0.0 (SetPopSize l (fiBranchPopSize opts)) : mEvents modelSpec
-                -- in  modelSpec {mEvents = events}
-    tryAssert ("model must have free branch " ++ show l) $ hasFreeBranch l modelSpec'
     let nrPops = length $ raNVec hist
         allParamPairs = do
             branch <- [0..(nrPops - 1)]
@@ -59,9 +52,11 @@ runFind opts = do
             time <- getJoinTimes modelSpec' (fiDeltaTime opts) (fiMaxTime opts) (fiBranchAge opts)
                                   branch
             return (branch, time)
-    allLikelihoods <- do
-            let f (k, t) = computeLogLikelihoodIO hist modelSpec' k l t (fiNoShortcut opts)
-            mapM f allParamPairs
+    allLikelihoods <- sequence $ do
+        (k, t) <- allParamPairs
+        let useCore2 = optUseCore2 . fiGeneralOpts $ opts
+        return $ computeLogLikelihoodIO hist siteRed modelSpec' useCore2
+            (mtBranchNames modelTemplate) k l t
     scriptIO $ writeResult (fiEvalPath opts) allParamPairs allLikelihoods
     let ((minBranch, minTime), minLL) = maximumBy (\(_, ll1) (_, ll2) -> ll1 `compare` ll2) $
                                         zip allParamPairs allLikelihoods
@@ -72,9 +67,8 @@ runFind opts = do
         let e = mEvents modelSpec
             jIndices = concat [[k, l] | ModelEvent _ (Join k l) <- e]
         in  queryBranch `notElem` jIndices
-    findQueryIndex _ (Left i) = return i
-    findQueryIndex names (Right branchName) =
-        tryJust ("could not find branch name " ++ branchName) $ elemIndex branchName names
+    findQueryIndex names branchName =
+        tryJust (format ("could not find branch name "%s) branchName) $ elemIndex branchName names
 
 isEmptyBranch :: ModelSpec -> Int -> Double -> Bool
 isEmptyBranch modelSpec l t = not $ null previousJoins
@@ -87,13 +81,13 @@ getJoinTimes modelSpec deltaT maxT branchAge k =
         leaveTimes = [t | ModelEvent t (Join _ l) <- mEvents modelSpec, k == l]
     in  if null leaveTimes then allTimes else filter (<head leaveTimes) allTimes
 
-computeLogLikelihoodIO :: RareAlleleHistogram -> ModelSpec -> Int -> Int -> Double -> Bool ->
-                       Script Double
-computeLogLikelihoodIO hist modelSpec k l t noShortcut = do
+computeLogLikelihoodIO :: RareAlleleHistogram -> Double -> ModelSpec -> Bool -> [Branch] ->
+    Int -> Int -> Double -> Script Double
+computeLogLikelihoodIO hist siteRed modelSpec useCore2 modelBranchNames k l t = do
     let e = mEvents modelSpec
         newE = ModelEvent t (Join k l)
         modelSpec' = modelSpec {mEvents = newE : e}
-    ll <- tryRight $ computeLogLikelihood modelSpec' hist noShortcut
+    ll <- tryRight $ computeLogLikelihood modelSpec' useCore2 hist modelBranchNames siteRed
     scriptIO $ hPutStrLn stderr ("branch=" ++ show k ++ ", time=" ++ show t ++ ", ll=" ++ show ll)
     return ll
 
