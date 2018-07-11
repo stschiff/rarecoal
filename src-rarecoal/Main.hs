@@ -16,8 +16,10 @@ import           Data.List.Split              (splitOn)
 import           Data.Monoid                  ((<>))
 import           Data.Time.Clock              (getCurrentTime)
 import qualified Data.Text as T
+import           Data.Version                 (showVersion)
 import qualified Options.Applicative          as OP
 import           Turtle                       (format, w, (%))
+import           Paths_rarecoal               (version)
 
 data Options = Options Command
 
@@ -31,13 +33,16 @@ data Command =
     CmdSimCommand SimCommandOpt
 
 main :: IO ()
-main = run =<< OP.execParser (parseOptions `withInfo` "Version 1.4.0. This \
-    \software implements the Rarecoal algorithm, as described in \
-    \doc/rarecoal.pdf. Type -h for getting help")
+main = run =<< OP.execParser (parseOptions `withInfo` ("Rarecoal Version " ++
+    showVersion version ++ ". This software implements the Rarecoal algorithm, as described in \
+    \doc/rarecoal.pdf. Type -h for getting help"))
 
 withInfo :: OP.Parser a -> String -> OP.ParserInfo a
-withInfo opts desc = OP.info (OP.helper <*> opts) $ OP.progDesc desc
-
+withInfo opts desc = OP.info (pure (.) <*> versionInfoOpt <*> OP.helper <*> opts) $ OP.progDesc desc
+  where
+    versionInfoOpt = OP.infoOption (showVersion version)
+        (OP.long "version" <> OP.help "Print version and exit")
+    
 run :: Options -> IO ()
 run (Options cmdOpts) = runScript $ do
     currentT <- scriptIO getCurrentTime
@@ -93,7 +98,7 @@ parseGeneralOpts :: OP.Parser GeneralOptions
 parseGeneralOpts = GeneralOptions <$> parseUseCore2 <*> parseTheta <*> parseNrThreads <*>
     parseNoShortcut <*> parseRegularization <*> parseN0 <*> parseLinGen <*> parseTmax
   where
-    parseUseCore2 = OP.switch $ OP.long "core2" <> OP.hidden <>
+    parseUseCore2 = OP.switch $ OP.long "core2" <> OP.internal <>
         OP.help "Use the new Core2 algorithm (in beta)"
     parseTheta = OP.option OP.auto $ OP.long "theta" <>
         OP.hidden <> OP.metavar "FLOAT" <> OP.value 0.0005 <>

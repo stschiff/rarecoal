@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                rarecoal
-version:             2.0.0
+version:             1.5.0
 license:             GPL-3
 license-file:        LICENSE
 author:              Stephan Schiffels
@@ -67,7 +67,8 @@ executable rarecoal
                        turtle,
                        attoparsec,
                        sequence-formats
-  other-modules:       Find, Logl, Maxl, Mcmc, Prob, FitTable, SimCommand
+  other-modules:       Find, Logl, Maxl, Mcmc, Prob, FitTable, SimCommand, Paths_rarecoal
+
   default-language:    Haskell2010
   extra-lib-dirs:      /usr/lib
   ghc-options:         -threaded -O -with-rtsopts=-A200m
