@@ -33,7 +33,7 @@ runFind opts = do
     modelParams <- scriptIO $ makeParameterDict (fiParamOpts opts)
     modelSpec <- tryRight $ instantiateModel (fiGeneralOpts opts) modelTemplate modelParams
     (hist, siteRed) <- loadHistogram (fiHistOpts opts) (mtBranchNames modelTemplate)
-    l <- findQueryIndex (raNames hist) (fiQueryBranch opts)
+    l <- findQueryIndex (mtBranchNames modelTemplate) (fiQueryBranch opts)
     tryAssert (format ("model must have free branch "%d) l) $ hasFreeBranch l modelSpec
     let modelSpec' =
             if fiBranchAge opts > 0.0
@@ -44,7 +44,7 @@ runFind opts = do
                 in  modelSpec {mEvents = events}
             else
                 modelSpec
-    let nrPops = length $ raNVec hist
+    let nrPops = mNrPops modelSpec'
         allParamPairs = do
             branch <- [0..(nrPops - 1)]
             False <- return $ branch == l

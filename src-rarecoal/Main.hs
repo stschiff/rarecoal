@@ -10,7 +10,7 @@ import           Rarecoal.ModelTemplate       (ModelOptions (..), ParamOptions(.
 import Rarecoal.Utils (GeneralOptions(..), HistogramOptions(..))
 import           SimCommand                   (SimCommandOpt (..),
                                                runSimCommand)
-import           Control.Applicative          ((<|>))
+import           Control.Applicative          ((<|>), many)
 import           Control.Error         (runScript, scriptIO, errLn)
 import           Data.List.Split              (splitOn)
 import           Data.Monoid                  ((<>))
@@ -175,7 +175,8 @@ parseLoglOpt = LoglOpt <$> parseGeneralOpts <*> parseModelOpts <*>
 
 parseHistOpts :: OP.Parser HistogramOptions
 parseHistOpts = HistogramOptions <$> parseHistPath <*> parseMinAf <*>
-    parseMaxAf <*> parseConditioning <*> parseExcludePattern <*> parseEffSiteReduction
+    parseMaxAf <*> many parseConditioning <*> many parseExcludePattern <*>
+    parseEffSiteReduction
   where
     parseHistPath = OP.strOption $ OP.short 'i' <> OP.long "histogram" <>
         OP.metavar "FILE" <> OP.help "Input Histogram File, use - for stdin"
@@ -186,16 +187,17 @@ parseHistOpts = HistogramOptions <$> parseHistPath <*> parseMinAf <*>
         OP.metavar "INT" <> OP.value 4 <> OP.showDefault <>
         OP.help "maximum allele count"
     parseConditioning = OP.option OP.auto $ OP.long "conditionOn" <>
-        OP.hidden <> OP.metavar "[INT,INT,...]" <>
-        OP.help "a comma-separated list without spaces and surrounded by \
-        \square-brackets. Gives all branches (as 0-based indices) in which you \
+        OP.hidden <> OP.metavar "INT" <>
+        OP.help "The index of a branch (based on the model-template, \
+        \as 0-based indices) in which you \
         \require at least one derived allele for the computation of the \
-        \likelihood. This is useful for mapping ancient samples onto a tree" <>
-        OP.value [] <> OP.showDefault
+        \likelihood. This is useful for mapping ancient samples onto a tree. \
+        \Can be given multiple times."
     parseExcludePattern = OP.option OP.auto $ OP.long "excludePattern" <>
         OP.metavar "[INT,INT,...]" <> OP.help "a comma-separated list without \
         \spaces and surrounded by square-brackets. Gives a pattern to exclude \
-        \from fitting. Can be given multiple times" <> OP.hidden <> OP.value [] <> OP.showDefault
+        \from fitting. The positions of the branches are based on the Model template. \
+        \Can be given multiple times" <> OP.hidden
     parseEffSiteReduction = OP.option OP.auto $ OP.long "effectiveSitesReduction" <>
         OP.metavar "DOUBLE" <> OP.value 1.0 <> OP.showDefault <> OP.help "a factor between 0 and 1 \
         \that reduces the number of sites in the histogram to reflect genetic linkage."
@@ -271,7 +273,8 @@ parseFindOpt = FindOpt <$> parseGeneralOpts <*> parseModelOpts <*>
         OP.metavar "FILE" <> OP.help "file to write the list of computed \
         \likelihoods to"
     parseBranchAge = OP.option OP.auto $ OP.short 'b' <> OP.long "branchAge" <>
-        OP.metavar "FLOAT" <> OP.help "sampling age of the query sample"
+        OP.metavar "FLOAT" <> OP.help "sampling age of the query sample" <>
+        OP.value 0.0 <> OP.showDefault
     parseDeltaTime = OP.option OP.auto $ OP.long "deltaTime" <>
         OP.metavar "FLOAT" <> OP.showDefault <>
         OP.help "time between the points" <> OP.value 0.0005 <> OP.hidden

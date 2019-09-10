@@ -31,7 +31,7 @@ tests = testGroup "Core Tests" [
     testProperty "full split equals join for A" prop_fullSplitIsJoinForA,
     testProperty "full split equals join for B" prop_fullSplitIsJoinForB,
     testProperty "Core -> total probabilities are all positive" prop_getProbTest,
-    testProperty "Core2 -> total probabilities are all positive" prop_getProb2Test,
+    -- testProperty "Core2 -> total probabilities are all positive" prop_getProb2Test,
     -- testProperty "Core2 -> tupleWrapper tests" prop_rFacTupleTest,
     testCase "testing consistency with previous versions" assertConsistentProbs,
     testCase "testing approximate consistency with previous versions via Core2"
@@ -150,16 +150,16 @@ prop_getProbTest = forAll genInput go
     modelSpec = makeTestModelSpec
     nVec = [100, 100, 100, 100, 100]
 
-prop_getProb2Test :: Property
-prop_getProb2Test = forAll genInput go
-  where
-    genInput = genStates `suchThat` (\v -> V.sum v > 0 && V.sum v <= maxAf)
-    go state = get5popProb (V.toList state)
-    get5popProb config = case C2.getProb modelSpec stateSpace nVec config of
-        Left _ -> False
-        Right res -> res >= 0.0
-    modelSpec = makeTestModelSpec
-    nVec = [100, 100, 100, 100, 100]
+-- prop_getProb2Test :: Property
+-- prop_getProb2Test = forAll genInput go
+--   where
+--     genInput = genStates `suchThat` (\v -> V.sum v > 0 && V.sum v <= maxAf)
+--     go state = get5popProb (V.toList state)
+--     get5popProb config = case C2.getProb modelSpec stateSpace nVec config of
+--         Left _ -> False
+--         Right res -> res >= 0.0
+--     modelSpec = makeTestModelSpec
+--     nVec = [100, 100, 100, 100, 100]
 
 -- prop_rFacTupleTest :: Property
 -- prop_rFacTupleTest = forAll genInput $ \t -> C2.rFacT t == C2.rFacMemoT t
