@@ -88,11 +88,13 @@ parseProbOpt = ProbOpt <$> parseGeneralOpts <*> parseModelOpts <*>
     parseNVec = OP.argument OP.auto (OP.metavar "[N1,N2,...]" <>
         OP.help "number of samples, comma-separated, without spaces, and \
         \surrounded by square brackets, e.g. [100,100] for two populations \
-        \with a 100 haploid samples each")
+        \with a 100 haploid samples each. Note that patterns refer to the order \
+        \of branches specified in the model.")
     parseKVec = OP.argument OP.auto (OP.metavar "[k1,k2,...]" <>
         OP.help "number of derived alleles in each population, same format as \
         \for NVec, e.g. [1,2] for allele count 3 shared with one sample from \
-        \the first and two from the second population.")
+        \the first and two from the second population. Note that \
+        \patterns refer to the order of branches specified in the model.")
 
 parseGeneralOpts :: OP.Parser GeneralOptions
 parseGeneralOpts = GeneralOptions <$> parseUseCore2 <*> parseTheta <*> parseNrThreads <*>
@@ -188,7 +190,7 @@ parseHistOpts = HistogramOptions <$> parseHistPath <*> parseMinAf <*>
         OP.help "maximum allele count"
     parseConditioning = OP.option OP.auto $ OP.long "conditionOn" <>
         OP.hidden <> OP.metavar "INT" <>
-        OP.help "The index of a branch (based on the model-template, \
+        OP.help "The index of a branch (based on the histogram, not the model, \
         \as 0-based indices) in which you \
         \require at least one derived allele for the computation of the \
         \likelihood. This is useful for mapping ancient samples onto a tree. \
@@ -196,7 +198,7 @@ parseHistOpts = HistogramOptions <$> parseHistPath <*> parseMinAf <*>
     parseExcludePattern = OP.option OP.auto $ OP.long "excludePattern" <>
         OP.metavar "[INT,INT,...]" <> OP.help "a comma-separated list without \
         \spaces and surrounded by square-brackets. Gives a pattern to exclude \
-        \from fitting. The positions of the branches are based on the Model template. \
+        \from fitting. The positions of the branches are based on the Histogram, not the model! \
         \Can be given multiple times" <> OP.hidden
     parseEffSiteReduction = OP.option OP.auto $ OP.long "effectiveSitesReduction" <>
         OP.metavar "DOUBLE" <> OP.value 1.0 <> OP.showDefault <> OP.help "a factor between 0 and 1 \
@@ -268,7 +270,9 @@ parseFindOpt = FindOpt <$> parseGeneralOpts <*> parseModelOpts <*>
     parseBranchAge <*> parseDeltaTime <*> parseMaxTime
   where
     parseQueryBranch = OP.strOption $ OP.short 'n' <> OP.long "queryName" <>
-        OP.metavar "STRING" <> OP.help "branch name to query"
+        OP.metavar "STRING" <> OP.help "model branch name to query. This has to refer \
+        \to a branch that is defined in the model branch list, but is stale, so doesn't merge \
+        \onto the model at any time."
     parseEvalFile = OP.strOption $ OP.short 'f' <> OP.long "evalFile" <>
         OP.metavar "FILE" <> OP.help "file to write the list of computed \
         \likelihoods to"
