@@ -2,8 +2,8 @@
 module Rarecoal.Utils (computeAllConfigs, computeAllConfigsCrude, computeStandardOrder,
     turnHistPatternIntoModelPattern, defaultTimes, getTimeSteps,
     setNrProcessors, filterConditionOn, filterExcludePatterns, filterMaxAf,
-    filterGlobalMinAf, GeneralOptions(..), HistogramOptions(..), loadHistogram, Branch, choose, 
-    chooseCont) where
+    filterGlobalMinAf, GeneralOptions(..), HistogramOptions(..), loadHistogram, ModelBranch, HistBranch,
+    choose, chooseCont) where
 
 import SequenceFormats.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern, readHistogram)
 
@@ -11,11 +11,12 @@ import Control.Error
 import Control.Monad (when, forM, (>=>), forM_)
 import Data.List (elemIndex)
 import qualified Data.Map.Strict as Map
-import Data.Text (Text)
+import Data.Text (Text, pack, unpack)
 import GHC.Conc (getNumProcessors, setNumCapabilities, getNumCapabilities)
 import Turtle (format, d, (%), w)
 
-type Branch = Text
+type ModelBranch = String
+type HistBranch = Text
 
 data GeneralOptions = GeneralOptions {
     optUseCore2 :: Bool,
@@ -90,10 +91,10 @@ allPatternsForAF nrPops af = map getDiffs $ allSubsets (nrPops + af - 1) (nrPops
     go res (x1:x2:xs) = go (res ++ [x2 - x1 - 1]) (x2:xs)
     go res _ = res
 
-turnHistPatternIntoModelPattern :: [Branch] -> [Branch] -> SitePattern -> Either Text SitePattern
+turnHistPatternIntoModelPattern :: [HistBranch] -> [ModelBranch] -> SitePattern -> Either Text SitePattern
 turnHistPatternIntoModelPattern histBranches modelBranches histPattern =
     forM modelBranches $ \modelBranchName ->
-        case modelBranchName `elemIndex` histBranches of
+        case (pack modelBranchName) `elemIndex` histBranches of
             Just i -> return (histPattern !! i)
             Nothing -> return 0 -- ghost branch
 
@@ -110,19 +111,23 @@ filterConditionOn :: [Int] -> RareAlleleHistogram ->
     Either Text RareAlleleHistogram
 filterConditionOn indices hist =
     if null indices then return hist else do
+        assertErr (format ("illegal conditionOn indices "%w) indices) $ all (<n) indices
         let newBody = Map.filterWithKey conditionPatternOn (raCounts hist)
         return $ hist {raCounts = newBody, raConditionOn = indices}
   where
     conditionPatternOn pat _ = all (\i -> pat !! i > 0) indices
+    n = length (raNames hist)
 
 filterExcludePatterns :: [[Int]] -> RareAlleleHistogram ->
     Either Text RareAlleleHistogram
 filterExcludePatterns excludePatterns hist =
     if null excludePatterns then return hist else do
+        assertErr (format ("illegal excludePattern(s)"%w) excludePatterns) $ all ((==n) . length) excludePatterns
         let newBody = Map.filterWithKey pruneExcludePatterns (raCounts hist)
         return $ hist {raExcludePatterns = excludePatterns, raCounts = newBody}
   where
     pruneExcludePatterns pat _ = pat `notElem` excludePatterns
+    n = length (raNames hist)
 
 filterMaxAf :: Int -> RareAlleleHistogram -> Either Text RareAlleleHistogram
 filterMaxAf maxAf' hist = do
@@ -154,7 +159,7 @@ computeStandardOrder histogram =
   where
     hasConditioning indices pat = all (\i -> pat !! i > 0) indices
 
-loadHistogram :: HistogramOptions -> [Branch] -> Script (RareAlleleHistogram, Double)
+loadHistogram :: HistogramOptions -> [ModelBranch] -> Script (RareAlleleHistogram, Double)
 loadHistogram histOpts modelBranches = do
     let HistogramOptions path minAf maxAf conditionOn excludePatterns siteRed = histOpts
     hist <- readHistogram path
@@ -164,16 +169,16 @@ loadHistogram histOpts modelBranches = do
         hist
     return (h, siteRed)
   where
+    validateBranchNameCongruency :: [ModelBranch] -> [HistBranch] -> Script ()
     validateBranchNameCongruency modelBranchNames histBranchNames = do
         forM_ histBranchNames $ \histName ->
-            when (histName `notElem` modelBranchNames) $
+            when (unpack histName `notElem` modelBranchNames) $
                 throwE (format ("histogram branch "%w%
                     " not found in model branches ("%w%")") histName
                     modelBranchNames)
         forM_ modelBranchNames $ \modelName ->
-            when (modelName `notElem` histBranchNames) $
-                scriptIO . errLn $ format ("found unsampled ghost branch: "%w)
-                modelName
+            when (pack modelName `notElem` histBranchNames) $
+                scriptIO . errLn $ format ("found unsampled ghost branch: "%w) modelName
 
 choose :: Int -> Int -> Double
 choose _ 0 = 1

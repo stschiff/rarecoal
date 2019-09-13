@@ -6,8 +6,7 @@ module Rarecoal.ModelTemplate (ModelOptions(..), ParamOptions(..),
 where
 
 import           Rarecoal.Utils                       (getTimeSteps,
-                                                       GeneralOptions (..),
-                                                       Branch)
+                                                       GeneralOptions (..), ModelBranch)
 import           Rarecoal.Core              (EventType(..), ModelSpec(..), ModelEvent (..))
 import Rarecoal.StateSpace (getRegularizationPenalty)
 
@@ -35,16 +34,16 @@ data ParamOptions = ParamOptions {
 }
 
 data ModelTemplate = ModelTemplate {
-    mtBranchNames :: [T.Text],
+    mtBranchNames :: [ModelBranch],
     mtEvents :: [MTEvent],
     mtConstraints :: [MTConstraint]
 } deriving (Show, Eq)
 
-data MTEvent = MTPopSizeChange ParamSpec Branch ParamSpec
-             | MTJoin ParamSpec Branch Branch
-             | MTJoinPopSizeChange ParamSpec Branch Branch ParamSpec
-             | MTSplit ParamSpec Branch Branch ParamSpec
-             | MTFreeze ParamSpec Branch Bool deriving (Eq, Show)
+data MTEvent = MTPopSizeChange ParamSpec ModelBranch ParamSpec
+             | MTJoin ParamSpec ModelBranch ModelBranch
+             | MTJoinPopSizeChange ParamSpec ModelBranch ModelBranch ParamSpec
+             | MTSplit ParamSpec ModelBranch ModelBranch ParamSpec
+             | MTFreeze ParamSpec ModelBranch Bool deriving (Eq, Show)
 
 data MTConstraint = MTConstraint ParamSpec ParamSpec ConstraintOperator deriving (Eq, Show)               
 data ParamSpec = ParamFixed Double | ParamVariable T.Text deriving (Eq, Show)
@@ -74,13 +73,13 @@ modelTemplateP :: Parser ModelTemplate
 modelTemplateP = ModelTemplate <$> parseBranchNames <*> parseEvents <*>
     (parseConstraints <|> pure [])
 
-parseBranchNames :: Parser [T.Text]
+parseBranchNames :: Parser [String]
 parseBranchNames = PC.string "BRANCHES" *> PC.spaces *> PC.char '=' *> PC.spaces *> PC.char '[' *> 
     PC.spaces *> (branchNameP `P.sepBy1` (PC.char ',' *> PC.spaces)) <* PC.spaces <* PC.char ']' <* 
     PC.spaces
 
-branchNameP :: Parser T.Text
-branchNameP = T.pack <$> P.many1 (PC.satisfy (\c -> isAlphaNum c || c == '_'))
+branchNameP :: Parser String
+branchNameP = P.many1 (PC.satisfy (\c -> isAlphaNum c || c == '_'))
 
 parseEvents :: Parser [MTEvent]
 parseEvents = PC.string "EVENTS" *> PC.spaces *> PC.char '=' *> PC.spaces *> PC.char '[' *> 
@@ -182,34 +181,34 @@ instantiateModel opts (ModelTemplate branchNames _mtEvents _mtConstraints) param
     getEvents bN (cmd:rest) res = case cmd of
         MTJoin tSpec toSpec fromSpec -> do
             t <- getParam paramsDict tSpec
-            e <- Join <$> getBranchIndex bN toSpec <*>
-                getBranchIndex bN fromSpec
+            e <- Join <$> getModelBranchIndex bN toSpec <*>
+                getModelBranchIndex bN fromSpec
             getEvents bN rest (ModelEvent t e:res)
         MTPopSizeChange tSpec bSpec pSpec -> do
             t <- getParam paramsDict tSpec
-            e <- SetPopSize <$> getBranchIndex bN bSpec <*>
+            e <- SetPopSize <$> getModelBranchIndex bN bSpec <*>
                 getParam paramsDict pSpec
             getEvents bN rest (ModelEvent t e:res)
         MTJoinPopSizeChange tSpec toSpec fromSpec pSpec -> do
             t <- getParam paramsDict tSpec
-            e1 <- Join <$> getBranchIndex bN toSpec <*>
-                getBranchIndex bN fromSpec
-            e2 <- SetPopSize <$> getBranchIndex bN toSpec <*>
+            e1 <- Join <$> getModelBranchIndex bN toSpec <*>
+                getModelBranchIndex bN fromSpec
+            e2 <- SetPopSize <$> getModelBranchIndex bN toSpec <*>
                 getParam paramsDict pSpec
             getEvents bN rest (ModelEvent t e2:ModelEvent t e1:res)
         MTSplit tSpec toSpec fromSpec rateSpec -> do
             t <- getParam paramsDict tSpec
-            e <- Split <$> getBranchIndex bN toSpec <*>
-                getBranchIndex bN fromSpec <*>
+            e <- Split <$> getModelBranchIndex bN toSpec <*>
+                getModelBranchIndex bN fromSpec <*>
                 getParam paramsDict rateSpec
             getEvents bN rest (ModelEvent t e:res)
         MTFreeze tSpec bSpec v -> do
             t <- getParam paramsDict tSpec
-            e <- SetFreeze <$> getBranchIndex bN bSpec <*> pure v
+            e <- SetFreeze <$> getModelBranchIndex bN bSpec <*> pure v
             getEvents bN rest (ModelEvent t e:res)
 
-getBranchIndex :: [T.Text] -> Branch -> Either T.Text Int
-getBranchIndex branchNames branch = justErr (format ("did not find branch name "%w) branch) $
+getModelBranchIndex :: [ModelBranch] -> ModelBranch -> Either T.Text Int
+getModelBranchIndex branchNames branch = justErr (format ("did not find model-branch name "%w) branch) $
     elemIndex branch branchNames
 
 getParam :: [(T.Text, Double)] -> ParamSpec -> Either T.Text Double

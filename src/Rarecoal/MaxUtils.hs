@@ -9,7 +9,7 @@ import qualified Rarecoal.Core as C1
 import qualified Rarecoal.Core2 as C2
 import Rarecoal.StateSpace (getRegularizationPenalty, makeJointStateSpace)
 import Rarecoal.Utils (GeneralOptions(..), computeStandardOrder, turnHistPatternIntoModelPattern,
-    Branch)
+    ModelBranch)
 import Rarecoal.ModelTemplate (ModelTemplate(..), getParamNames, instantiateModel)
 import SequenceFormats.RareAlleleHistogram(RareAlleleHistogram(..), SitePattern)
 
@@ -68,7 +68,7 @@ minFunc generalOpts modelTemplate hist siteRed paramsVec = do
         not (isNaN val)
     return $ (-val + siteRed * regPenalty)
 
-computeLogLikelihood :: C1.ModelSpec -> Bool -> RareAlleleHistogram -> [Branch] -> Double ->
+computeLogLikelihood :: C1.ModelSpec -> Bool -> RareAlleleHistogram -> [ModelBranch] -> Double ->
     Either T.Text Double
 computeLogLikelihood modelSpec useCore2 histogram modelBranchNames siteRed =
     let totalNrSites = raTotalNrSites histogram
@@ -83,7 +83,7 @@ computeLogLikelihoodFromSpec totalNrSites siteRed spectrum =
         otherCounts = totalNrSites - sum patternCounts
     in  siteRed * (ll + fromIntegral otherCounts * log (1.0 - sum patternProbs))
 
-computeFrequencySpectrum :: C1.ModelSpec -> Bool -> RareAlleleHistogram -> [Branch] ->
+computeFrequencySpectrum :: C1.ModelSpec -> Bool -> RareAlleleHistogram -> [ModelBranch] ->
     Either T.Text Spectrum
 computeFrequencySpectrum modelSpec useCore2 histogram modelBranchNames = do
     assertErr "minFreq must be greater than 0" $ raMinAf histogram > 0

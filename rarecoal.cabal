@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                rarecoal
-version:             1.5.0.1
+version:             1.5.0.2
 license:             GPL-3
 license-file:        LICENSE
 author:              Stephan Schiffels

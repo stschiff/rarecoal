@@ -4,13 +4,14 @@ module Find (runFind, FindOpt(..)) where
 import Rarecoal.Utils (GeneralOptions(..), HistogramOptions(..), setNrProcessors)
 import Rarecoal.Core (ModelSpec(..), ModelEvent(..), EventType(..))
 import SequenceFormats.RareAlleleHistogram (RareAlleleHistogram(..))
-import Rarecoal.Utils (loadHistogram, Branch)
+import Rarecoal.Utils (loadHistogram, ModelBranch)
 import Rarecoal.MaxUtils (computeLogLikelihood)
 import Rarecoal.ModelTemplate (getModelTemplate, makeParameterDict, ModelOptions(..), 
     instantiateModel, ParamOptions(..), ModelTemplate(..))
 
 import Control.Error (Script, scriptIO, tryAssert, tryRight, tryJust)
 import Data.List (maximumBy, elemIndex)
+import Data.Text (pack)
 import System.IO (stderr, hPutStrLn, openFile, IOMode(..), hClose)
 import Turtle (format, s, (%), d)
 
@@ -19,7 +20,7 @@ data FindOpt = FindOpt {
     fiModelOpts :: ModelOptions,
     fiParamOpts :: ParamOptions,
     fiHistOpts :: HistogramOptions,
-    fiQueryBranch :: Branch,
+    fiQueryBranch :: ModelBranch,
     fiEvalPath :: FilePath,
     fiBranchAge :: Double,
     fiDeltaTime :: Double,
@@ -67,8 +68,10 @@ runFind opts = do
         let e = mEvents modelSpec
             jIndices = concat [[k, l] | ModelEvent _ (Join k l) <- e]
         in  queryBranch `notElem` jIndices
-    findQueryIndex names branchName =
-        tryJust (format ("could not find branch name "%s) branchName) $ elemIndex branchName names
+
+findQueryIndex :: [ModelBranch] -> ModelBranch -> Script Int
+findQueryIndex names branchName =
+    tryJust (format ("could not find branch name "%s) (pack branchName)) $ elemIndex branchName names
 
 isEmptyBranch :: ModelSpec -> Int -> Double -> Bool
 isEmptyBranch modelSpec l t = not $ null previousJoins
@@ -81,7 +84,7 @@ getJoinTimes modelSpec deltaT maxT branchAge k =
         leaveTimes = [t | ModelEvent t (Join _ l) <- mEvents modelSpec, k == l]
     in  if null leaveTimes then allTimes else filter (<head leaveTimes) allTimes
 
-computeLogLikelihoodIO :: RareAlleleHistogram -> Double -> ModelSpec -> Bool -> [Branch] ->
+computeLogLikelihoodIO :: RareAlleleHistogram -> Double -> ModelSpec -> Bool -> [ModelBranch] ->
     Int -> Int -> Double -> Script Double
 computeLogLikelihoodIO hist siteRed modelSpec useCore2 modelBranchNames k l t = do
     let e = mEvents modelSpec
