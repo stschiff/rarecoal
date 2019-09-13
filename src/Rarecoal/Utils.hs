@@ -169,13 +169,13 @@ loadHistogram histOpts modelBranches = do
         filterConditionOn conditionOn >=> filterExcludePatterns excludePatterns)
         hist
     scriptIO . hPutStrLn stderr $ "loaded histogram " ++ path ++ "with the following options:"
-    scriptIO . hPutStrLn stderr $ "Branch Names: " ++ show (raNames hist)
-    scriptIO . hPutStrLn stderr $ "NVec: " ++ show (raNVec hist)
-    scriptIO . hPutStrLn stderr $ "MinAf: "  ++ show (raMinAf hist)
-    scriptIO . hPutStrLn stderr $ "MaxAf: " ++ show (raMaxAf hist)
-    scriptIO . hPutStrLn stderr $ "ConditionOn: " ++ show (raConditionOn hist)
-    scriptIO . hPutStrLn stderr $ "ExcludePatterns: " ++ show (raExcludePatterns hist)
-    scriptIO . hPutStrLn stderr $ "TotalNrSites: " ++ show (raTotalNrSites hist)
+    scriptIO . hPutStrLn stderr $ "Branch Names: " ++ show (raNames h)
+    scriptIO . hPutStrLn stderr $ "NVec: " ++ show (raNVec h)
+    scriptIO . hPutStrLn stderr $ "MinAf: "  ++ show (raMinAf h)
+    scriptIO . hPutStrLn stderr $ "MaxAf: " ++ show (raMaxAf h)
+    scriptIO . hPutStrLn stderr $ "ConditionOn: " ++ show (raConditionOn h)
+    scriptIO . hPutStrLn stderr $ "ExcludePatterns: " ++ show (raExcludePatterns h)
+    scriptIO . hPutStrLn stderr $ "TotalNrSites: " ++ show (raTotalNrSites h)
     return (h, siteRed)
   where
     validateBranchNameCongruency :: [ModelBranch] -> [HistBranch] -> Script ()
