@@ -13,6 +13,7 @@ import Data.List (elemIndex)
 import qualified Data.Map.Strict as Map
 import Data.Text (Text, pack, unpack)
 import GHC.Conc (getNumProcessors, setNumCapabilities, getNumCapabilities)
+import System.IO (hPutStrLn, stderr)
 import Turtle (format, d, (%), w)
 
 type ModelBranch = String
@@ -167,6 +168,14 @@ loadHistogram histOpts modelBranches = do
     h <- tryRight $ (filterMaxAf maxAf >=> filterGlobalMinAf minAf >=>
         filterConditionOn conditionOn >=> filterExcludePatterns excludePatterns)
         hist
+    scriptIO . hPutStrLn stderr $ "loaded histogram " ++ path ++ "with the following options:"
+    scriptIO . hPutStrLn stderr $ "Branch Names: " ++ show (raNames hist)
+    scriptIO . hPutStrLn stderr $ "NVec: " ++ show (raNVec hist)
+    scriptIO . hPutStrLn stderr $ "MinAf: "  ++ show (raMinAf hist)
+    scriptIO . hPutStrLn stderr $ "MaxAf: " ++ show (raMaxAf hist)
+    scriptIO . hPutStrLn stderr $ "ConditionOn: " ++ show (raConditionOn hist)
+    scriptIO . hPutStrLn stderr $ "ExcludePatterns: " ++ show (raExcludePatterns hist)
+    scriptIO . hPutStrLn stderr $ "TotalNrSites: " ++ show (raTotalNrSites hist)
     return (h, siteRed)
   where
     validateBranchNameCongruency :: [ModelBranch] -> [HistBranch] -> Script ()
