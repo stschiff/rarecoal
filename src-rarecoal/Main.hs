@@ -185,7 +185,7 @@ parseHistOpts = HistogramOptions <$> parseHistPath <*> parseMinAf <*>
     parseMinAf = OP.option OP.auto $ OP.long "minAf" <> OP.metavar "INT" <>
         OP.hidden <> OP.help "minimal allele count" <> OP.value 1 <>
         OP.showDefault
-    parseMaxAf = OP.option OP.auto $ OP.short 'm' <> OP.long "max_af" <>
+    parseMaxAf = OP.option OP.auto $ OP.short 'm' <> OP.long "maxAf" <>
         OP.metavar "INT" <> OP.value 4 <> OP.showDefault <>
         OP.help "maximum allele count"
     parseConditioning = OP.option OP.auto $ OP.long "conditionOn" <>
