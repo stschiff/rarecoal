@@ -6,14 +6,15 @@ module RarecoalLib.MaxUtils (penalty, makeInitialPoint, minFunc, computeLogLikel
     writeFullFitTable, writeSummaryFitTable)
 where
 
-import qualified RarecoalLib.Core                  as C1
-import           RarecoalLib.ModelTemplate         (ModelTemplate (..),
+import qualified RarecoalLib.Core                    as C1
+import           RarecoalLib.ModelTemplate           (ModelTemplate (..),
                                                       getParamNames,
                                                       instantiateModel)
-import           RarecoalLib.StateSpace            (getRegularizationPenalty,
+import           RarecoalLib.StateSpace              (getRegularizationPenalty,
                                                       makeJointStateSpace)
-import           RarecoalLib.Utils                 (GeneralOptions (..),
+import           RarecoalLib.Utils                   (GeneralOptions (..),
                                                       ModelBranch,
+                                                      RarecoalException (..),
                                                       computeStandardOrder,
                                                       turnHistPatternIntoModelPattern)
 import           SequenceFormats.RareAlleleHistogram (RareAlleleHistogram (..),
@@ -49,18 +50,18 @@ type Spectrum = [SpectrumEntry]
 penalty :: Double
 penalty = 1.0e20
 
-makeInitialPoint :: ModelTemplate -> [(String, Double)] -> Either String (V.Vector Double)
+makeInitialPoint :: ModelTemplate -> [(String, Double)] -> Either RarecoalException (V.Vector Double)
 makeInitialPoint modelTemplate modelParams = do
     let paramNames = getParamNames modelTemplate
     vals <- forM paramNames $ \n ->
         case n `lookup` modelParams of
             Just x  -> return x
-            Nothing -> Left $ "did not find parameter " ++ show n
+            Nothing -> Left . RarecoalModelException $ "did not find parameter " ++ show n
     return $ V.fromList vals
 
 
 minFunc :: GeneralOptions -> ModelTemplate -> RareAlleleHistogram -> Double -> V.Vector Double ->
-    Either String Double
+    Either RarecoalException Double
 minFunc generalOpts modelTemplate hist siteRed paramsVec = do
     let paramNames = getParamNames modelTemplate
         paramsDict = zip paramNames . V.toList $ paramsVec
@@ -69,13 +70,13 @@ minFunc generalOpts modelTemplate hist siteRed paramsVec = do
     let modelBranchNames = mtBranchNames modelTemplate
     val <- computeLogLikelihood modelSpec hist modelBranchNames siteRed
     when (isInfinite val) $
-        Left ("likelihood infinite for params " ++ show paramsVec)
+        Left (RarecoalCompException ("likelihood infinite for params " ++ show paramsVec))
     when (isNaN val) $
-        Left ("likelihood NaN for params " ++ show paramsVec)
+        Left (RarecoalCompException ("likelihood NaN for params " ++ show paramsVec))
     return (-val + siteRed * regPenalty)
 
 computeLogLikelihood :: C1.ModelSpec -> RareAlleleHistogram -> [ModelBranch] -> Double ->
-    Either String Double
+    Either RarecoalException Double
 computeLogLikelihood modelSpec histogram modelBranchNames siteRed =
     let totalNrSites = raTotalNrSites histogram
     in  computeLogLikelihoodFromSpec totalNrSites siteRed <$>
@@ -90,9 +91,9 @@ computeLogLikelihoodFromSpec totalNrSites siteRed spectrum =
     in  siteRed * (ll + fromIntegral otherCounts * log (1.0 - sum patternProbs))
 
 computeFrequencySpectrum :: C1.ModelSpec -> RareAlleleHistogram -> [ModelBranch] ->
-    Either String Spectrum
+    Either RarecoalException Spectrum
 computeFrequencySpectrum modelSpec histogram modelBranchNames = do
-    when (raMinAf histogram > 0) $ Left "minFreq must be greater than 0"
+    when (raMinAf histogram > 0) $ Left (RarecoalCompException "minFreq must be greater than 0")
     let standardOrder = computeStandardOrder histogram
     -- scriptIO . putStrLn $
     --     "computing probabilities for " ++ show (length standardOrder) ++

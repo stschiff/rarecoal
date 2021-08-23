@@ -4,7 +4,7 @@ module Find (runFind, FindOpt(..)) where
 import RarecoalLib.Utils (GeneralOptions(..), HistogramOptions(..), setNrProcessors)
 import RarecoalLib.Core (ModelSpec(..), ModelEvent(..), EventType(..))
 import SequenceFormats.RareAlleleHistogram (RareAlleleHistogram(..))
-import RarecoalLib.Utils (loadHistogram, ModelBranch, RarecoalException(..))
+import RarecoalLib.Utils (loadHistogram, ModelBranch, RarecoalException(..), tryEither)
 import RarecoalLib.MaxUtils (computeLogLikelihood)
 import RarecoalLib.ModelTemplate (getModelTemplate, makeParameterDict, ModelOptions(..), 
     instantiateModel, ParamOptions(..), ModelTemplate(..))
@@ -31,11 +31,9 @@ runFind opts = do
     setNrProcessors (fiGeneralOpts opts)
     modelTemplate <- getModelTemplate (fiModelOpts opts)
     modelParams <- makeParameterDict (fiParamOpts opts)
-    modelSpec <- case instantiateModel (fiGeneralOpts opts) modelTemplate modelParams of
-        Left err -> throwIO $ RarecoalModelException err
-        Right m -> return m
+    modelSpec <- tryEither $ instantiateModel (fiGeneralOpts opts) modelTemplate modelParams
     (hist, siteRed) <- loadHistogram (fiHistOpts opts) (mtBranchNames modelTemplate)
-    l <- findQueryIndex (mtBranchNames modelTemplate) (fiQueryBranch opts)
+    l <- tryEither $ findQueryIndex (mtBranchNames modelTemplate) (fiQueryBranch opts)
     unless (hasFreeBranch l modelSpec) $
         throwIO $ RarecoalModelException ("model must have free branch " ++ show l) 
     let modelSpec' =
@@ -69,9 +67,9 @@ runFind opts = do
             jIndices = concat [[k, l] | ModelEvent _ (Join k l) <- e]
         in  queryBranch `notElem` jIndices
 
-findQueryIndex :: [ModelBranch] -> ModelBranch -> IO Int
+findQueryIndex :: [ModelBranch] -> ModelBranch -> Either RarecoalException Int
 findQueryIndex names branchName = case elemIndex branchName names of
-    Nothing -> throwIO $ RarecoalModelException ("could not find branch name " ++ branchName)
+    Nothing -> Left $ RarecoalModelException ("could not find branch name " ++ branchName)
     Just i -> return i
 
 isEmptyBranch :: ModelSpec -> Int -> Double -> Bool
@@ -91,9 +89,7 @@ computeLogLikelihoodIO hist siteRed modelSpec modelBranchNames k l t = do
     let e = mEvents modelSpec
         newE = ModelEvent t (Join k l)
         modelSpec' = modelSpec {mEvents = newE : e}
-    ll <- case computeLogLikelihood modelSpec' hist modelBranchNames siteRed of
-        Left err -> throwIO $ RarecoalModelException err
-        Right l' -> return l'
+    ll <- tryEither $ computeLogLikelihood modelSpec' hist modelBranchNames siteRed
     hPutStrLn stderr ("branch=" ++ show k ++ ", time=" ++ show t ++ ", ll=" ++ show ll)
     return ll
 

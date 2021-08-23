@@ -14,7 +14,7 @@ import           RarecoalLib.StateSpace    (EventType (..),
                                               JointStateSpace (..),
                                               ModelEvent (..), ModelSpec (..),
                                               fillUpStateSpace, validateModel)
-import           RarecoalLib.Utils         (choose, chooseCont)
+import           RarecoalLib.Utils         (choose, chooseCont, RarecoalException(..))
 -- import Debug.Trace (trace)
 import qualified Data.Vector.Unboxed         as V
 import qualified Data.Vector.Unboxed.Mutable as VM
@@ -35,11 +35,11 @@ data CoalState s = CoalState
     , _csStateSpace    :: JointStateSpace
     }
 
-getProb :: ModelSpec -> JointStateSpace -> [Int] -> [Int] -> Either String Double
+getProb :: ModelSpec -> JointStateSpace -> [Int] -> [Int] -> Either RarecoalException Double
 getProb modelSpec jointStateSpace nVec config = do
     validateModel modelSpec
     let nrPops = mNrPops modelSpec
-    if not (length nVec == length config && length nVec == nrPops) then Left "illegal sample configuration given" else do
+    if not (length nVec == length config && length nVec == nrPops) then Left $ RarecoalCompException "illegal sample configuration given" else do
         let timeSteps = mTimeSteps modelSpec
             dd = runST $ do
                 ms <- makeInitModelState modelSpec
@@ -53,7 +53,7 @@ getProb modelSpec jointStateSpace nVec config = do
         if not (combFac > 0) then Left err else do
             return $ dd * mTheta modelSpec * combFac * discoveryRateFactor
   where
-    err = "Overflow Error in getProb for nVec=" ++ show nVec ++ ", kVec=" ++ show config
+    err = RarecoalCompException $ "Overflow Error in getProb for nVec=" ++ show nVec ++ ", kVec=" ++ show config
 
 makeInitCoalState :: JointStateSpace -> [Int] -> [Int] -> ST s (CoalState s)
 makeInitCoalState jointStateSpace nVec config = do

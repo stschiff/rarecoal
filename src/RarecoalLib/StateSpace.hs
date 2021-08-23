@@ -12,7 +12,7 @@ import           Control.Monad          (foldM, when)
 import           Data.List              (nub, sortBy)
 import           Data.MemoCombinators   (arrayRange, integral, wrap)
 import qualified Data.Vector.Unboxed    as V
-import           RarecoalLib.Utils      (computeAllConfigs)
+import           RarecoalLib.Utils      (computeAllConfigs, RarecoalException(..))
 
 
 type JointState = V.Vector Int
@@ -50,7 +50,7 @@ data ModelSpec = ModelSpec
     }
     deriving (Show)
 
-type CoreFunc = ModelSpec -> [Int] -> [Int] -> Either String Double
+type CoreFunc = ModelSpec -> [Int] -> [Int] -> Either RarecoalException Double
 
 -- makeJointStateSpace :: Int -> Int -> JointStateSpace
 -- makeJointStateSpace nrPop maxAf =
@@ -160,10 +160,10 @@ fillUpStateSpace jointStateSpace nonZeroStates =
             in  if maxVal == 0 then [vec_] else [vec_ V.// [(i, val)] | val <- [1..maxVal]]
 
 
-validateModel :: ModelSpec -> Either String ()
+validateModel :: ModelSpec -> Either RarecoalException ()
 validateModel (ModelSpec _ _ _ dr _ _ events) = do
-    when (or [t < 0 | ModelEvent t _ <- events]) $ Left "Negative event times"
-    when (or [r <= 0 || r > 1 | r <- dr]) $ Left "illegal discovery Rate"
+    when (or [t < 0 | ModelEvent t _ <- events]) $ Left (RarecoalModelException "Negative event times")
+    when (or [r <= 0 || r > 1 | r <- dr]) $ Left (RarecoalModelException "illegal discovery Rate")
     let sortedEvents =
             sortBy (\(ModelEvent time1 _) (ModelEvent time2 _) -> time1 `compare` time2) events
     checkEvents sortedEvents
@@ -172,7 +172,7 @@ validateModel (ModelSpec _ _ _ dr _ _ events) = do
     checkEvents [] = Right ()
     checkEvents e@(ModelEvent t (Join k l):rest) = do
         when (k >= length dr || l >= length dr || k < 0 || l < 0) $
-            Left ("illegal branch indices in event " ++ show e)
+            Left (RarecoalModelException ("illegal branch indices in event " ++ show e))
         let illegalEvents = or $ do
                 ModelEvent _ ee <- rest
                 case ee of
@@ -181,22 +181,22 @@ validateModel (ModelSpec _ _ _ dr _ _ events) = do
                     SetPopSize k' _ -> return $ k' == l
                     SetFreeze k' _  -> return $ k' == l
         if k == l || illegalEvents
-        then Left ("Illegal join from " ++ show l ++ " to " ++ show k ++ " at time " ++ show t)
+        then Left $ RarecoalModelException ("Illegal join from " ++ show l ++ " to " ++ show k ++ " at time " ++ show t)
         else checkEvents rest
     checkEvents (e@(ModelEvent _ (SetPopSize k p)):rest) = do
         when (k >= length dr || k < 0) $
-            Left ("illegal branch indices in event " ++ show e)
-        if p <= 0 then Left ("Illegal population size: " ++ show p) else checkEvents rest
+            Left (RarecoalModelException ("illegal branch indices in event " ++ show e))
+        if p <= 0 then Left $ RarecoalModelException ("Illegal population size: " ++ show p) else checkEvents rest
     checkEvents (e@(ModelEvent _ (Split l k m)):rest) = do
         when (k >= length dr || l >= length dr || k < 0 || l < 0) $
-            Left ("illegal branch indices in event " ++ show e)
-        if m < 0.0 || m > 1.0 then Left ("Illegal split rate" ++ show m) else checkEvents rest
+            Left (RarecoalModelException ("illegal branch indices in event " ++ show e))
+        if m < 0.0 || m > 1.0 then Left $ RarecoalModelException ("Illegal split rate" ++ show m) else checkEvents rest
     checkEvents (e@(ModelEvent _ (SetFreeze k _)):rest) = do
         when (k >= length dr || k < 0) $
-            Left ("illegal branch indices in event " ++ show e)
+            Left (RarecoalModelException ("illegal branch indices in event " ++ show e))
         checkEvents rest
 
-getRegularizationPenalty :: ModelSpec -> Either String Double
+getRegularizationPenalty :: ModelSpec -> Either RarecoalException Double
 getRegularizationPenalty ms = do
     let initialPopSizes = V.replicate (mNrPops ms) 1.0
     return $ go 0 initialPopSizes sortedEvents

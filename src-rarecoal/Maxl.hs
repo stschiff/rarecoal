@@ -1,48 +1,52 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Maxl (runMaxl, MaxlOpt(..)) where
 
-import RarecoalLib.ModelTemplate (ModelTemplate(..), instantiateModel, getModelTemplate, 
-    ModelOptions(..), ParamOptions(..), makeParameterDict, getParamNames, fillParameterDictWithDefaults)
-import RarecoalLib.Utils (GeneralOptions(..), HistogramOptions(..), setNrProcessors, loadHistogram, RarecoalException(..))
-import RarecoalLib.MaxUtils (penalty, minFunc, computeFrequencySpectrum, 
-    writeFullFitTable, writeSummaryFitTable, makeInitialPoint)
-import RarecoalLib.Powell (powellV)
+import           RarecoalLib.MaxUtils       (computeFrequencySpectrum,
+                                             makeInitialPoint, minFunc, penalty,
+                                             writeFullFitTable,
+                                             writeSummaryFitTable)
+import           RarecoalLib.ModelTemplate  (ModelOptions (..),
+                                             ModelTemplate (..),
+                                             ParamOptions (..),
+                                             fillParameterDictWithDefaults,
+                                             getModelTemplate, getParamNames,
+                                             instantiateModel,
+                                             makeParameterDict)
+import           RarecoalLib.Powell         (powellV)
+import           RarecoalLib.Utils          (GeneralOptions (..),
+                                             HistogramOptions (..),
+                                             loadHistogram, setNrProcessors,
+                                             tryEither)
 
-import Control.Exception (throwIO)
-import Data.List (intercalate)
-import qualified Data.Vector.Unboxed as V
-import Numeric.LinearAlgebra.Data (toRows, toList)
-import Numeric.GSL.Minimization (minimize, MinimizeMethod(..))
-import System.IO (Handle, IOMode(..), hPutStrLn, hPutStr, withFile, stderr)
+import           Data.List                  (intercalate)
+import qualified Data.Vector.Unboxed        as V
+import           Numeric.GSL.Minimization   (MinimizeMethod (..), minimize)
+import           Numeric.LinearAlgebra.Data (toList, toRows)
+import           System.IO                  (Handle, IOMode (..), hPutStr,
+                                             hPutStrLn, stderr, withFile)
 
-data MaxlOpt = MaxlOpt {
-    maGeneralOpts :: GeneralOptions,
-    maModelOpts :: ModelOptions,
-    maParamOpts :: ParamOptions,
-    maHistogramOpts :: HistogramOptions,
-    maMaxCycles :: Int,
-    maNrRestarts :: Int,
-    maOutPrefix :: FilePath,
-    maUsePowell :: Bool,
-    maPowellTolerance :: Double
-}
+data MaxlOpt = MaxlOpt
+    { maGeneralOpts     :: GeneralOptions
+    , maModelOpts       :: ModelOptions
+    , maParamOpts       :: ParamOptions
+    , maHistogramOpts   :: HistogramOptions
+    , maMaxCycles       :: Int
+    , maNrRestarts      :: Int
+    , maOutPrefix       :: FilePath
+    , maUsePowell       :: Bool
+    , maPowellTolerance :: Double
+    }
 
 runMaxl :: MaxlOpt -> IO ()
 runMaxl opts = do
     setNrProcessors (maGeneralOpts opts)
     modelTemplate <- getModelTemplate (maModelOpts opts)
     modelParams <- makeParameterDict (maParamOpts opts) >>= fillParameterDictWithDefaults modelTemplate
-    case instantiateModel (maGeneralOpts opts) modelTemplate modelParams of
-        Left err -> throwIO $ RarecoalModelException err
-        Right _ -> return ()
+    _ <- tryEither $ instantiateModel (maGeneralOpts opts) modelTemplate modelParams
     let modelBranchNames = mtBranchNames modelTemplate
     (hist, siteRed) <- loadHistogram (maHistogramOpts opts) modelBranchNames
-    xInit <- case makeInitialPoint modelTemplate modelParams of
-        Left err -> throwIO $ RarecoalModelException err
-        Right x -> return x
-    case minFunc (maGeneralOpts opts) modelTemplate hist siteRed xInit of
-        Left err -> throwIO $ RarecoalCompException err
-        Right _ -> return ()
+    xInit <- tryEither $ makeInitialPoint modelTemplate modelParams
+    _ <- tryEither $ minFunc (maGeneralOpts opts) modelTemplate hist siteRed xInit
     let minFunc' = either (const penalty) id .
             minFunc (maGeneralOpts opts) modelTemplate hist siteRed
     (minResult, trace) <- if maUsePowell opts then do
@@ -51,7 +55,7 @@ runMaxl opts = do
         else do
             let minimizationRoutine = minimizeV (maMaxCycles opts) minFunc'
             minimizeWithRestarts (maNrRestarts opts) minimizationRoutine xInit
-        
+
     let outMaxlFN = maOutPrefix opts ++ ".paramEstimates.txt"
         outTraceFN = maOutPrefix opts ++ ".trace.txt"
         outFullFitTableFN = maOutPrefix opts ++ ".frequencyFitTable.txt"
@@ -64,12 +68,8 @@ runMaxl opts = do
         else
             reportTraceSimplex modelTemplate trace h
     let finalModelParams = [(n, r) | ((n, _), r) <- zip modelParams (V.toList minResult)]
-    finalModelSpec <- case instantiateModel (maGeneralOpts opts) modelTemplate finalModelParams of
-        Left err -> throwIO $ RarecoalModelException err
-        Right f -> return f
-    finalSpectrum <- case computeFrequencySpectrum finalModelSpec hist modelBranchNames of
-        Left err -> throwIO $ RarecoalCompException err
-        Right f -> return f
+    finalModelSpec <- tryEither $ instantiateModel (maGeneralOpts opts) modelTemplate finalModelParams
+    finalSpectrum <- tryEither $ computeFrequencySpectrum finalModelSpec hist modelBranchNames
     writeFullFitTable outFullFitTableFN finalSpectrum
     writeSummaryFitTable outSummaryTableFN finalSpectrum hist
 

@@ -2,37 +2,34 @@
 
 module SimCommand (SimCommandOpt(..), runSimCommand) where
 
-import RarecoalLib.Utils (GeneralOptions(..), RarecoalException(..))
-import RarecoalLib.Core (ModelSpec(..), ModelEvent(..), EventType(..))
-import RarecoalLib.ModelTemplate (ModelOptions(..), ParamOptions(..),
-                               getModelTemplate, makeParameterDict,
-                               instantiateModel)
+import           RarecoalLib.Core          (EventType (..), ModelEvent (..),
+                                            ModelSpec (..))
+import           RarecoalLib.ModelTemplate (ModelOptions (..),
+                                            ParamOptions (..), getModelTemplate,
+                                            instantiateModel, makeParameterDict)
+import           RarecoalLib.Utils         (GeneralOptions (..),
+                                            RarecoalException (..), tryEither)
 
-import Control.Exception (throwIO)
-import Control.Monad (forM)
-import Data.List (sortOn)
+import           Control.Monad             (forM)
+import           Data.List                 (sortOn)
 
-data SimCommandOpt = SimCommandOpt {
-    _ftGeneralOpts :: GeneralOptions,
-    _ftModelOpts :: ModelOptions,
-    _ftParamOpts :: ParamOptions,
-    _ftNrHaps :: [Int],
-    _ftRecomb :: Double,
-    _ftL :: Int
-}
+data SimCommandOpt = SimCommandOpt
+    { _ftGeneralOpts :: GeneralOptions
+    , _ftModelOpts   :: ModelOptions
+    , _ftParamOpts   :: ParamOptions
+    , _ftNrHaps      :: [Int]
+    , _ftRecomb      :: Double
+    , _ftL           :: Int
+    }
 
 runSimCommand :: SimCommandOpt -> IO ()
 runSimCommand opts = do
     modelTemplate <- getModelTemplate (_ftModelOpts opts)
     modelParams <- makeParameterDict (_ftParamOpts opts)
-    modelSpec <- case instantiateModel (_ftGeneralOpts opts) modelTemplate modelParams of
-        Left err -> throwIO $ RarecoalModelException err
-        Right m -> return m
+    modelSpec <- tryEither $ instantiateModel (_ftGeneralOpts opts) modelTemplate modelParams
     let (ModelSpec _ _ theta _ _ _ events) = modelSpec
     let thetaL = 2.0 * theta * fromIntegral (_ftL opts)
-    modelOptsString <- case makeModelOpts events of
-        Left err -> throwIO err
-        Right m -> return m
+    modelOptsString <- tryEither $ makeModelOpts events
     putStrLn $ "scrm " ++ show nSamples ++ " 1 -t " ++ show thetaL ++
         " -r " ++ show rhoL ++ " " ++ show (_ftL opts) ++ " -l 100000 " ++ (makeSubPopSpec (_ftNrHaps opts)) ++
         " " ++ modelOptsString
@@ -46,9 +43,9 @@ makeSubPopSpec nrHaps = "-I " ++ show nPops ++ " " ++ nInds
     nPops = length nrHaps
     nInds = unwords . map show $ nrHaps
 
-makeModelOpts :: [ModelEvent] -> Either RarecoalException String 
+makeModelOpts :: [ModelEvent] -> Either RarecoalException String
 makeModelOpts events = do
-    eventStrings <- forM (sortOn (\(ModelEvent t _) -> t) events) $ \e -> 
+    eventStrings <- forM (sortOn (\(ModelEvent t _) -> t) events) $ \e ->
         case e of
             ModelEvent t (Join k l) -> return $
                 "-ej " ++ show (0.5 * t) ++ " " ++ show (l + 1) ++ " " ++ show (k + 1)

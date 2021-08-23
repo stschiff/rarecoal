@@ -173,7 +173,7 @@ getParamNames mt = reverse . nub $ go [] (mtEvents mt)
         MTFreeze (ParamVariable n) _ _ -> go (n:res) rest
         _ -> go res rest
 
-instantiateModel :: GeneralOptions -> ModelTemplate -> [(String, Double)] -> Either String ModelSpec
+instantiateModel :: GeneralOptions -> ModelTemplate -> [(String, Double)] -> Either RarecoalException ModelSpec
 instantiateModel opts (ModelTemplate branchNames _mtEvents _mtConstraints) paramsDict = do
     events <- reverse <$> getEvents branchNames _mtEvents []
     validateConstraints paramsDict _mtConstraints
@@ -212,21 +212,21 @@ instantiateModel opts (ModelTemplate branchNames _mtEvents _mtConstraints) param
             e <- SetFreeze <$> getModelBranchIndex bN bSpec <*> pure v
             getEvents bN rest (ModelEvent t e:res)
 
-getModelBranchIndex :: [ModelBranch] -> ModelBranch -> Either String Int
+getModelBranchIndex :: [ModelBranch] -> ModelBranch -> Either RarecoalException Int
 getModelBranchIndex branchNames branch =
     case elemIndex branch branchNames of
-        Nothing -> Left ("did not find model-branch name " ++ show branch)
+        Nothing -> Left $ RarecoalModelException ("did not find model-branch name " ++ show branch)
         Just v  -> Right v
 
 
-getParam :: [(String, Double)] -> ParamSpec -> Either String Double
+getParam :: [(String, Double)] -> ParamSpec -> Either RarecoalException Double
 getParam _ (ParamFixed val) = return val
 getParam paramsDict (ParamVariable n) =
     case n `lookup` paramsDict of
-        Nothing -> Left ("Error in Template: could not find parameter " ++ show n)
+        Nothing -> Left $ RarecoalModeltemplateException ("Error in Template: could not find parameter " ++ show n)
         Just val -> return val
 
-validateConstraints :: [(String, Double)] -> [MTConstraint] -> Either String ()
+validateConstraints :: [(String, Double)] -> [MTConstraint] -> Either RarecoalException ()
 validateConstraints _ [] = return ()
 validateConstraints paramsDict (c@(MTConstraint pSpec1 pSpec2 op):rest) = do
     p1 <- getParam paramsDict pSpec1
@@ -234,10 +234,10 @@ validateConstraints paramsDict (c@(MTConstraint pSpec1 pSpec2 op):rest) = do
     case op of
         ConstraintOpGreater ->
             when (p1 <= p2) $
-                Left ("constraint violated: " ++ show c)
+                Left (RarecoalModelException ("constraint violated: " ++ show c))
         ConstraintOpSmaller ->
             when (p1 >= p2) $
-                Left ("constraint violated: " ++ show c)
+                Left (RarecoalModelException ("constraint violated: " ++ show c))
     validateConstraints paramsDict rest
 
 makeParameterDict :: ParamOptions -> IO [(String, Double)]

@@ -1,14 +1,17 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE OverloadedStrings, DeriveAnyClass #-}
+
 module RarecoalLib.Utils (computeAllConfigs, computeAllConfigsCrude, computeStandardOrder,
     turnHistPatternIntoModelPattern, defaultTimes, getTimeSteps,
     setNrProcessors, filterConditionOn, filterExcludePatterns, filterMaxAf,
     filterGlobalMinAf, GeneralOptions(..), HistogramOptions(..), loadHistogram, ModelBranch, HistBranch,
-    choose, chooseCont, RarecoalException(..)) where
+    choose, chooseCont, RarecoalException(..), tryEither) where
 
 import           SequenceFormats.RareAlleleHistogram (RareAlleleHistogram (..),
                                                       SitePattern,
                                                       readHistogram)
 
+import           Control.DeepSeq                     (NFData)
 import           Control.Exception                   (Exception, throwIO)
 import           Control.Monad                       (forM, forM_, when, (>=>))
 import           Data.List                           (elemIndex)
@@ -16,6 +19,7 @@ import qualified Data.Map.Strict                     as Map
 import           GHC.Conc                            (getNumCapabilities,
                                                       getNumProcessors,
                                                       setNumCapabilities)
+import           GHC.Generics                        (Generic)
 import           System.IO                           (hPutStrLn, stderr)
 
 type ModelBranch = String
@@ -45,9 +49,14 @@ data RarecoalException = RarecoalHistogramException String
     | RarecoalModelException String
     | RarecoalCompException String
     | RarecoalSimException String
-    deriving (Show)
+    deriving (Show, Generic, NFData)
 
 instance Exception RarecoalException
+
+tryEither :: (Exception e) => Either e r -> IO r
+tryEither eitherVal = case eitherVal of
+    Left err -> throwIO err
+    Right r -> return r
 
 defaultTimes :: [Double]
 defaultTimes = getTimeSteps 20000 400 20.0
@@ -102,7 +111,7 @@ allPatternsForAF nrPops af = map getDiffs $ allSubsets (nrPops + af - 1) (nrPops
     go res (x1:x2:xs) = go (res ++ [x2 - x1 - 1]) (x2:xs)
     go res _          = res
 
-turnHistPatternIntoModelPattern :: [HistBranch] -> [ModelBranch] -> SitePattern -> Either String SitePattern
+turnHistPatternIntoModelPattern :: [HistBranch] -> [ModelBranch] -> SitePattern -> Either RarecoalException SitePattern
 turnHistPatternIntoModelPattern histBranches modelBranches histPattern =
     forM modelBranches $ \modelBranchName ->
         case modelBranchName `elemIndex` histBranches of
@@ -118,39 +127,39 @@ allSubsets n k =
         allSubsets (n - 1) k ++ map (++[n]) (allSubsets (n - 1) (k - 1))
 
 
-filterConditionOn :: [Int] -> RareAlleleHistogram -> Either String RareAlleleHistogram
+filterConditionOn :: [Int] -> RareAlleleHistogram -> Either RarecoalException RareAlleleHistogram
 filterConditionOn indices hist =
     if null indices then return hist else do
-        if not (all (<n) indices) then Left ("illegal conditionOn indices " ++ show indices) else do
+        if not (all (<n) indices) then Left $ RarecoalHistogramException ("illegal conditionOn indices " ++ show indices) else do
             let newBody = Map.filterWithKey conditionPatternOn (raCounts hist)
             return $ hist {raCounts = newBody, raConditionOn = indices}
   where
     conditionPatternOn pat _ = all (\i -> pat !! i > 0) indices
     n = length (raNames hist)
 
-filterExcludePatterns :: [[Int]] -> RareAlleleHistogram -> Either String RareAlleleHistogram
+filterExcludePatterns :: [[Int]] -> RareAlleleHistogram -> Either RarecoalException RareAlleleHistogram
 filterExcludePatterns excludePatterns hist =
     if null excludePatterns then return hist else do
-        if not (all ((==n) . length) excludePatterns) then Left ("illegal excludePattern(s)" ++ show excludePatterns) else do
+        if not (all ((==n) . length) excludePatterns) then Left $ RarecoalHistogramException ("illegal excludePattern(s)" ++ show excludePatterns) else do
             let newBody = Map.filterWithKey pruneExcludePatterns (raCounts hist)
             return $ hist {raExcludePatterns = excludePatterns, raCounts = newBody}
   where
     pruneExcludePatterns pat _ = pat `notElem` excludePatterns
     n = length (raNames hist)
 
-filterMaxAf :: Int -> RareAlleleHistogram -> Either String RareAlleleHistogram
+filterMaxAf :: Int -> RareAlleleHistogram -> Either RarecoalException RareAlleleHistogram
 filterMaxAf maxAf' hist = do
     let maxAf = if maxAf' == 0 then raMaxAf hist else maxAf'
-    when (maxAf > raMaxAf hist || maxAf < raMinAf hist) $ Left "illegal maxAF"
+    when (maxAf > raMaxAf hist || maxAf < raMinAf hist) $ Left (RarecoalHistogramException "illegal maxAF")
     if maxAf == raMaxAf hist then return hist else do
         let newBody = Map.filterWithKey (prunePatternFreq maxAf) (raCounts hist)
         return $ hist {raMaxAf = maxAf, raCounts = newBody}
   where
     prunePatternFreq maxM pat _ = sum pat <= maxM
 
-filterGlobalMinAf :: Int -> RareAlleleHistogram -> Either String RareAlleleHistogram
+filterGlobalMinAf :: Int -> RareAlleleHistogram -> Either RarecoalException RareAlleleHistogram
 filterGlobalMinAf minAf hist = do
-    when (minAf > raMaxAf hist || minAf < raMinAf hist) $ Left "illegal minAf"
+    when (minAf > raMaxAf hist || minAf < raMinAf hist) $ Left (RarecoalHistogramException "illegal minAf")
     if minAf == raMinAf hist then return hist else do
         let newBody = Map.filterWithKey prunePatternMinTotalFreq (raCounts hist)
         return $ hist {raCounts = newBody, raMinAf = minAf}
@@ -175,7 +184,7 @@ loadHistogram histOpts modelBranches = do
     let h_ = (filterMaxAf maxAf >=> filterGlobalMinAf minAf >=>
             filterConditionOn conditionOn >=> filterExcludePatterns excludePatterns) hist
     case h_ of
-        Left err -> throwIO $ RarecoalHistogramException err
+        Left err -> throwIO err
         Right h -> do
             hPutStrLn stderr $ "loaded histogram " ++ path ++ "with the following options:"
             hPutStrLn stderr $ "Branch Names: " ++ show (raNames h)

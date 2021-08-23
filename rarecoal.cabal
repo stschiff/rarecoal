@@ -19,7 +19,8 @@ library
   hs-source-dirs:      src
   build-depends:       base, containers, transformers, parallel, foldl, hmatrix-gsl, hmatrix,
                        pipes-attoparsec, vector, data-memocombinators, tasty, tasty-quickcheck, 
-                       parsec, parsec3-numbers, QuickCheck, split, tasty-hunit, sequence-formats, MemoTrie
+                       parsec, parsec3-numbers, QuickCheck, split, tasty-hunit, sequence-formats, MemoTrie,
+                       deepseq
   default-language:    Haskell2010
   ghc-options:         -O
 

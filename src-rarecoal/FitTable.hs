@@ -1,22 +1,29 @@
 {-# LANGUAGE OverloadedStrings #-}
 module FitTable (runFitTable, FitTableOpt(..)) where
 
-import SequenceFormats.RareAlleleHistogram (RareAlleleHistogram(..))
-import RarecoalLib.ModelTemplate (ModelOptions(..), ParamOptions(..),
-    getModelTemplate, makeParameterDict, instantiateModel, ModelTemplate(..))
-import RarecoalLib.Utils (GeneralOptions(..), HistogramOptions(..), setNrProcessors, loadHistogram, RarecoalException(..))
-import RarecoalLib.MaxUtils (computeFrequencySpectrum, computeLogLikelihoodFromSpec, 
-    writeFullFitTable, writeSummaryFitTable)
+import           RarecoalLib.MaxUtils                (computeFrequencySpectrum, computeLogLikelihoodFromSpec,
+                                                      writeFullFitTable,
+                                                      writeSummaryFitTable)
+import           RarecoalLib.ModelTemplate           (ModelOptions (..),
+                                                      ModelTemplate (..),
+                                                      ParamOptions (..),
+                                                      getModelTemplate,
+                                                      instantiateModel,
+                                                      makeParameterDict)
+import           RarecoalLib.Utils                   (GeneralOptions (..),
+                                                      HistogramOptions (..),
+                                                      loadHistogram,
+                                                      setNrProcessors,
+                                                      tryEither)
+import           SequenceFormats.RareAlleleHistogram (RareAlleleHistogram (..))
 
-import Control.Exception (throwIO)
-
-data FitTableOpt = FitTableOpt {
-    ftGeneralOpts :: GeneralOptions,
-    ftModelOpts :: ModelOptions,
-    ftParamOpts :: ParamOptions,
-    ftHistogramOpts :: HistogramOptions,
-    ftOutPrefix :: FilePath
-}
+data FitTableOpt = FitTableOpt
+    { ftGeneralOpts   :: GeneralOptions
+    , ftModelOpts     :: ModelOptions
+    , ftParamOpts     :: ParamOptions
+    , ftHistogramOpts :: HistogramOptions
+    , ftOutPrefix     :: FilePath
+    }
 
 runFitTable :: FitTableOpt -> IO ()
 runFitTable opts = do
@@ -27,14 +34,10 @@ runFitTable opts = do
 
     modelTemplate <- getModelTemplate modelOpts
     modelParams <- makeParameterDict paramOpts
-    modelSpec <- case instantiateModel (ftGeneralOpts opts) modelTemplate modelParams of
-        Left err -> throwIO $ RarecoalModelException err
-        Right m -> return m
+    modelSpec <- tryEither $ instantiateModel (ftGeneralOpts opts) modelTemplate modelParams
     let modelBranchNames = mtBranchNames modelTemplate
     (hist, siteRed) <- loadHistogram histOpts modelBranchNames
-    spectrum <- case computeFrequencySpectrum modelSpec hist modelBranchNames of
-        Left err -> throwIO $ RarecoalHistogramException err
-        Right s -> return s
+    spectrum <- tryEither $ computeFrequencySpectrum modelSpec hist modelBranchNames
     let totalLogLikelihood = computeLogLikelihoodFromSpec (raTotalNrSites hist) siteRed spectrum
     putStrLn $ "Log Likelihood:" ++ "\t" ++ show totalLogLikelihood
     writeFullFitTable outFullTable spectrum

@@ -1,67 +1,73 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Mcmc (runMcmc, McmcOpt(..)) where
 
-import RarecoalLib.Utils (GeneralOptions(..), HistogramOptions(..), setNrProcessors, RarecoalException(..))
-import RarecoalLib.ModelTemplate (ModelTemplate(..), ParamOptions(..), ModelOptions(..), 
-    getModelTemplate, instantiateModel, getParamNames, makeParameterDict, fillParameterDictWithDefaults)
-import RarecoalLib.Utils (loadHistogram)
-import RarecoalLib.MaxUtils (minFunc, penalty, writeFullFitTable, writeSummaryFitTable, 
-    makeInitialPoint, computeFrequencySpectrum)
+import           RarecoalLib.MaxUtils           (computeFrequencySpectrum,
+                                                 makeInitialPoint, minFunc,
+                                                 penalty, writeFullFitTable,
+                                                 writeSummaryFitTable)
+import           RarecoalLib.ModelTemplate      (ModelOptions (..),
+                                                 ModelTemplate (..),
+                                                 ParamOptions (..),
+                                                 fillParameterDictWithDefaults,
+                                                 getModelTemplate,
+                                                 getParamNames,
+                                                 instantiateModel,
+                                                 makeParameterDict)
+import           RarecoalLib.Utils              (GeneralOptions (..),
+                                                 HistogramOptions (..),
+                                                 setNrProcessors, tryEither)
+import           RarecoalLib.Utils              (loadHistogram)
 
-import Control.Exception (throwIO)
-import qualified Data.Vector.Unboxed as V
-import qualified System.Random as R
-import Control.Monad.Trans.State.Lazy (StateT, get, gets, put, evalStateT, modify)
-import Control.Monad.IO.Class (liftIO)
-import Control.Monad (when, forM_)
-import Control.Monad.Loops (whileM)
-import Data.List (intercalate, sort, minimumBy)
-import Data.Ord (comparing)
-import System.IO (withFile, Handle, IOMode(..), withFile, hPutStr, hPutStrLn, stderr)
+import           Control.Monad                  (forM_, when)
+import           Control.Monad.IO.Class         (liftIO)
+import           Control.Monad.Loops            (whileM)
+import           Control.Monad.Trans.State.Lazy (StateT, evalStateT, get, gets,
+                                                 modify, put)
+import           Data.List                      (intercalate, minimumBy, sort)
+import           Data.Ord                       (comparing)
+import qualified Data.Vector.Unboxed            as V
+import           System.IO                      (Handle, IOMode (..), hPutStr,
+                                                 hPutStrLn, stderr, withFile)
+import qualified System.Random                  as R
 
 (!) :: V.Vector Double -> Int -> Double
 (!) = (V.!)
 (//) :: V.Vector Double -> [(Int, Double)] -> V.Vector Double
 (//) = (V.//)
 
-data McmcOpt = McmcOpt {
-   mcGeneralOpts :: GeneralOptions,
-   mcModelOpts :: ModelOptions,
-   mcParamOpts :: ParamOptions,
-   mcHistogramOpts :: HistogramOptions,
-   mcNrCycles :: Int,
-   mcOutPrefix :: FilePath,
-   mcRandomSeed :: Int
-}
+data McmcOpt = McmcOpt
+    { mcGeneralOpts   :: GeneralOptions
+    , mcModelOpts     :: ModelOptions
+    , mcParamOpts     :: ParamOptions
+    , mcHistogramOpts :: HistogramOptions
+    , mcNrCycles      :: Int
+    , mcOutPrefix     :: FilePath
+    , mcRandomSeed    :: Int
+    }
 
-data MCMCstate = MCMCstate {
-    mcmcNrSteps :: Int,
-    mcmcNrCycles :: Int,
-    mcmcCurrentValue :: Double,
-    mcmcCurrentPoint :: V.Vector Double,
-    mcmcStepWidths :: V.Vector Double,
-    mcmcSuccesRate :: V.Vector Double,
-    mcmcRanGen :: R.StdGen,
-    mcmcScoreList :: [Double]
-} deriving (Show)
+data MCMCstate = MCMCstate
+    { mcmcNrSteps      :: Int
+    , mcmcNrCycles     :: Int
+    , mcmcCurrentValue :: Double
+    , mcmcCurrentPoint :: V.Vector Double
+    , mcmcStepWidths   :: V.Vector Double
+    , mcmcSuccesRate   :: V.Vector Double
+    , mcmcRanGen       :: R.StdGen
+    , mcmcScoreList    :: [Double]
+    }
+    deriving (Show)
 
 runMcmc :: McmcOpt -> IO ()
 runMcmc opts = do
     setNrProcessors (mcGeneralOpts opts)
     modelTemplate <- getModelTemplate (mcModelOpts opts)
-    modelParams <- (makeParameterDict (mcParamOpts opts)) >>= 
+    modelParams <- (makeParameterDict (mcParamOpts opts)) >>=
         fillParameterDictWithDefaults modelTemplate
-    case instantiateModel (mcGeneralOpts opts) modelTemplate modelParams of
-        Left err -> throwIO $ RarecoalModelException err
-        Right _ -> return ()
+    _ <- tryEither $ instantiateModel (mcGeneralOpts opts) modelTemplate modelParams
     let modelBranchNames = mtBranchNames modelTemplate
     (hist, siteRed) <- loadHistogram (mcHistogramOpts opts) modelBranchNames
-    xInit <- case makeInitialPoint modelTemplate modelParams of
-        Left err -> throwIO $ RarecoalModelException err
-        Right x -> return x
-    case minFunc (mcGeneralOpts opts) modelTemplate hist siteRed xInit of
-        Left err -> throwIO $ RarecoalCompException err
-        Right _ -> return ()
+    xInit <- tryEither $ makeInitialPoint modelTemplate modelParams
+    _ <- tryEither $ minFunc (mcGeneralOpts opts) modelTemplate hist siteRed xInit
     let minFunc' = either (const penalty) id .
             minFunc (mcGeneralOpts opts) modelTemplate hist siteRed
         initV = minFunc' xInit
@@ -85,12 +91,8 @@ runMcmc opts = do
         reportTrace (getParamNames modelTemplate) states h
 
     let finalModelParams = [(n, r) | ((n, _), r) <- zip modelParams (V.toList minPoint)]
-    finalModelSpec <- case instantiateModel (mcGeneralOpts opts) modelTemplate finalModelParams of
-        Left err -> throwIO $ RarecoalModelException err
-        Right f -> return f
-    finalSpectrum <- case computeFrequencySpectrum finalModelSpec hist modelBranchNames of
-        Left err -> throwIO $ RarecoalCompException err
-        Right f -> return f
+    finalModelSpec <- tryEither $ instantiateModel (mcGeneralOpts opts) modelTemplate finalModelParams
+    finalSpectrum <- tryEither $ computeFrequencySpectrum finalModelSpec hist modelBranchNames
     writeFullFitTable outFullFitTableFN finalSpectrum
     writeSummaryFitTable outSummaryTableFN finalSpectrum hist
 
