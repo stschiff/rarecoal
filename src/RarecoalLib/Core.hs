@@ -1,66 +1,59 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Rarecoal.Core (getProb, ModelEvent(..), EventType(..), ModelSpec(..), popJoinA,
+module RarecoalLib.Core (getProb, ModelEvent(..), EventType(..), ModelSpec(..), popJoinA,
     popJoinB, popSplitA, popSplitB) where
 
-import           Rarecoal.StateSpace         (JointStateSpace (..),
-                                              fillUpStateSpace,
-                                              ModelEvent(..),
-                                              validateModel,
-                                              EventType(..), ModelSpec(..))
-import Rarecoal.Utils (choose, chooseCont)
-import           Control.Error.Safe          (assertErr)
 import           Control.Exception.Base      (assert)
 import           Control.Monad               (filterM, foldM, forM, forM_, when,
                                               (>=>))
 import           Control.Monad.ST            (ST, runST)
 import           Data.List                   (nub)
+import           Data.List                   (sortBy)
 import           Data.STRef                  (STRef, modifySTRef, newSTRef,
                                               readSTRef, writeSTRef)
-import Data.List (sortBy)
-import qualified Data.Text as T
+import           RarecoalLib.StateSpace    (EventType (..),
+                                              JointStateSpace (..),
+                                              ModelEvent (..), ModelSpec (..),
+                                              fillUpStateSpace, validateModel)
+import           RarecoalLib.Utils         (choose, chooseCont)
 -- import Debug.Trace (trace)
-import Turtle (format, (%), w)
 import qualified Data.Vector.Unboxed         as V
 import qualified Data.Vector.Unboxed.Mutable as VM
 
-data ModelState s = ModelState {
-    _msT              :: STRef s Double,
-    _msEventQueue     :: STRef s [ModelEvent],
-    _msPopSize        :: VM.MVector s Double,
-    _msFreezeState    :: VM.MVector s Bool
-}
+data ModelState s = ModelState
+    { _msT           :: STRef s Double
+    , _msEventQueue  :: STRef s [ModelEvent]
+    , _msPopSize     :: VM.MVector s Double
+    , _msFreezeState :: VM.MVector s Bool
+    }
 
-data CoalState s = CoalState {
-    _csA             :: VM.MVector s Double,
-    _csB             :: VM.MVector s Double,
-    _csBtemp         :: VM.MVector s Double,
-    _csNonZeroStates :: STRef s [Int],
-    _csD             :: STRef s Double,
-    _csStateSpace    :: JointStateSpace
-}
+data CoalState s = CoalState
+    { _csA             :: VM.MVector s Double
+    , _csB             :: VM.MVector s Double
+    , _csBtemp         :: VM.MVector s Double
+    , _csNonZeroStates :: STRef s [Int]
+    , _csD             :: STRef s Double
+    , _csStateSpace    :: JointStateSpace
+    }
 
-getProb :: ModelSpec -> JointStateSpace -> [Int] -> [Int] -> Either T.Text Double
+getProb :: ModelSpec -> JointStateSpace -> [Int] -> [Int] -> Either String Double
 getProb modelSpec jointStateSpace nVec config = do
     validateModel modelSpec
     let nrPops = mNrPops modelSpec
-    assertErr "illegal sample configuration given" $
-        length nVec == length config && length nVec == nrPops
-    let timeSteps = mTimeSteps modelSpec
-        dd = runST $ do
-            ms <- makeInitModelState modelSpec
-            cs <- makeInitCoalState jointStateSpace nVec config
-            propagateStates ms cs timeSteps (mNoShortcut modelSpec)
-            readSTRef (_csD cs)
-        combFac = product $ zipWith choose nVec config
-        discoveryRateFactor =
-            product [if c > 0 then d' else 1.0 |
-                (c, d') <- zip config (mDiscoveryRates modelSpec)]
-    assertErr err $ combFac > 0
-    --trace (show $ combFac) $ return ()
-    return $ dd * mTheta modelSpec * combFac * discoveryRateFactor
+    if not (length nVec == length config && length nVec == nrPops) then Left "illegal sample configuration given" else do
+        let timeSteps = mTimeSteps modelSpec
+            dd = runST $ do
+                ms <- makeInitModelState modelSpec
+                cs <- makeInitCoalState jointStateSpace nVec config
+                propagateStates ms cs timeSteps (mNoShortcut modelSpec)
+                readSTRef (_csD cs)
+            combFac = product $ zipWith choose nVec config
+            discoveryRateFactor =
+                product [if c > 0 then d' else 1.0 |
+                    (c, d') <- zip config (mDiscoveryRates modelSpec)]
+        if not (combFac > 0) then Left err else do
+            return $ dd * mTheta modelSpec * combFac * discoveryRateFactor
   where
-    err = format ("Overflow Error in getProb for nVec="%w%", kVec="%w) nVec
-        config
+    err = "Overflow Error in getProb for nVec=" ++ show nVec ++ ", kVec=" ++ show config
 
 makeInitCoalState :: JointStateSpace -> [Int] -> [Int] -> ST s (CoalState s)
 makeInitCoalState jointStateSpace nVec config = do
@@ -158,10 +151,10 @@ performEvent ms cs = do
     -- t <- use $ _1 . msT
     -- trace ("time: " ++ show t ++ ": performing event " ++ show (head events)) $ return ()
     case e of
-        Join k l -> popJoin cs k l
-        Split k l m -> popSplit cs k l m
+        Join k l       -> popJoin cs k l
+        Split k l m    -> popSplit cs k l m
         SetPopSize k p -> VM.write (_msPopSize ms) k p
-        SetFreeze k b -> VM.write (_msFreezeState ms) k b
+        SetFreeze k b  -> VM.write (_msFreezeState ms) k b
     writeSTRef (_msEventQueue ms) $ tail events
 
 popJoin :: CoalState s -> Int -> Int -> ST s ()

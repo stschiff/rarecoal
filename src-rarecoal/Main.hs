@@ -1,36 +1,33 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-import           Find                         (FindOpt (..), runFind)
-import           FitTable                     (FitTableOpt (..), runFitTable)
-import           Logl                         (LoglOpt (..), runLogl)
-import           Maxl                         (MaxlOpt (..), runMaxl)
-import           Mcmc                         (McmcOpt (..), runMcmc)
-import           Prob                         (ProbOpt (..), runProb)
-import           Rarecoal.ModelTemplate       (ModelOptions (..), ParamOptions(..))
-import Rarecoal.Utils (GeneralOptions(..), HistogramOptions(..))
-import           SimCommand                   (SimCommandOpt (..),
-                                               runSimCommand)
-import           Control.Applicative          ((<|>), many)
-import           Control.Error         (runScript, scriptIO, errLn)
-import           Data.List.Split              (splitOn)
-import           Data.Monoid                  ((<>))
-import           Data.Time.Clock              (getCurrentTime)
-import qualified Data.Text as T
-import           Data.Version                 (showVersion)
-import qualified Options.Applicative          as OP
-import           Turtle                       (format, w, (%))
-import           Paths_rarecoal               (version)
+import           Control.Applicative       (many, (<|>))
+import           Data.List.Split           (splitOn)
+import           Data.Time.Clock           (getCurrentTime)
+import           Data.Version              (showVersion)
+import           Find                      (FindOpt (..), runFind)
+import           FitTable                  (FitTableOpt (..), runFitTable)
+import           Logl                      (LoglOpt (..), runLogl)
+import           Maxl                      (MaxlOpt (..), runMaxl)
+import           Mcmc                      (McmcOpt (..), runMcmc)
+import qualified Options.Applicative       as OP
+import           Paths_rarecoal            (version)
+import           Prob                      (ProbOpt (..), runProb)
+import           RarecoalLib.ModelTemplate (ModelOptions (..),
+                                            ParamOptions (..))
+import           RarecoalLib.Utils         (GeneralOptions (..),
+                                            HistogramOptions (..))
+import           SimCommand                (SimCommandOpt (..), runSimCommand)
+import           System.IO                 (hPutStrLn, stderr)
 
 data Options = Options Command
 
-data Command =
-    CmdProb ProbOpt |
-    CmdLogl LoglOpt |
-    CmdMaxl MaxlOpt |
-    CmdMcmc McmcOpt |
-    CmdFind FindOpt |
-    CmdFitTable FitTableOpt |
-    CmdSimCommand SimCommandOpt
+data Command = CmdProb ProbOpt
+    | CmdLogl LoglOpt
+    | CmdMaxl MaxlOpt
+    | CmdMcmc McmcOpt
+    | CmdFind FindOpt
+    | CmdFitTable FitTableOpt
+    | CmdSimCommand SimCommandOpt
 
 main :: IO ()
 main = run =<< OP.execParser (parseOptions `withInfo` ("Rarecoal Version " ++
@@ -42,11 +39,11 @@ withInfo opts desc = OP.info (pure (.) <*> versionInfoOpt <*> OP.helper <*> opts
   where
     versionInfoOpt = OP.infoOption (showVersion version)
         (OP.long "version" <> OP.help "Print version and exit")
-    
+
 run :: Options -> IO ()
-run (Options cmdOpts) = runScript $ do
-    currentT <- scriptIO getCurrentTime
-    scriptIO . errLn $ format ("Rarecoal starting at "%w) currentT
+run (Options cmdOpts) = do
+    currentT <- getCurrentTime
+    hPutStrLn stderr $ "Rarecoal starting at " ++ show currentT
     case cmdOpts of
         CmdProb opts       -> runProb opts
         CmdLogl opts       -> runLogl opts
@@ -55,8 +52,8 @@ run (Options cmdOpts) = runScript $ do
         CmdFind opts       -> runFind opts
         CmdFitTable opts   -> runFitTable opts
         CmdSimCommand opts -> runSimCommand opts
-    currentTafter <- scriptIO getCurrentTime
-    scriptIO . errLn $ format ("Rarecoal finished at "%w) currentTafter
+    currentTafter <- getCurrentTime
+    hPutStrLn stderr $ "Rarecoal finished at " ++ show currentTafter
 
 parseOptions :: OP.Parser Options
 parseOptions = Options <$> parseCommand
@@ -96,12 +93,11 @@ parseProbOpt = ProbOpt <$> parseGeneralOpts <*> parseModelOpts <*>
         \the first and two from the second population. Note that \
         \patterns refer to the order of branches specified in the model.")
 
+
 parseGeneralOpts :: OP.Parser GeneralOptions
-parseGeneralOpts = GeneralOptions <$> parseUseCore2 <*> parseTheta <*> parseNrThreads <*>
+parseGeneralOpts = GeneralOptions <$> parseTheta <*> parseNrThreads <*>
     parseNoShortcut <*> parseRegularization <*> parseN0 <*> parseLinGen <*> parseTmax
   where
-    parseUseCore2 = OP.switch $ OP.long "core2" <> OP.internal <>
-        OP.help "Use the new Core2 algorithm (in beta)"
     parseTheta = OP.option OP.auto $ OP.long "theta" <>
         OP.hidden <> OP.metavar "FLOAT" <> OP.value 0.0005 <>
         OP.showDefault <> OP.help "set the scaled mutation rate. This is only \
@@ -166,7 +162,7 @@ parseParamOpts = ParamOptions <$> parseMaybeParamInputFile <*> OP.many parsePara
            then error ("could not parse parameter option " ++ s)
            else
                let [param, valueS] = fields
-               in  (T.pack param, read valueS)
+               in  (param, read valueS)
 
 parseLogl :: OP.Parser Command
 parseLogl = CmdLogl <$> parseLoglOpt
@@ -204,7 +200,7 @@ parseHistOpts = HistogramOptions <$> parseHistPath <*> parseMinAf <*>
         OP.metavar "DOUBLE" <> OP.value 1.0 <> OP.showDefault <> OP.help "a factor between 0 and 1 \
         \that reduces the number of sites in the histogram to reflect genetic linkage."
 
-    
+
 
 parseMaxl :: OP.Parser Command
 parseMaxl = CmdMaxl <$> parseMaxlOpt

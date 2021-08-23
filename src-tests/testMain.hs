@@ -1,6 +1,6 @@
-import qualified Rarecoal.Core.Test
-import qualified Rarecoal.ModelTemplate.Test
-import qualified Rarecoal.StateSpace.Test
+import qualified RarecoalLib.Core.Test
+import qualified RarecoalLib.ModelTemplate.Test
+import qualified RarecoalLib.StateSpace.Test
 
 import Test.Tasty (defaultMain, TestTree, testGroup)
 
@@ -8,7 +8,7 @@ main :: IO ()
 main = defaultMain tests
 
 tests :: TestTree
-tests = testGroup "Tests" [Rarecoal.StateSpace.Test.tests,
-                           Rarecoal.Core.Test.tests,
-                           Rarecoal.ModelTemplate.Test.tests]
+tests = testGroup "Tests" [RarecoalLib.StateSpace.Test.tests,
+                           RarecoalLib.Core.Test.tests,
+                           RarecoalLib.ModelTemplate.Test.tests]
 

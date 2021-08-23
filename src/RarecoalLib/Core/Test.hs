@@ -1,10 +1,9 @@
-module Rarecoal.Core.Test (tests) where
+module RarecoalLib.Core.Test (tests) where
 
-import qualified Rarecoal.Core as C
-import qualified Rarecoal.Core2 as C2
-import Rarecoal.Utils (defaultTimes)
-import Rarecoal.StateSpace (JointStateSpace(..), ModelEvent(..), EventType(..), ModelSpec(..))
-import Rarecoal.StateSpace.Test (stateSpace, genPopIndex, genRestrictedIds, nrPops, maxAf, genStates)
+import qualified RarecoalLib.Core as C
+import RarecoalLib.Utils (defaultTimes)
+import RarecoalLib.StateSpace (JointStateSpace(..), ModelEvent(..), EventType(..), ModelSpec(..))
+import RarecoalLib.StateSpace.Test (stateSpace, genPopIndex, genRestrictedIds, nrPops, maxAf, genStates)
 
 import Control.Monad (replicateM, forM_)
 import Control.Monad.ST (runST, ST)
@@ -31,11 +30,7 @@ tests = testGroup "Core Tests" [
     testProperty "full split equals join for A" prop_fullSplitIsJoinForA,
     testProperty "full split equals join for B" prop_fullSplitIsJoinForB,
     testProperty "Core -> total probabilities are all positive" prop_getProbTest,
-    -- testProperty "Core2 -> total probabilities are all positive" prop_getProb2Test,
-    -- testProperty "Core2 -> tupleWrapper tests" prop_rFacTupleTest,
-    testCase "testing consistency with previous versions" assertConsistentProbs,
-    testCase "testing approximate consistency with previous versions via Core2"
-        assertConsistentProbsWithCore2]
+    testCase "testing consistency with previous versions" assertConsistentProbs]
 
 prop_joinPopsA :: Property
 prop_joinPopsA = forAll (suchThat gen (\(_, k, l) -> k /= l)) go
@@ -188,22 +183,22 @@ assertConsistentProbs =
     modelSpec = makeTestModelSpec
     nVec = [100, 100, 100, 100, 100]
 
-assertConsistentProbsWithCore2 :: Assertion
-assertConsistentProbsWithCore2 =
-    forM_ resultData $ \(state, previous) -> do
-        let current = case C2.getProb modelSpec stateSpace nVec state of
-                Left _ -> -1.0
-                Right res -> res
-        let msg = "failed for state " ++ show state ++ ": " ++ show previous ++
-                " (previous) vs. " ++ show current ++ " (current)"
-        -- assuming up to 5 percent deviation between Core1 and Core2 calculations
-        assertBool msg $ (abs (previous - current) / previous) < 0.05
-  where
-    resultData = [ ([0,1,2,0,1], 2.009581497800885e-6),
-                   -- ([1,1,1,1,1], 1.5455236177098954e-6),
-                   -- ([2,3,0,0,0], 7.503194796424192e-6),
-                   -- ([1,0,2,3,2], 4.355291335648456e-7),
-                   ([0,1,0,0,1], 1.2611453629387214e-5)
-                 ]
-    modelSpec = makeTestModelSpec
-    nVec = [100, 100, 100, 100, 100]
+-- assertConsistentProbsWithCore2 :: Assertion
+-- assertConsistentProbsWithCore2 =
+--     forM_ resultData $ \(state, previous) -> do
+--         let current = case C2.getProb modelSpec stateSpace nVec state of
+--                 Left _ -> -1.0
+--                 Right res -> res
+--         let msg = "failed for state " ++ show state ++ ": " ++ show previous ++
+--                 " (previous) vs. " ++ show current ++ " (current)"
+--         -- assuming up to 5 percent deviation between Core1 and Core2 calculations
+--         assertBool msg $ (abs (previous - current) / previous) < 0.05
+--   where
+--     resultData = [ ([0,1,2,0,1], 2.009581497800885e-6),
+--                    -- ([1,1,1,1,1], 1.5455236177098954e-6),
+--                    -- ([2,3,0,0,0], 7.503194796424192e-6),
+--                    -- ([1,0,2,3,2], 4.355291335648456e-7),
+--                    ([0,1,0,0,1], 1.2611453629387214e-5)
+--                  ]
+--     modelSpec = makeTestModelSpec
+--     nVec = [100, 100, 100, 100, 100]

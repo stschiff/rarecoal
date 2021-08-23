@@ -1,89 +1,95 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Rarecoal.ModelTemplate (ModelOptions(..), ParamOptions(..),
-    ModelTemplate(..), MTEvent(..), MTConstraint(..), ParamSpec(..), getModelTemplate, 
+module RarecoalLib.ModelTemplate (ModelOptions(..), ParamOptions(..),
+    ModelTemplate(..), MTEvent(..), MTConstraint(..), ParamSpec(..), getModelTemplate,
     instantiateModel, makeParameterDict, getRegularizationPenalty, getParamNames,
     fillParameterDictWithDefaults, ConstraintOperator(..))
 where
 
-import           Rarecoal.Utils                       (getTimeSteps,
-                                                       GeneralOptions (..), ModelBranch)
-import           Rarecoal.Core              (EventType(..), ModelSpec(..), ModelEvent (..))
-import Rarecoal.StateSpace (getRegularizationPenalty)
+import           RarecoalLib.Core              (EventType (..), ModelEvent (..),
+                                             ModelSpec (..))
+import           RarecoalLib.StateSpace        (getRegularizationPenalty)
+import           RarecoalLib.Utils             (GeneralOptions (..), ModelBranch,
+                                             RarecoalException (..),
+                                             getTimeSteps)
 
-import           Control.Applicative                  ((<|>))
-import           Control.Error                        (Script, errLn,
-                                                       justErr, scriptIO)
-import           Control.Monad                        (forM, when)
-import           Control.Monad.Trans.Except           (throwE)
-import           Data.Char                            (isAlphaNum)
+import           Control.Applicative        ((<|>))
+import           Control.Exception          (throwIO)
+import           Control.Monad              (forM, when)
+import           Data.Char                  (isAlphaNum)
 -- import Debug.Trace (trace)
-import           Data.List                            (elemIndex, nub)
-import qualified Data.Text                            as T
-import qualified Data.Text.IO                         as T
-import qualified Text.Parsec                          as P
-import qualified Text.Parsec.Char                     as PC
-import           Text.Parsec.Number                   (floating, sign)
-import           Text.Parsec.Text                     (Parser)
-import           Turtle                               (format, w, (%), g)
+import           Data.List                  (elemIndex, nub)
+import           System.IO                  (hPutStrLn, stderr)
+import qualified Text.Parsec                as P
+import qualified Text.Parsec.Char           as PC
+import           Text.Parsec.Number         (floating)
+import           Text.Parsec.String         (Parser)
 
-data ModelOptions = ModelByFile FilePath | ModelByText T.Text
+data ModelOptions = ModelByFile FilePath
+    | ModelByText String
 
-data ParamOptions = ParamOptions {
-    optMaybeParamInputFile :: Maybe FilePath,
-    optParameterSettings   :: [(T.Text, Double)]
-}
+data ParamOptions = ParamOptions
+    { optMaybeParamInputFile :: Maybe FilePath
+    , optParameterSettings   :: [(String, Double)]
+    }
 
-data ModelTemplate = ModelTemplate {
-    mtBranchNames :: [ModelBranch],
-    mtEvents :: [MTEvent],
-    mtConstraints :: [MTConstraint]
-} deriving (Show, Eq)
+data ModelTemplate = ModelTemplate
+    { mtBranchNames :: [ModelBranch]
+    , mtEvents      :: [MTEvent]
+    , mtConstraints :: [MTConstraint]
+    }
+    deriving (Show, Eq)
 
 data MTEvent = MTPopSizeChange ParamSpec ModelBranch ParamSpec
-             | MTJoin ParamSpec ModelBranch ModelBranch
-             | MTJoinPopSizeChange ParamSpec ModelBranch ModelBranch ParamSpec
-             | MTSplit ParamSpec ModelBranch ModelBranch ParamSpec
-             | MTFreeze ParamSpec ModelBranch Bool deriving (Eq, Show)
+    | MTJoin ParamSpec ModelBranch ModelBranch
+    | MTJoinPopSizeChange ParamSpec ModelBranch ModelBranch ParamSpec
+    | MTSplit ParamSpec ModelBranch ModelBranch ParamSpec
+    | MTFreeze ParamSpec ModelBranch Bool
+    deriving (Eq, Show)
 
-data MTConstraint = MTConstraint ParamSpec ParamSpec ConstraintOperator deriving (Eq, Show)               
-data ParamSpec = ParamFixed Double | ParamVariable T.Text deriving (Eq, Show)
+data MTConstraint = MTConstraint ParamSpec ParamSpec ConstraintOperator
+    deriving (Eq, Show)
+data ParamSpec = ParamFixed Double
+    | ParamVariable String
+    deriving (Eq, Show)
 
-data ConstraintOperator = ConstraintOpGreater | ConstraintOpSmaller deriving (Eq, Show)
+data ConstraintOperator = ConstraintOpGreater
+    | ConstraintOpSmaller
+    deriving (Eq, Show)
 
-getModelTemplate :: ModelOptions -> Script ModelTemplate
+getModelTemplate :: ModelOptions -> IO ModelTemplate
 getModelTemplate mo = do
     mt <- case mo of
         ModelByFile fp -> do
-            input' <- scriptIO $ T.readFile fp
+            input' <- readFile fp
             case P.parse modelTemplateP "" input' of
-                Left e  -> throwE (format w e)
+                Left e  -> throwIO $ RarecoalModeltemplateException (show e)
                 Right v -> return v
         ModelByText input -> case P.parse modelTemplateP "" input of
-            Left e  -> throwE (format w e)
+            Left e  -> throwIO $ RarecoalModeltemplateException (show e)
             Right v -> return v
     reportModelTemplate mt
     return mt
   where
     reportModelTemplate mt@(ModelTemplate n e c) = do
         let paramNames = getParamNames mt
-        scriptIO . errLn $ format ("loaded model template with branch names "%w%", events "%w%
-            ", constraints "%w%" and parameters "%w) n e c paramNames
+        hPutStrLn stderr ("loaded model template with branch names " ++ show n ++ ", events " ++ show e ++
+            ", constraints " ++ show c ++ " and parameters " ++ show paramNames)
 
 modelTemplateP :: Parser ModelTemplate
 modelTemplateP = ModelTemplate <$> parseBranchNames <*> parseEvents <*>
     (parseConstraints <|> pure [])
 
 parseBranchNames :: Parser [String]
-parseBranchNames = PC.string "BRANCHES" *> PC.spaces *> PC.char '=' *> PC.spaces *> PC.char '[' *> 
-    PC.spaces *> (branchNameP `P.sepBy1` (PC.char ',' *> PC.spaces)) <* PC.spaces <* PC.char ']' <* 
+parseBranchNames = PC.string "BRANCHES" *> PC.spaces *> PC.char '=' *> PC.spaces *> PC.char '[' *>
+    PC.spaces *> (branchNameP `P.sepBy1` (PC.char ',' *> PC.spaces)) <* PC.spaces <* PC.char ']' <*
     PC.spaces
 
 branchNameP :: Parser String
 branchNameP = P.many1 (PC.satisfy (\c -> isAlphaNum c || c == '_'))
 
 parseEvents :: Parser [MTEvent]
-parseEvents = PC.string "EVENTS" *> PC.spaces *> PC.char '=' *> PC.spaces *> PC.char '[' *> 
-    PC.spaces *> (eventP `P.sepBy` (PC.char ';' *> PC.spaces)) <* PC.spaces <* PC.char ']' <* 
+parseEvents = PC.string "EVENTS" *> PC.spaces *> PC.char '=' *> PC.spaces *> PC.char '[' *>
+    PC.spaces *> (eventP `P.sepBy` (PC.char ';' *> PC.spaces)) <* PC.spaces <* PC.char ']' <*
     PC.spaces
 
 eventP :: Parser MTEvent
@@ -103,11 +109,11 @@ popSizeChangeCmdP = MTPopSizeChange <$> (PC.char 'P' *> spaces1 *> paramSpecP <*
     (branchNameP <* spaces1) <*> paramSpecP
 
 paramSpecP :: Parser ParamSpec
-paramSpecP = P.try (ParamFixed <$> (sign <*> floating)) <|>
+paramSpecP = P.try (ParamFixed <$> floating) <|>
              (ParamVariable <$> variableP)
 
-variableP :: Parser T.Text
-variableP = T.pack <$> (PC.char '<' *> P.many1 (PC.satisfy (\c -> isAlphaNum c || c == '_')) <* PC.char '>')
+variableP :: Parser String
+variableP = PC.char '<' *> P.many1 (PC.satisfy (\c -> isAlphaNum c || c == '_')) <* PC.char '>'
 
 spaces1 :: Parser ()
 spaces1 = P.skipMany1 PC.space
@@ -138,7 +144,7 @@ constraintCmdP = P.try smallerConstraintP <|> greaterConstraintP
     greaterConstraintP = MTConstraint <$> (PC.char 'C' *> spaces1 *> paramSpecP <* PC.spaces) <*>
         (PC.char '>' *> PC.spaces *> paramSpecP) <*> pure ConstraintOpGreater
 
-getParamNames :: ModelTemplate -> [T.Text]
+getParamNames :: ModelTemplate -> [String]
 getParamNames mt = reverse . nub $ go [] (mtEvents mt)
   where
     go res [] = res
@@ -167,14 +173,13 @@ getParamNames mt = reverse . nub $ go [] (mtEvents mt)
         MTFreeze (ParamVariable n) _ _ -> go (n:res) rest
         _ -> go res rest
 
-instantiateModel :: GeneralOptions -> ModelTemplate -> [(T.Text, Double)] ->
-    Either T.Text ModelSpec
+instantiateModel :: GeneralOptions -> ModelTemplate -> [(String, Double)] -> Either String ModelSpec
 instantiateModel opts (ModelTemplate branchNames _mtEvents _mtConstraints) paramsDict = do
     events <- reverse <$> getEvents branchNames _mtEvents []
     validateConstraints paramsDict _mtConstraints
     let timeSteps = getTimeSteps (optN0 opts) (optLinGen opts) (optTMax opts)
         nrPops = length branchNames
-    return $ ModelSpec nrPops timeSteps (optTheta opts) [1.0 | _ <- [0..(nrPops - 1)]] 
+    return $ ModelSpec nrPops timeSteps (optTheta opts) [1.0 | _ <- [0..(nrPops - 1)]]
         (optRegPenalty opts) (optNoShortcut opts) events
   where
     getEvents _ [] res = return res
@@ -207,19 +212,21 @@ instantiateModel opts (ModelTemplate branchNames _mtEvents _mtConstraints) param
             e <- SetFreeze <$> getModelBranchIndex bN bSpec <*> pure v
             getEvents bN rest (ModelEvent t e:res)
 
-getModelBranchIndex :: [ModelBranch] -> ModelBranch -> Either T.Text Int
-getModelBranchIndex branchNames branch = justErr (format ("did not find model-branch name "%w) branch) $
-    elemIndex branch branchNames
+getModelBranchIndex :: [ModelBranch] -> ModelBranch -> Either String Int
+getModelBranchIndex branchNames branch =
+    case elemIndex branch branchNames of
+        Nothing -> Left ("did not find model-branch name " ++ show branch)
+        Just v  -> Right v
 
-getParam :: [(T.Text, Double)] -> ParamSpec -> Either T.Text Double
+
+getParam :: [(String, Double)] -> ParamSpec -> Either String Double
 getParam _ (ParamFixed val) = return val
 getParam paramsDict (ParamVariable n) =
     case n `lookup` paramsDict of
-        Nothing ->
-            Left $ format ("Error in Template: could not find parameter "%w) n
+        Nothing -> Left ("Error in Template: could not find parameter " ++ show n)
         Just val -> return val
 
-validateConstraints :: [(T.Text, Double)] -> [MTConstraint] -> Either T.Text ()
+validateConstraints :: [(String, Double)] -> [MTConstraint] -> Either String ()
 validateConstraints _ [] = return ()
 validateConstraints paramsDict (c@(MTConstraint pSpec1 pSpec2 op):rest) = do
     p1 <- getParam paramsDict pSpec1
@@ -227,13 +234,13 @@ validateConstraints paramsDict (c@(MTConstraint pSpec1 pSpec2 op):rest) = do
     case op of
         ConstraintOpGreater ->
             when (p1 <= p2) $
-                Left (format ("constraint violated: "%w) c)
+                Left ("constraint violated: " ++ show c)
         ConstraintOpSmaller ->
             when (p1 >= p2) $
-                Left (format ("constraint violated: "%w) c)
+                Left ("constraint violated: " ++ show c)
     validateConstraints paramsDict rest
 
-makeParameterDict :: ParamOptions -> IO [(T.Text, Double)]
+makeParameterDict :: ParamOptions -> IO [(String, Double)]
 makeParameterDict (ParamOptions maybeInputFile xSettings) =
     case maybeInputFile of
         Just paramsFile -> do
@@ -241,37 +248,35 @@ makeParameterDict (ParamOptions maybeInputFile xSettings) =
             if (head . head $ l) == '#'
             then -- aha, have rarecoal mcmc output file
                 removeDuplicateKeys $
-                    xSettings ++ [(T.pack k, read $ v !! 0) | (k : v) <- map words . drop 3 $ l]
+                    xSettings ++ [(k, read $ v !! 0) | (k : v) <- map words . drop 3 $ l]
             else -- aha, have rarecoal maxl output file
                 removeDuplicateKeys $
-                    xSettings ++ [(T.pack k, read v) | [k, v] <- map words l]
+                    xSettings ++ [(k, read v) | [k, v] <- map words l]
         Nothing -> removeDuplicateKeys xSettings
   where
     removeDuplicateKeys settings = go settings []
     go [] res = return res
     go ((key, val):rest) res = case key `lookup` res of
         Nothing -> do
-            errLn $ format ("setting parameter "%w%" = "%g) key val
+            hPutStrLn stderr ("setting parameter " ++ show key ++ " = " ++ show val)
             go rest ((key, val):res)
         Just _ -> go rest res
 
-fillParameterDictWithDefaults :: ModelTemplate -> [(T.Text, Double)] ->
-    Script [(T.Text, Double)]
+fillParameterDictWithDefaults :: ModelTemplate -> [(String, Double)] -> IO [(String, Double)]
 fillParameterDictWithDefaults mt paramsDict = do
     let paramNames = getParamNames mt
     forM paramNames $ \p ->
         case p `lookup` paramsDict of
             Just v -> return (p, v)
-            Nothing | T.head p == 'p' -> do
-                        scriptIO . errLn $
-                            format ("setting parameter "%w%" = 1.0 (default)") p
+            Nothing | head p == 'p' -> do
+                        hPutStrLn stderr $
+                            "setting parameter " ++ p ++ " = 1.0 (default)"
                         return (p, 1.0)
-                    | T.take 3 p == "adm" -> do
-                        scriptIO . errLn $ format ("setting parameter "%w%
-                            " = 0.05 (default)") p
+                    | take 3 p == "adm" -> do
+                        hPutStrLn stderr $ "setting parameter " ++ p ++ " = 0.05 (default)"
                         return (p, 0.05)
                     | otherwise ->
-                        throwE $ format ("Don't know how to initialize \
-                        \parameter "%w%". Please provide initial \
-                        \value via -X "%w%"=...") p p
+                        throwIO $ RarecoalModeltemplateException ("Don't know how to initialize \
+                            \parameter " ++ p ++ ". Please provide initial \
+                            \value via -X " ++ p ++ "=...")
 

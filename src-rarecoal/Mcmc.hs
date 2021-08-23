@@ -1,13 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Mcmc (runMcmc, McmcOpt(..)) where
 
-import Rarecoal.Utils (GeneralOptions(..), HistogramOptions(..), setNrProcessors)
-import Rarecoal.ModelTemplate (ModelTemplate(..), ParamOptions(..), ModelOptions(..), 
+import RarecoalLib.Utils (GeneralOptions(..), HistogramOptions(..), setNrProcessors, RarecoalException(..))
+import RarecoalLib.ModelTemplate (ModelTemplate(..), ParamOptions(..), ModelOptions(..), 
     getModelTemplate, instantiateModel, getParamNames, makeParameterDict, fillParameterDictWithDefaults)
-import Rarecoal.Utils (loadHistogram)
-import Rarecoal.MaxUtils (minFunc, penalty, writeFullFitTable, writeSummaryFitTable, 
+import RarecoalLib.Utils (loadHistogram)
+import RarecoalLib.MaxUtils (minFunc, penalty, writeFullFitTable, writeSummaryFitTable, 
     makeInitialPoint, computeFrequencySpectrum)
 
+import Control.Exception (throwIO)
 import qualified Data.Vector.Unboxed as V
 import qualified System.Random as R
 import Control.Monad.Trans.State.Lazy (StateT, get, gets, put, evalStateT, modify)
@@ -15,11 +16,8 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad (when, forM_)
 import Control.Monad.Loops (whileM)
 import Data.List (intercalate, sort, minimumBy)
-import qualified Data.Text as T
-import Control.Error (Script, scriptIO, tryRight, errLn)
 import Data.Ord (comparing)
-import System.IO (withFile, Handle, IOMode(..), withFile, hPutStr, hPutStrLn)
-import Turtle (format, s, d, g, (%))
+import System.IO (withFile, Handle, IOMode(..), withFile, hPutStr, hPutStrLn, stderr)
 
 (!) :: V.Vector Double -> Int -> Double
 (!) = (V.!)
@@ -47,24 +45,30 @@ data MCMCstate = MCMCstate {
     mcmcScoreList :: [Double]
 } deriving (Show)
 
-runMcmc :: McmcOpt -> Script ()
+runMcmc :: McmcOpt -> IO ()
 runMcmc opts = do
-    scriptIO $ setNrProcessors (mcGeneralOpts opts)
+    setNrProcessors (mcGeneralOpts opts)
     modelTemplate <- getModelTemplate (mcModelOpts opts)
-    modelParams <- (scriptIO $ makeParameterDict (mcParamOpts opts)) >>= 
+    modelParams <- (makeParameterDict (mcParamOpts opts)) >>= 
         fillParameterDictWithDefaults modelTemplate
-    _ <- tryRight $ instantiateModel (mcGeneralOpts opts) modelTemplate modelParams
+    case instantiateModel (mcGeneralOpts opts) modelTemplate modelParams of
+        Left err -> throwIO $ RarecoalModelException err
+        Right _ -> return ()
     let modelBranchNames = mtBranchNames modelTemplate
     (hist, siteRed) <- loadHistogram (mcHistogramOpts opts) modelBranchNames
-    xInit <- tryRight $ makeInitialPoint modelTemplate modelParams
-    _ <- tryRight $ minFunc (mcGeneralOpts opts) modelTemplate hist siteRed xInit
+    xInit <- case makeInitialPoint modelTemplate modelParams of
+        Left err -> throwIO $ RarecoalModelException err
+        Right x -> return x
+    case minFunc (mcGeneralOpts opts) modelTemplate hist siteRed xInit of
+        Left err -> throwIO $ RarecoalCompException err
+        Right _ -> return ()
     let minFunc' = either (const penalty) id .
             minFunc (mcGeneralOpts opts) modelTemplate hist siteRed
         initV = minFunc' xInit
         stepWidths = V.map (max 1.0e-8 . abs . (/100.0)) xInit
         successRates = V.replicate (V.length xInit) 0.44
     ranGen <- if   mcRandomSeed opts == 0
-              then scriptIO R.getStdGen
+              then R.getStdGen
               else return $ R.mkStdGen (mcRandomSeed opts)
     let initState = MCMCstate 0 0 initV xInit stepWidths successRates ranGen []
         pred_ = mcmcNotDone (mcNrCycles opts)
@@ -75,23 +79,23 @@ runMcmc opts = do
         outTraceFN = mcOutPrefix opts ++ ".trace.txt"
         outFullFitTableFN = mcOutPrefix opts ++ ".frequencyFitTable.txt"
         outSummaryTableFN = mcOutPrefix opts ++ ".summaryFitTable.txt"
-    minPoint <- scriptIO . withFile outMcmcFN WriteMode $ \h ->
-        reportPosteriorStats (map T.unpack . getParamNames $ modelTemplate) states h
-    scriptIO . withFile outTraceFN WriteMode $ \h ->
-        reportTrace (map T.unpack . getParamNames $ modelTemplate) states h
+    minPoint <- withFile outMcmcFN WriteMode $ \h ->
+        reportPosteriorStats (getParamNames modelTemplate) states h
+    withFile outTraceFN WriteMode $ \h ->
+        reportTrace (getParamNames modelTemplate) states h
 
     let finalModelParams = [(n, r) | ((n, _), r) <- zip modelParams (V.toList minPoint)]
-    finalModelSpec <- tryRight $ instantiateModel (mcGeneralOpts opts) modelTemplate 
-        finalModelParams
-    let useCore2 = optUseCore2 . mcGeneralOpts $ opts
-    finalSpectrum <- tryRight $ computeFrequencySpectrum finalModelSpec useCore2 hist 
-        modelBranchNames
-    scriptIO $ do
-        writeFullFitTable outFullFitTableFN finalSpectrum
-        writeSummaryFitTable outSummaryTableFN finalSpectrum hist
+    finalModelSpec <- case instantiateModel (mcGeneralOpts opts) modelTemplate finalModelParams of
+        Left err -> throwIO $ RarecoalModelException err
+        Right f -> return f
+    finalSpectrum <- case computeFrequencySpectrum finalModelSpec hist modelBranchNames of
+        Left err -> throwIO $ RarecoalCompException err
+        Right f -> return f
+    writeFullFitTable outFullFitTableFN finalSpectrum
+    writeSummaryFitTable outSummaryTableFN finalSpectrum hist
 
 
-mcmcNotDone :: Int -> StateT MCMCstate Script Bool
+mcmcNotDone :: Int -> StateT MCMCstate IO Bool
 mcmcNotDone requiredCycles = do
     state <- get
     let nrCycles = mcmcNrCycles state
@@ -106,7 +110,7 @@ computeBurninCycles vals =
     let scoreBound = minimum vals + 10.0
     in  fst . head . filter ((<scoreBound) . snd) $ zip [0..] vals
 
-mcmcCycle :: (V.Vector Double -> Double) -> [T.Text] -> StateT MCMCstate Script MCMCstate
+mcmcCycle :: (V.Vector Double -> Double) -> [String] -> StateT MCMCstate IO MCMCstate
 mcmcCycle posterior paramNames = do
     state <- get
     let c = mcmcNrCycles state
@@ -132,7 +136,7 @@ shuffle rng r =
         (rest, rng'') = shuffle rng' [v | (v, i) <- zip r [0..], i /= ran]
     in  (val:rest, rng'')
 
-updateMCMC :: (V.Vector Double -> Double) -> Int -> StateT MCMCstate Script MCMCstate
+updateMCMC :: (V.Vector Double -> Double) -> Int -> StateT MCMCstate IO MCMCstate
 updateMCMC posterior i = do
     newPoint <- propose i
     let newVal = posterior newPoint
@@ -146,7 +150,7 @@ updateMCMC posterior i = do
     put newState
     return newState
 
-propose :: Int -> StateT MCMCstate Script (V.Vector Double)
+propose :: Int -> StateT MCMCstate IO (V.Vector Double)
 propose i = do
     state <- get
     let currentPoint = mcmcCurrentPoint state
@@ -157,7 +161,7 @@ propose i = do
     put state {mcmcRanGen = rng'}
     return newPoint
 
-isSuccessFul :: Double -> StateT MCMCstate Script Bool
+isSuccessFul :: Double -> StateT MCMCstate IO Bool
 isSuccessFul newVal = do
     state <- get
     if newVal < mcmcCurrentValue state
@@ -168,7 +172,7 @@ isSuccessFul newVal = do
             put state {mcmcRanGen = rng'}
             return $ ran < exp (mcmcCurrentValue state - newVal)
 
-accept :: V.Vector Double -> Double -> Int -> StateT MCMCstate Script ()
+accept :: V.Vector Double -> Double -> Int -> StateT MCMCstate IO ()
 accept newPoint newVal i = do
     successRate <- gets mcmcSuccesRate
     let newR = successRate!i * 0.975 + 0.025
@@ -176,14 +180,14 @@ accept newPoint newVal i = do
     modify (\st -> st {mcmcCurrentPoint = newPoint, mcmcCurrentValue = newVal,
                      mcmcSuccesRate = successRate'})
 
-reject :: Int -> StateT MCMCstate Script ()
+reject :: Int -> StateT MCMCstate IO ()
 reject i = do
     successRate <- gets mcmcSuccesRate
     let newR = successRate!i * 0.975
         successRate' = successRate // [(i, newR)]
     modify (\st -> st {mcmcSuccesRate = successRate'})
 
-adaptStepWidths :: Int -> StateT MCMCstate Script ()
+adaptStepWidths :: Int -> StateT MCMCstate IO ()
 adaptStepWidths i = do
     state <- get
     let r = mcmcSuccesRate state!i
@@ -193,13 +197,13 @@ adaptStepWidths i = do
             newStepWidths = mcmcStepWidths state // [(i, delta')]
         put state {mcmcStepWidths = newStepWidths}
 
-showStateLog :: [T.Text] -> StateT MCMCstate Script ()
+showStateLog :: [String] -> StateT MCMCstate IO ()
 showStateLog paramNames = do
     state <- get
-    liftIO . errLn $ format ("Cycle="%d%"\tValue="%g%"\t"%s) (mcmcNrCycles state)
-        (mcmcCurrentValue state) (params state)
+    liftIO . hPutStrLn stderr $ "Cycle=" ++ show (mcmcNrCycles state) ++ "\tValue=" ++ show (mcmcCurrentValue state) ++
+        "\t" ++ params state
   where
-    params state = T.intercalate "\t" [format (s%"="%g) key val |
+    params state = intercalate "\t" [key ++ "=" ++ show val |
         (key, val) <- zip paramNames (V.toList $ mcmcCurrentPoint state)]
 
 reportPosteriorStats :: [String] -> [MCMCstate] -> Handle -> IO (V.Vector Double)

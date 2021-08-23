@@ -1,25 +1,24 @@
-{-# LANGUAGE OverloadedStrings, BangPatterns #-}
-module Rarecoal.Core2 (getProb, getProbWithMemo, validateModel,
+{-# LANGUAGE BangPatterns      #-}
+{-# LANGUAGE OverloadedStrings #-}
+module RarecoalLib.Core2 (getProb, getProbWithMemo, validateModel,
     choose, ModelEvent(..), EventType(..), ModelSpec(..), popJoinA,
     -- intToTuple, tupleToInt, getLeftMostDigitWithBase, rFacT, rFacMemoT,
     popJoinB, popSplitA, popSplitB, getRegularizationPenalty, rFac) where
 
-import           Rarecoal.StateSpace         (JointStateSpace (..), JointState, 
-                                              fillUpStateSpace,
-                                              ModelEvent(..),
-                                              validateModel, getRegularizationPenalty,
-                                              EventType(..), ModelSpec(..))
-import Rarecoal.Utils (choose, chooseCont)
-import           Control.Error.Safe          (assertErr)
 import           Control.Exception.Base      (assert)
 import           Control.Monad               (filterM, forM, forM_, when, (>=>))
 import           Control.Monad.ST            (ST, runST)
 import           Data.List                   (nub, sortBy)
 import           Data.STRef                  (STRef, modifySTRef, newSTRef,
                                               readSTRef, writeSTRef)
-import qualified Data.Text as T
+import           RarecoalLib.StateSpace         (EventType (..), JointState,
+                                              JointStateSpace (..),
+                                              ModelEvent (..), ModelSpec (..),
+                                              fillUpStateSpace,
+                                              getRegularizationPenalty,
+                                              validateModel)
+import           RarecoalLib.Utils         (choose, chooseCont)
 -- import Debug.Trace (trace)
-import Turtle (format, (%), w)
 import qualified Data.Vector.Unboxed         as V
 import qualified Data.Vector.Unboxed.Mutable as VM
 
@@ -28,22 +27,22 @@ type VecDoubM s = VM.MVector s Double
 
 type RFacFunc = Int -> Int -> Int -> Int -> Double
 
-data ModelState s = ModelState {
-    msA              :: VecDoubM s,
-    msB              :: VecDoubM s,
-    msBtemp          :: VecDoubM s,
-    msD              :: STRef s Double,
-    msT              :: STRef s Double,
-    msNonZeroStates  :: STRef s [Int],
-    msStateSpace     :: JointStateSpace,
-    msEventQueue     :: STRef s [ModelEvent],
-    msPopSize        :: VecDoubM s,
-    msFreezeState    :: VM.MVector s Bool,
-    msRfactorMemo    :: RFacFunc
-}
+data ModelState s = ModelState
+    { msA             :: VecDoubM s
+    , msB             :: VecDoubM s
+    , msBtemp         :: VecDoubM s
+    , msD             :: STRef s Double
+    , msT             :: STRef s Double
+    , msNonZeroStates :: STRef s [Int]
+    , msStateSpace    :: JointStateSpace
+    , msEventQueue    :: STRef s [ModelEvent]
+    , msPopSize       :: VecDoubM s
+    , msFreezeState   :: VM.MVector s Bool
+    , msRfactorMemo   :: RFacFunc
+    }
 
 getProbWithMemo :: RFacFunc -> ModelSpec -> JointStateSpace -> [Int] -> [Int] ->
-    Either T.Text Double
+    Either String Double
 getProbWithMemo rFacMemo modelSpec jointStateSpace nVec config = do
     validateModel modelSpec
     let nrPops = mNrPops modelSpec
@@ -85,7 +84,7 @@ makeInitState rFacMemo modelSpec jointStateSpace nVec config = do
                 time1 `compare` time2) (mEvents modelSpec)
     popSize <- VM.replicate nrPop 1.0
     freezeState <- VM.replicate nrPop False
-    return $ ModelState a b bTemp dd t nonZeroStates jointStateSpace sortedEvents popSize 
+    return $ ModelState a b bTemp dd t nonZeroStates jointStateSpace sortedEvents popSize
         freezeState rFacMemo
 
 propagateStates :: ModelState s -> ST s ()
@@ -144,7 +143,7 @@ propagateToInfinity ms = do
     goState popSize nrA x =
         let nrDerived = assert ((V.length . V.filter (>0)) x == 1) $ V.sum x
         in  sfsCont popSize nrA nrDerived
-       
+
 checkIfAllHaveCoalesced :: ModelState s -> ST s Bool
 checkIfAllHaveCoalesced ms = do
     nonZeroStates <- readSTRef (msNonZeroStates ms)
@@ -183,7 +182,7 @@ accumulateSFS ms deltaT = do
         modifySTRef (msD ms) (\v -> v + prob * addSFS)
 
 conditionalSFScont :: Double -> Double -> Double -> Int -> Double
-conditionalSFScont popSize tau a i = 
+conditionalSFScont popSize tau a i =
     let a0 = floor a
         a1 = a0 + 1
         r0 = conditionalSFS popSize tau a0 i
@@ -243,11 +242,11 @@ propagateB ms aVecOld = do
             forM_ allTargetStates $ \xIdNew -> do
                 let xVec = _jsIdToState (msStateSpace ms) xIdNew
                     rFactor = computeRfactorVec rFacMemo xVec aVec xVecOld aVecOld
-                VM.modify (msBtemp ms) (\v -> v + rFactor * prob) xIdNew 
+                VM.modify (msBtemp ms) (\v -> v + rFactor * prob) xIdNew
             return allTargetStates
         else return [] -- this should never be the case, actually.
     writeSTRef (msNonZeroStates ms) (nub newNonZeroStates)
-    VM.copy (msB ms) (msBtemp ms) 
+    VM.copy (msB ms) (msBtemp ms)
 
 computeRfactorVec :: RFacFunc -> JointState -> VecDoub -> JointState -> VecDoub -> Double
 computeRfactorVec rFacMemo xVec aVec xVecOld aVecOld =

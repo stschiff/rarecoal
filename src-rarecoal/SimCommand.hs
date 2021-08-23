@@ -2,18 +2,15 @@
 
 module SimCommand (SimCommandOpt(..), runSimCommand) where
 
-import Rarecoal.Utils (GeneralOptions(..))
-import Rarecoal.Core (ModelSpec(..), ModelEvent(..), EventType(..))
-import Rarecoal.ModelTemplate (ModelOptions(..), ParamOptions(..),
+import RarecoalLib.Utils (GeneralOptions(..), RarecoalException(..))
+import RarecoalLib.Core (ModelSpec(..), ModelEvent(..), EventType(..))
+import RarecoalLib.ModelTemplate (ModelOptions(..), ParamOptions(..),
                                getModelTemplate, makeParameterDict,
                                instantiateModel)
 
-import Control.Error (Script, scriptIO, tryRight)
+import Control.Exception (throwIO)
+import Control.Monad (forM)
 import Data.List (sortOn)
-import Data.Text (Text, unwords)
-import qualified Data.Text.IO as T
-import Prelude hiding (unwords)
-import Turtle (format, d, g, s, (%))
 
 data SimCommandOpt = SimCommandOpt {
     _ftGeneralOpts :: GeneralOptions,
@@ -24,34 +21,41 @@ data SimCommandOpt = SimCommandOpt {
     _ftL :: Int
 }
 
-runSimCommand :: SimCommandOpt -> Script ()
+runSimCommand :: SimCommandOpt -> IO ()
 runSimCommand opts = do
     modelTemplate <- getModelTemplate (_ftModelOpts opts)
-    modelParams <- scriptIO $ makeParameterDict (_ftParamOpts opts)
-    modelSpec <- tryRight $ instantiateModel (_ftGeneralOpts opts) modelTemplate modelParams
+    modelParams <- makeParameterDict (_ftParamOpts opts)
+    modelSpec <- case instantiateModel (_ftGeneralOpts opts) modelTemplate modelParams of
+        Left err -> throwIO $ RarecoalModelException err
+        Right m -> return m
     let (ModelSpec _ _ theta _ _ _ events) = modelSpec
     let thetaL = 2.0 * theta * fromIntegral (_ftL opts)
-    scriptIO . T.putStr $ format ("scrm "%d%" 1 -t "%g%" -r "%g%" "%d%
-        " -l 100000 "%s%" "%s) nSamples thetaL rhoL (_ftL opts)
-        (makeSubPopSpec (_ftNrHaps opts))
-        (makeModelOpts events)
+    modelOptsString <- case makeModelOpts events of
+        Left err -> throwIO err
+        Right m -> return m
+    putStrLn $ "scrm " ++ show nSamples ++ " 1 -t " ++ show thetaL ++
+        " -r " ++ show rhoL ++ " " ++ show (_ftL opts) ++ " -l 100000 " ++ (makeSubPopSpec (_ftNrHaps opts)) ++
+        " " ++ modelOptsString
   where
     nSamples = sum $ _ftNrHaps opts
     rhoL = 2.0 * _ftRecomb opts * fromIntegral (_ftL opts)
 
-makeSubPopSpec :: [Int] -> Text
-makeSubPopSpec nrHaps = format ("-I "%d%" "%s) nPops nInds
+makeSubPopSpec :: [Int] -> String
+makeSubPopSpec nrHaps = "-I " ++ show nPops ++ " " ++ nInds
   where
     nPops = length nrHaps
-    nInds = unwords . map (format d) $ nrHaps
+    nInds = unwords . map show $ nrHaps
 
-makeModelOpts :: [ModelEvent] -> Text
-makeModelOpts events = unwords $ do
-    e <- sortOn (\(ModelEvent t _) -> t) events
-    case e of
-        ModelEvent t (Join k l) -> return $ format ("-ej "%g%" "%d%" "%d) (0.5 * t) (l + 1) (k + 1)
-        ModelEvent t (Split k l a) -> return $
-                format ("-eps "%g%" "%d%" "%d%" "%g) (0.5 * t) (l + 1) (k + 1) (1.0 - a)
-        ModelEvent t (SetPopSize k p) -> return $ format ("-en "%g%" "%d%" "%g) (0.5 * t) (k + 1) p
-        _ -> error "currnently only Joins, PopSize changes and Admixture is implemented for \
-                    \simulation parameters"
+makeModelOpts :: [ModelEvent] -> Either RarecoalException String 
+makeModelOpts events = do
+    eventStrings <- forM (sortOn (\(ModelEvent t _) -> t) events) $ \e -> 
+        case e of
+            ModelEvent t (Join k l) -> return $
+                "-ej " ++ show (0.5 * t) ++ " " ++ show (l + 1) ++ " " ++ show (k + 1)
+            ModelEvent t (Split k l a) -> return $
+                "-eps " ++ show (0.5 * t) ++ " " ++ show (l + 1) ++ " " ++ show (k + 1) ++ " " ++ show (1.0 - a)
+            ModelEvent t (SetPopSize k p) -> return $
+                "-en " ++ show (0.5 * t) ++ " " ++ show (k + 1) ++ " " ++ show p
+            _ -> Left $ RarecoalSimException "currently only Joins, PopSize changes and Admixture is implemented for \
+                        \simulation parameters"
+    return $ unwords eventStrings

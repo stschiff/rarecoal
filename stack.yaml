@@ -1,5 +1,8 @@
-resolver: lts-10.5
+resolver: lts-18.1
+# allow-newer: true
 extra-deps:
   - parsec3-numbers-0.1.0
-  - git: https://github.com/stschiff/sequence-formats.git
-    commit: f4008deeae891b41091a08eadcbcd6c6f9b8a469
+#   - MissingH-1.4.3.0
+#   - pipes-text-1.0.0
+  # - git: https://github.com/stschiff/sequence-formats.git
+  #   commit: f4008deeae891b41091a08eadcbcd6c6f9b8a469

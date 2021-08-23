@@ -1,11 +1,11 @@
 module Logl (LoglOpt(..), runLogl) where
 
-import Rarecoal.Utils (GeneralOptions(..), HistogramOptions(..), setNrProcessors, loadHistogram)
-import Rarecoal.MaxUtils (computeLogLikelihood)
-import Rarecoal.ModelTemplate (ModelOptions(..), ParamOptions(..), ModelTemplate(..),
+import RarecoalLib.Utils (GeneralOptions(..), HistogramOptions(..), setNrProcessors, loadHistogram, RarecoalException(..))
+import RarecoalLib.MaxUtils (computeLogLikelihood)
+import RarecoalLib.ModelTemplate (ModelOptions(..), ParamOptions(..), ModelTemplate(..),
     getModelTemplate, makeParameterDict, instantiateModel)
 
-import Control.Error (Script, scriptIO, tryRight)
+import Control.Exception (throwIO)
 
 data LoglOpt = LoglOpt {
     loGeneralOpts :: GeneralOptions,
@@ -14,16 +14,18 @@ data LoglOpt = LoglOpt {
     loHistogramOpts :: HistogramOptions
 }
 
-runLogl :: LoglOpt -> Script ()
+runLogl :: LoglOpt -> IO ()
 runLogl opts = do
-    scriptIO $ setNrProcessors (loGeneralOpts opts)
+    setNrProcessors (loGeneralOpts opts)
     modelTemplate <- getModelTemplate (loModelOpts opts)
-    modelParams <- scriptIO $ makeParameterDict (loParamOpts opts)
-    modelSpec <- tryRight $ instantiateModel (loGeneralOpts opts) modelTemplate modelParams
+    modelParams <- makeParameterDict (loParamOpts opts)
+    modelSpec <- case instantiateModel (loGeneralOpts opts) modelTemplate modelParams of
+        Left err -> throwIO $ RarecoalModelException err
+        Right m -> return m
     let modelBranchNames = mtBranchNames modelTemplate
     (hist, siteRed) <- loadHistogram (loHistogramOpts opts) modelBranchNames
-    let useCore2 = optUseCore2 . loGeneralOpts $ opts
-    totalLogLikelihood <- tryRight $ computeLogLikelihood modelSpec useCore2 hist modelBranchNames 
-        siteRed
-    scriptIO . print $ totalLogLikelihood
+    totalLogLikelihood <- case computeLogLikelihood modelSpec hist modelBranchNames siteRed of
+        Left err -> throwIO $ RarecoalCompException err
+        Right l -> return l
+    print totalLogLikelihood
 

@@ -1,13 +1,12 @@
 module Prob (runProb, ProbOpt(..)) where
 
-import qualified Rarecoal.Core as C1
-import qualified Rarecoal.Core2 as C2
-import Rarecoal.StateSpace (makeJointStateSpace)
-import Rarecoal.Utils (GeneralOptions(..), setNrProcessors)
-import Rarecoal.ModelTemplate (ModelOptions(..), ParamOptions(..),
-    getModelTemplate, makeParameterDict, instantiateModel)
+import Control.Exception (throwIO)
 
-import Control.Error (Script, scriptIO, tryRight)
+import qualified RarecoalLib.Core as C1
+import RarecoalLib.StateSpace (makeJointStateSpace)
+import RarecoalLib.Utils (GeneralOptions(..), setNrProcessors, RarecoalException(..))
+import RarecoalLib.ModelTemplate (ModelOptions(..), ParamOptions(..),
+    getModelTemplate, makeParameterDict, instantiateModel)
 
 data ProbOpt = ProbOpt {
     prGeneralOpts :: GeneralOptions,
@@ -17,18 +16,18 @@ data ProbOpt = ProbOpt {
     prKvec :: [Int]
 }
 
-runProb :: ProbOpt -> Script ()
+runProb :: ProbOpt -> IO ()
 runProb opts = do
-    scriptIO $ setNrProcessors (prGeneralOpts opts)
+    setNrProcessors (prGeneralOpts opts)
     modelTemplate <- getModelTemplate (prModelOpts opts)
-    modelParams <- scriptIO $ makeParameterDict (prParamOpts opts)
-    modelSpec <- tryRight $ instantiateModel (prGeneralOpts opts)
-        modelTemplate modelParams
+    modelParams <- makeParameterDict (prParamOpts opts)
+    modelSpec <- case instantiateModel (prGeneralOpts opts) modelTemplate modelParams of
+        Left err -> throwIO $ RarecoalModelException err
+        Right m -> return m
     let nrPops = length . prNvec $ opts
         maxAf = sum . prKvec $ opts
         stateSpace = makeJointStateSpace nrPops maxAf
-        coreFunc = if optUseCore2 . prGeneralOpts $ opts
-            then C2.getProb
-            else C1.getProb
-    val <- tryRight $ coreFunc modelSpec stateSpace (prNvec opts) (prKvec opts)
-    scriptIO $ print val
+    val <- case C1.getProb modelSpec stateSpace (prNvec opts) (prKvec opts) of
+        Left err -> throwIO $ RarecoalCompException err
+        Right v -> return v
+    print val

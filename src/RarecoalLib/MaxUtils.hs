@@ -1,79 +1,85 @@
-{-# LANGUAGE OverloadedStrings, RankNTypes #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes        #-}
 
-module Rarecoal.MaxUtils (penalty, makeInitialPoint, minFunc, computeLogLikelihood, 
-    computeFrequencySpectrum, computeLogLikelihoodFromSpec, SpectrumEntry(..), Spectrum, 
-    writeFullFitTable, writeSummaryFitTable) 
+module RarecoalLib.MaxUtils (penalty, makeInitialPoint, minFunc, computeLogLikelihood,
+    computeFrequencySpectrum, computeLogLikelihoodFromSpec, SpectrumEntry(..), Spectrum,
+    writeFullFitTable, writeSummaryFitTable)
 where
 
-import qualified Rarecoal.Core as C1
-import qualified Rarecoal.Core2 as C2
-import Rarecoal.StateSpace (getRegularizationPenalty, makeJointStateSpace)
-import Rarecoal.Utils (GeneralOptions(..), computeStandardOrder, turnHistPatternIntoModelPattern,
-    ModelBranch)
-import Rarecoal.ModelTemplate (ModelTemplate(..), getParamNames, instantiateModel)
-import SequenceFormats.RareAlleleHistogram(RareAlleleHistogram(..), SitePattern)
+import qualified RarecoalLib.Core                  as C1
+import           RarecoalLib.ModelTemplate         (ModelTemplate (..),
+                                                      getParamNames,
+                                                      instantiateModel)
+import           RarecoalLib.StateSpace            (getRegularizationPenalty,
+                                                      makeJointStateSpace)
+import           RarecoalLib.Utils                 (GeneralOptions (..),
+                                                      ModelBranch,
+                                                      computeStandardOrder,
+                                                      turnHistPatternIntoModelPattern)
+import           SequenceFormats.RareAlleleHistogram (RareAlleleHistogram (..),
+                                                      SitePattern)
 
-import Control.Error (assertErr)
-import qualified Control.Foldl as F
-import Control.Monad (forM, forM_, when)
-import Control.Monad.ST (ST, runST)
-import Control.Parallel.Strategies (rdeepseq, parMap)
-import Data.Int (Int64)
-import Data.List (zipWith5, intercalate, zip4)
-import qualified Data.Map.Strict as Map
-import qualified Data.MemoCombinators as M
-import Data.STRef (newSTRef, modifySTRef, readSTRef)
-import qualified Data.Text as T
-import qualified Data.Vector.Unboxed as V
-import qualified Data.Vector.Unboxed.Mutable as VM
+import qualified Control.Foldl                       as F
+import           Control.Monad                       (forM, forM_, when)
+import           Control.Monad.ST                    (ST, runST)
+import           Control.Parallel.Strategies         (parMap, rdeepseq)
+import           Data.Int                            (Int64)
+import           Data.List                           (intercalate, zip4,
+                                                      zipWith5)
+import qualified Data.Map.Strict                     as Map
+-- import qualified Data.MemoCombinators as M
+import           Data.STRef                          (modifySTRef, newSTRef,
+                                                      readSTRef)
+import qualified Data.Vector.Unboxed                 as V
+import qualified Data.Vector.Unboxed.Mutable         as VM
 -- import Debug.Trace (trace)
-import System.IO (withFile, IOMode(..), hPutStrLn)
-import Turtle (format, (%), w, s)
+import           System.IO                           (IOMode (..), hPutStrLn,
+                                                      withFile)
 
-data SpectrumEntry = SpectrumEntry {
-    spPattern :: SitePattern,
-    spCount :: Int64,
-    spFreq :: Double,
-    spJackknifeError :: Maybe Double,
-    spTheory :: Double
-}
+data SpectrumEntry = SpectrumEntry
+    { spPattern        :: SitePattern
+    , spCount          :: Int64
+    , spFreq           :: Double
+    , spJackknifeError :: Maybe Double
+    , spTheory         :: Double
+    }
 
 type Spectrum = [SpectrumEntry]
 
 penalty :: Double
 penalty = 1.0e20
 
-makeInitialPoint :: ModelTemplate -> [(T.Text, Double)] -> Either T.Text (V.Vector Double)
+makeInitialPoint :: ModelTemplate -> [(String, Double)] -> Either String (V.Vector Double)
 makeInitialPoint modelTemplate modelParams = do
     let paramNames = getParamNames modelTemplate
     vals <- forM paramNames $ \n ->
         case n `lookup` modelParams of
             Just x  -> return x
-            Nothing -> Left $ format ("did not find parameter "%w) n
+            Nothing -> Left $ "did not find parameter " ++ show n
     return $ V.fromList vals
 
 
 minFunc :: GeneralOptions -> ModelTemplate -> RareAlleleHistogram -> Double -> V.Vector Double ->
-    Either T.Text Double
+    Either String Double
 minFunc generalOpts modelTemplate hist siteRed paramsVec = do
     let paramNames = getParamNames modelTemplate
         paramsDict = zip paramNames . V.toList $ paramsVec
     modelSpec <- instantiateModel generalOpts modelTemplate paramsDict
     regPenalty <- getRegularizationPenalty modelSpec
     let modelBranchNames = mtBranchNames modelTemplate
-    val <- computeLogLikelihood modelSpec (optUseCore2 generalOpts) hist modelBranchNames siteRed
-    assertErr (format ("likelihood infinite for params "%w) paramsVec) $
-        not (isInfinite val)
-    assertErr (format ("likelihood NaN for params "%w) paramsVec) $
-        not (isNaN val)
-    return $ (-val + siteRed * regPenalty)
+    val <- computeLogLikelihood modelSpec hist modelBranchNames siteRed
+    when (isInfinite val) $
+        Left ("likelihood infinite for params " ++ show paramsVec)
+    when (isNaN val) $
+        Left ("likelihood NaN for params " ++ show paramsVec)
+    return (-val + siteRed * regPenalty)
 
-computeLogLikelihood :: C1.ModelSpec -> Bool -> RareAlleleHistogram -> [ModelBranch] -> Double ->
-    Either T.Text Double
-computeLogLikelihood modelSpec useCore2 histogram modelBranchNames siteRed =
+computeLogLikelihood :: C1.ModelSpec -> RareAlleleHistogram -> [ModelBranch] -> Double ->
+    Either String Double
+computeLogLikelihood modelSpec histogram modelBranchNames siteRed =
     let totalNrSites = raTotalNrSites histogram
     in  computeLogLikelihoodFromSpec totalNrSites siteRed <$>
-            computeFrequencySpectrum modelSpec useCore2 histogram modelBranchNames
+            computeFrequencySpectrum modelSpec histogram modelBranchNames
 
 computeLogLikelihoodFromSpec :: Int64 -> Double -> Spectrum -> Double
 computeLogLikelihoodFromSpec totalNrSites siteRed spectrum =
@@ -83,10 +89,10 @@ computeLogLikelihoodFromSpec totalNrSites siteRed spectrum =
         otherCounts = totalNrSites - sum patternCounts
     in  siteRed * (ll + fromIntegral otherCounts * log (1.0 - sum patternProbs))
 
-computeFrequencySpectrum :: C1.ModelSpec -> Bool -> RareAlleleHistogram -> [ModelBranch] ->
-    Either T.Text Spectrum
-computeFrequencySpectrum modelSpec useCore2 histogram modelBranchNames = do
-    assertErr "minFreq must be greater than 0" $ raMinAf histogram > 0
+computeFrequencySpectrum :: C1.ModelSpec -> RareAlleleHistogram -> [ModelBranch] ->
+    Either String Spectrum
+computeFrequencySpectrum modelSpec histogram modelBranchNames = do
+    when (raMinAf histogram > 0) $ Left "minFreq must be greater than 0"
     let standardOrder = computeStandardOrder histogram
     -- scriptIO . putStrLn $
     --     "computing probabilities for " ++ show (length standardOrder) ++
@@ -98,12 +104,7 @@ computeFrequencySpectrum modelSpec useCore2 histogram modelBranchNames = do
     nVecModelMapped <-
         turnHistPatternIntoModelPattern (raNames histogram) modelBranchNames nVec
     let jointStateSpace = makeJointStateSpace (C1.mNrPops modelSpec) (raMaxAf histogram)
-    let coreFunc = if useCore2
-            then
-                let rFacM = memo4 M.integral M.integral M.integral M.integral C2.rFac
-                in  C2.getProbWithMemo rFacM modelSpec jointStateSpace nVecModelMapped
-            else
-                C1.getProb modelSpec jointStateSpace nVecModelMapped
+    let coreFunc = C1.getProb modelSpec jointStateSpace nVecModelMapped
     patternProbs <- sequence $
         parMap rdeepseq coreFunc standardOrderModelMapped
     -- trace (show $ zip standardOrderModelMapped patternProbs) $ return ()
@@ -116,9 +117,9 @@ computeFrequencySpectrum modelSpec useCore2 histogram modelBranchNames = do
             Nothing -> [Nothing | _ <- standardOrder]
     return $ zipWith5 SpectrumEntry standardOrder patternCounts patternFreqs errors patternProbs
 
-memo4 :: M.Memo a -> M.Memo b -> M.Memo c -> M.Memo d ->
-    (a -> b -> c -> d -> r) -> (a -> b -> c -> d -> r)
-memo4 a b c d = a . (M.memo3 b c d .)
+-- memo4 :: M.Memo a -> M.Memo b -> M.Memo c -> M.Memo d ->
+--     (a -> b -> c -> d -> r) -> (a -> b -> c -> d -> r)
+-- memo4 a b c d = a . (M.memo3 b c d .)
 
 writeFullFitTable :: FilePath -> Spectrum -> IO ()
 writeFullFitTable outFN spectrum = do
@@ -160,9 +161,8 @@ writeSummaryFitTable outFN spectrum hist = do
                 in  Just (runST $ F.foldM combinedErrorFold errorDict)
         (singletonProbsTheory, sharingProbsTheory) = runST $ F.foldM combinedFold theoryFreqDict
         names = raNames hist
-        singletonLabels = map (format (s%"(singletons)")) names
-        sharingLabels = [format (s%"/"%s) (names!!i) (names!!j) | i <- [0..(length names - 1)],
-                         j <- [i .. (length names - 1)]]
+        singletonLabels = map (++ "(singletons)") names
+        sharingLabels = [(names!!i) ++ "/" ++ (names!!j) | i <- [0..(length names - 1)], j <- [i .. (length names - 1)]]
         allLabels = singletonLabels ++ sharingLabels
         allProbs = singletonProbs ++ sharingProbs
         allProbsTheory = singletonProbsTheory ++ sharingProbsTheory
@@ -176,7 +176,7 @@ writeSummaryFitTable outFN spectrum hist = do
                     l = do
                         (label, real, fit) <- zip3 allLabels allProbs allProbsTheory
                         let fitDev = getFitDev real fit
-                        return $ intercalate "\t" [T.unpack label, show real, show fit, fitDev]
+                        return $ intercalate "\t" [label, show real, show fit, fitDev]
                 in  (h, l)
             Just (singletonErrors, sharingErrors) ->
                 let h = intercalate "\t" ["Populations", "AlleleSharing",
@@ -186,7 +186,7 @@ writeSummaryFitTable outFN spectrum hist = do
                         (label, real, fit, se) <- zip4 allLabels allProbs allProbsTheory allErrors
                         let fitDev = getFitDev real fit
                         let zScore = (fit - real) / se
-                        return $ intercalate "\t" [T.unpack label, show real, show fit, fitDev, 
+                        return $ intercalate "\t" [label, show real, show fit, fitDev,
                             show se, show zScore]
                 in  (h, l)
     withFile outFN WriteMode $ \h -> do

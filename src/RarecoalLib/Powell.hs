@@ -1,12 +1,13 @@
-module Rarecoal.Powell (powell, powellV) where
+module RarecoalLib.Powell (powell, powellV) where
 
-import Control.Monad.IO.Class (liftIO, MonadIO)
-import qualified Data.Vector.Unboxed as V
+import           Control.Monad.IO.Class     (MonadIO, liftIO)
+import qualified Data.Vector.Unboxed        as V
 -- import Debug.Trace (trace)
-import Numeric.GSL.Minimization (uniMinimize, UniMinimizeMethod(..))
-import Numeric.LinearAlgebra.Data (Vector, R, scalar, toLists, size, toColumns, ident, 
-    fromList, toList)
-import System.IO (hPutStrLn, stderr)
+import           Numeric.GSL.Minimization   (UniMinimizeMethod (..),
+                                             uniMinimize)
+import           Numeric.LinearAlgebra.Data (R, Vector, fromList, ident, scalar,
+                                             size, toColumns, toList, toLists)
+import           System.IO                  (hPutStrLn, stderr)
 
 gold :: Double
 gold = 1.618034
@@ -22,7 +23,7 @@ sign a b = if b >= 0 then (if a >= 0 then a else -a) else (if a >= 0 then -a els
 
 -- From Numerical Recipes 3rd edition, page 491
 bracket :: Double -> Double -> (Double -> Double) -> (Double, Double, Double)
-bracket a b func = 
+bracket a b func =
     let fa' = func a
         fb' = func b
         (fa, fb) = if fb' > fa' then (fb', fa') else (fa', fb')
@@ -42,10 +43,10 @@ bracket a b func =
                      then (r_cx, r_bx, r_ax)
                      else
                          error ("Error(2) in Bracketing method. Result: " ++ show ret)
-                
+
   where
-    go (ax, fa) (bx, fb) (cx, fc) 
-        | fb <= fc = ((ax, fa), (bx, fb), (cx, fc)) 
+    go (ax, fa) (bx, fb) (cx, fc)
+        | fb <= fc = ((ax, fa), (bx, fb), (cx, fc))
         | otherwise =
             -- use parabolic extrapolation to make a guess at u:
             let r = (bx - ax) * (fb - fc)
@@ -99,11 +100,11 @@ brent0 ftol maxIter func =
     in  (minArg, traceList)
 
 f1dim :: Vector R -> Vector R -> (Vector R -> Double) -> (Double -> Double)
-f1dim point0 direction vecFunc x = 
+f1dim point0 direction vecFunc x =
     let point = point0 + scalar x * direction
     -- in  trace ("evaluating vecFunc at point " ++ show point ++ ", val=" ++ show (vecFunc point)) (vecFunc point)
     in  vecFunc point
-    
+
 linmin :: Double -> Int -> Vector R -> Vector R -> (Vector R -> Double) -> (Vector R, Double)
 linmin ftol maxIter point0 direction vecFunc =
     -- let (xMin, _) = trace ("calling brent0 from point " ++ show point0 ++ " into direction " ++ show direction) (brent0 ftol maxIter (f1dim point0 direction vecFunc))
@@ -141,7 +142,7 @@ powellIter vecFunc point val directions =
     minimizeAllDirections point' val' directions' = go point' val' directions' []
       where
         go p v [] deltas = (p, v, deltas)
-        go p v (xi:rest) deltas = 
+        go p v (xi:rest) deltas =
             let (minPoint, minVal) = linmin 0.01 30 p xi vecFunc
             in  go minPoint minVal rest (deltas ++ [minVal - v])
 
@@ -177,7 +178,7 @@ powellV ftol maxIter vecFunc p0 = do
     let minPoint' = V.fromList . toList $ minPoint
         trace' = map (V.fromList . toList) trace
     return (minPoint', minVal, trace')
-    
-    
-    
-    
+
+
+
+

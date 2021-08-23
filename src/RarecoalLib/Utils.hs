@@ -1,43 +1,53 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Rarecoal.Utils (computeAllConfigs, computeAllConfigsCrude, computeStandardOrder,
+module RarecoalLib.Utils (computeAllConfigs, computeAllConfigsCrude, computeStandardOrder,
     turnHistPatternIntoModelPattern, defaultTimes, getTimeSteps,
     setNrProcessors, filterConditionOn, filterExcludePatterns, filterMaxAf,
     filterGlobalMinAf, GeneralOptions(..), HistogramOptions(..), loadHistogram, ModelBranch, HistBranch,
-    choose, chooseCont) where
+    choose, chooseCont, RarecoalException(..)) where
 
-import SequenceFormats.RareAlleleHistogram (RareAlleleHistogram(..), SitePattern, readHistogram)
+import           SequenceFormats.RareAlleleHistogram (RareAlleleHistogram (..),
+                                                      SitePattern,
+                                                      readHistogram)
 
-import Control.Error
-import Control.Monad (when, forM, (>=>), forM_)
-import Data.List (elemIndex)
-import qualified Data.Map.Strict as Map
-import Data.Text (Text, pack, unpack)
-import GHC.Conc (getNumProcessors, setNumCapabilities, getNumCapabilities)
-import System.IO (hPutStrLn, stderr)
-import Turtle (format, d, (%), w)
+import           Control.Exception                   (Exception, throwIO)
+import           Control.Monad                       (forM, forM_, when, (>=>))
+import           Data.List                           (elemIndex)
+import qualified Data.Map.Strict                     as Map
+import           GHC.Conc                            (getNumCapabilities,
+                                                      getNumProcessors,
+                                                      setNumCapabilities)
+import           System.IO                           (hPutStrLn, stderr)
 
 type ModelBranch = String
-type HistBranch = Text
+type HistBranch = String
 
-data GeneralOptions = GeneralOptions {
-    optUseCore2 :: Bool,
-    optTheta :: Double,
-    optNrThreads :: Int,
-    optNoShortcut :: Bool,
-    optRegPenalty :: Double,
-    optN0 :: Int,
-    optLinGen :: Int,
-    optTMax :: Double
-}
+data GeneralOptions = GeneralOptions
+    { optTheta      :: Double
+    , optNrThreads  :: Int
+    , optNoShortcut :: Bool
+    , optRegPenalty :: Double
+    , optN0         :: Int
+    , optLinGen     :: Int
+    , optTMax       :: Double
+    }
 
-data HistogramOptions = HistogramOptions {
-    optHistPath :: FilePath,
-    optMinAf :: Int,
-    optMaxAf :: Int,
-    optConditionOn :: [Int],
-    optExcludePatterns :: [SitePattern],
-    optSiteReduction :: Double
-}
+data HistogramOptions = HistogramOptions
+    { optHistPath        :: FilePath
+    , optMinAf           :: Int
+    , optMaxAf           :: Int
+    , optConditionOn     :: [Int]
+    , optExcludePatterns :: [SitePattern]
+    , optSiteReduction   :: Double
+    }
+
+data RarecoalException = RarecoalHistogramException String
+    | RarecoalModeltemplateException String
+    | RarecoalModelException String
+    | RarecoalCompException String
+    | RarecoalSimException String
+    deriving (Show)
+
+instance Exception RarecoalException
 
 defaultTimes :: [Double]
 defaultTimes = getTimeSteps 20000 400 20.0
@@ -61,7 +71,7 @@ setNrProcessors generalOpts = do
     then setNumCapabilities nrProc
     else setNumCapabilities nrThreads
     nrThreads' <- getNumCapabilities
-    errLn $ format ("running on "%d%" processors") nrThreads'
+    hPutStrLn stderr $ "running on " ++ show nrThreads' ++ " processors"
 
 computeAllConfigsCrude :: Int -> [Int] -> [SitePattern]
 computeAllConfigsCrude maxFreq nVec =
@@ -77,7 +87,7 @@ computeAllConfigsCrude maxFreq nVec =
                              digit = div num digitBase
                              rest = num - digit * digitBase
                          in  (digit:digitize base (nrDigit - 1) rest)
-    
+
 computeAllConfigs :: Int -> [Int] -> [SitePattern]
 computeAllConfigs maxAf nVec =
     filter (\v -> and (zipWith (<=) v nVec)) $ concatMap (allPatternsForAF nrPops) [1..maxAf]
@@ -90,13 +100,13 @@ allPatternsForAF nrPops af = map getDiffs $ allSubsets (nrPops + af - 1) (nrPops
     getDiffs :: [Int] -> [Int]
     getDiffs subset = go [] ([0] ++ subset ++ [nrPops + af])
     go res (x1:x2:xs) = go (res ++ [x2 - x1 - 1]) (x2:xs)
-    go res _ = res
+    go res _          = res
 
-turnHistPatternIntoModelPattern :: [HistBranch] -> [ModelBranch] -> SitePattern -> Either Text SitePattern
+turnHistPatternIntoModelPattern :: [HistBranch] -> [ModelBranch] -> SitePattern -> Either String SitePattern
 turnHistPatternIntoModelPattern histBranches modelBranches histPattern =
     forM modelBranches $ \modelBranchName ->
-        case (pack modelBranchName) `elemIndex` histBranches of
-            Just i -> return (histPattern !! i)
+        case modelBranchName `elemIndex` histBranches of
+            Just i  -> return (histPattern !! i)
             Nothing -> return 0 -- ghost branch
 
 allSubsets :: Int -> Int -> [[Int]]
@@ -108,29 +118,27 @@ allSubsets n k =
         allSubsets (n - 1) k ++ map (++[n]) (allSubsets (n - 1) (k - 1))
 
 
-filterConditionOn :: [Int] -> RareAlleleHistogram ->
-    Either Text RareAlleleHistogram
+filterConditionOn :: [Int] -> RareAlleleHistogram -> Either String RareAlleleHistogram
 filterConditionOn indices hist =
     if null indices then return hist else do
-        assertErr (format ("illegal conditionOn indices "%w) indices) $ all (<n) indices
-        let newBody = Map.filterWithKey conditionPatternOn (raCounts hist)
-        return $ hist {raCounts = newBody, raConditionOn = indices}
+        if not (all (<n) indices) then Left ("illegal conditionOn indices " ++ show indices) else do
+            let newBody = Map.filterWithKey conditionPatternOn (raCounts hist)
+            return $ hist {raCounts = newBody, raConditionOn = indices}
   where
     conditionPatternOn pat _ = all (\i -> pat !! i > 0) indices
     n = length (raNames hist)
 
-filterExcludePatterns :: [[Int]] -> RareAlleleHistogram ->
-    Either Text RareAlleleHistogram
+filterExcludePatterns :: [[Int]] -> RareAlleleHistogram -> Either String RareAlleleHistogram
 filterExcludePatterns excludePatterns hist =
     if null excludePatterns then return hist else do
-        assertErr (format ("illegal excludePattern(s)"%w) excludePatterns) $ all ((==n) . length) excludePatterns
-        let newBody = Map.filterWithKey pruneExcludePatterns (raCounts hist)
-        return $ hist {raExcludePatterns = excludePatterns, raCounts = newBody}
+        if not (all ((==n) . length) excludePatterns) then Left ("illegal excludePattern(s)" ++ show excludePatterns) else do
+            let newBody = Map.filterWithKey pruneExcludePatterns (raCounts hist)
+            return $ hist {raExcludePatterns = excludePatterns, raCounts = newBody}
   where
     pruneExcludePatterns pat _ = pat `notElem` excludePatterns
     n = length (raNames hist)
 
-filterMaxAf :: Int -> RareAlleleHistogram -> Either Text RareAlleleHistogram
+filterMaxAf :: Int -> RareAlleleHistogram -> Either String RareAlleleHistogram
 filterMaxAf maxAf' hist = do
     let maxAf = if maxAf' == 0 then raMaxAf hist else maxAf'
     when (maxAf > raMaxAf hist || maxAf < raMinAf hist) $ Left "illegal maxAF"
@@ -140,8 +148,7 @@ filterMaxAf maxAf' hist = do
   where
     prunePatternFreq maxM pat _ = sum pat <= maxM
 
-filterGlobalMinAf :: Int -> RareAlleleHistogram ->
-    Either Text RareAlleleHistogram
+filterGlobalMinAf :: Int -> RareAlleleHistogram -> Either String RareAlleleHistogram
 filterGlobalMinAf minAf hist = do
     when (minAf > raMaxAf hist || minAf < raMinAf hist) $ Left "illegal minAf"
     if minAf == raMinAf hist then return hist else do
@@ -160,34 +167,34 @@ computeStandardOrder histogram =
   where
     hasConditioning indices pat = all (\i -> pat !! i > 0) indices
 
-loadHistogram :: HistogramOptions -> [ModelBranch] -> Script (RareAlleleHistogram, Double)
+loadHistogram :: HistogramOptions -> [ModelBranch] -> IO (RareAlleleHistogram, Double)
 loadHistogram histOpts modelBranches = do
     let HistogramOptions path minAf maxAf conditionOn excludePatterns siteRed = histOpts
     hist <- readHistogram path
     validateBranchNameCongruency modelBranches (raNames hist)
-    h <- tryRight $ (filterMaxAf maxAf >=> filterGlobalMinAf minAf >=>
-        filterConditionOn conditionOn >=> filterExcludePatterns excludePatterns)
-        hist
-    scriptIO . hPutStrLn stderr $ "loaded histogram " ++ path ++ "with the following options:"
-    scriptIO . hPutStrLn stderr $ "Branch Names: " ++ show (raNames h)
-    scriptIO . hPutStrLn stderr $ "NVec: " ++ show (raNVec h)
-    scriptIO . hPutStrLn stderr $ "MinAf: "  ++ show (raMinAf h)
-    scriptIO . hPutStrLn stderr $ "MaxAf: " ++ show (raMaxAf h)
-    scriptIO . hPutStrLn stderr $ "ConditionOn: " ++ show (raConditionOn h)
-    scriptIO . hPutStrLn stderr $ "ExcludePatterns: " ++ show (raExcludePatterns h)
-    scriptIO . hPutStrLn stderr $ "TotalNrSites: " ++ show (raTotalNrSites h)
-    return (h, siteRed)
+    let h_ = (filterMaxAf maxAf >=> filterGlobalMinAf minAf >=>
+            filterConditionOn conditionOn >=> filterExcludePatterns excludePatterns) hist
+    case h_ of
+        Left err -> throwIO $ RarecoalHistogramException err
+        Right h -> do
+            hPutStrLn stderr $ "loaded histogram " ++ path ++ "with the following options:"
+            hPutStrLn stderr $ "Branch Names: " ++ show (raNames h)
+            hPutStrLn stderr $ "NVec: " ++ show (raNVec h)
+            hPutStrLn stderr $ "MinAf: "  ++ show (raMinAf h)
+            hPutStrLn stderr $ "MaxAf: " ++ show (raMaxAf h)
+            hPutStrLn stderr $ "ConditionOn: " ++ show (raConditionOn h)
+            hPutStrLn stderr $ "ExcludePatterns: " ++ show (raExcludePatterns h)
+            hPutStrLn stderr $ "TotalNrSites: " ++ show (raTotalNrSites h)
+            return (h, siteRed)
   where
-    validateBranchNameCongruency :: [ModelBranch] -> [HistBranch] -> Script ()
+    validateBranchNameCongruency :: [ModelBranch] -> [HistBranch] -> IO ()
     validateBranchNameCongruency modelBranchNames histBranchNames = do
         forM_ histBranchNames $ \histName ->
-            when (unpack histName `notElem` modelBranchNames) $
-                throwE (format ("histogram branch "%w%
-                    " not found in model branches ("%w%")") histName
-                    modelBranchNames)
+            when (histName `notElem` modelBranchNames) $
+                throwIO $ RarecoalHistogramException ("histogram branch " ++ show histName ++ " not found in model branches (" ++ show modelBranchNames ++ ")")
         forM_ modelBranchNames $ \modelName ->
-            when (pack modelName `notElem` histBranchNames) $
-                scriptIO . errLn $ format ("found unsampled ghost branch: "%w) modelName
+            when (modelName `notElem` histBranchNames) $
+                hPutStrLn stderr $ "found unsampled ghost branch: " ++ show modelName
 
 choose :: Int -> Int -> Double
 choose _ 0 = 1

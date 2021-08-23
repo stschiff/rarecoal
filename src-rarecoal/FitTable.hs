@@ -2,13 +2,13 @@
 module FitTable (runFitTable, FitTableOpt(..)) where
 
 import SequenceFormats.RareAlleleHistogram (RareAlleleHistogram(..))
-import Rarecoal.ModelTemplate (ModelOptions(..), ParamOptions(..),
+import RarecoalLib.ModelTemplate (ModelOptions(..), ParamOptions(..),
     getModelTemplate, makeParameterDict, instantiateModel, ModelTemplate(..))
-import Rarecoal.Utils (GeneralOptions(..), HistogramOptions(..), setNrProcessors, loadHistogram)
-import Rarecoal.MaxUtils (computeFrequencySpectrum, computeLogLikelihoodFromSpec, 
+import RarecoalLib.Utils (GeneralOptions(..), HistogramOptions(..), setNrProcessors, loadHistogram, RarecoalException(..))
+import RarecoalLib.MaxUtils (computeFrequencySpectrum, computeLogLikelihoodFromSpec, 
     writeFullFitTable, writeSummaryFitTable)
 
-import Control.Error (Script, tryRight, scriptIO)
+import Control.Exception (throwIO)
 
 data FitTableOpt = FitTableOpt {
     ftGeneralOpts :: GeneralOptions,
@@ -18,24 +18,25 @@ data FitTableOpt = FitTableOpt {
     ftOutPrefix :: FilePath
 }
 
-runFitTable :: FitTableOpt -> Script ()
+runFitTable :: FitTableOpt -> IO ()
 runFitTable opts = do
     let FitTableOpt generalOpts modelOpts paramOpts histOpts outPrefix = opts
-    scriptIO $ setNrProcessors generalOpts
+    setNrProcessors generalOpts
     let outFullTable = outPrefix ++ ".frequencyFitTable.txt"
         outSummaryTable = outPrefix ++ ".summaryFitTable.txt"
 
     modelTemplate <- getModelTemplate modelOpts
-    modelParams <- scriptIO $ makeParameterDict paramOpts
-    modelSpec <- tryRight $ instantiateModel (ftGeneralOpts opts )
-        modelTemplate modelParams
+    modelParams <- makeParameterDict paramOpts
+    modelSpec <- case instantiateModel (ftGeneralOpts opts) modelTemplate modelParams of
+        Left err -> throwIO $ RarecoalModelException err
+        Right m -> return m
     let modelBranchNames = mtBranchNames modelTemplate
     (hist, siteRed) <- loadHistogram histOpts modelBranchNames
-    let useCore2 = optUseCore2 . ftGeneralOpts $ opts
-    spectrum <- tryRight $ computeFrequencySpectrum modelSpec useCore2 hist modelBranchNames
+    spectrum <- case computeFrequencySpectrum modelSpec hist modelBranchNames of
+        Left err -> throwIO $ RarecoalHistogramException err
+        Right s -> return s
     let totalLogLikelihood = computeLogLikelihoodFromSpec (raTotalNrSites hist) siteRed spectrum
-    scriptIO . putStrLn $ "Log Likelihood:" ++ "\t" ++ show totalLogLikelihood
-    scriptIO $ do
-        writeFullFitTable outFullTable spectrum
-        writeSummaryFitTable outSummaryTable spectrum hist
+    putStrLn $ "Log Likelihood:" ++ "\t" ++ show totalLogLikelihood
+    writeFullFitTable outFullTable spectrum
+    writeSummaryFitTable outSummaryTable spectrum hist
 

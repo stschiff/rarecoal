@@ -1,56 +1,56 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Rarecoal.StateSpace (JointState, JointStateSpace(..), makeJointStateSpace,
+module RarecoalLib.StateSpace (JointState, JointStateSpace(..), makeJointStateSpace,
     genericStateToId,  genericNrStates,  genericIdToState,
-    genericStateToId2, genericNrStates2, genericIdToState2, genericX1Up, genericX1, 
-    fillUpStateSpace, 
+    genericStateToId2, genericNrStates2, genericIdToState2, genericX1Up, genericX1,
+    fillUpStateSpace,
     ModelEvent(..), EventType(..), ModelSpec(..), validateModel, CoreFunc,
     getRegularizationPenalty)
 where
 
-import Control.Exception.Base (assert)
-import Control.Monad (foldM, when)
-import Data.List (nub, sortBy)
-import Data.MemoCombinators (arrayRange, integral, wrap)
-import qualified Data.Text as T
-import qualified Data.Vector.Unboxed as V
-import Rarecoal.Utils (computeAllConfigs)
-import Turtle (format, (%), w, d, g)
+import           Control.Exception.Base (assert)
+import           Control.Monad          (foldM, when)
+import           Data.List              (nub, sortBy)
+import           Data.MemoCombinators   (arrayRange, integral, wrap)
+import qualified Data.Vector.Unboxed    as V
+import           RarecoalLib.Utils      (computeAllConfigs)
 
 
 type JointState = V.Vector Int
 
-data JointStateSpace = JointStateSpace  {
-    _jsStateToId :: JointState -> Int,
-    _jsIdToState :: Int -> JointState,
-    _jsX1up :: Int -> V.Vector Int,
-    _jsX1 :: Int -> Int,
-    _jsNrPop :: Int,
-    _jsMaxAf :: Int,
-    _jsNrStates :: Int
-}
+data JointStateSpace = JointStateSpace
+    { _jsStateToId :: JointState -> Int
+    , _jsIdToState :: Int -> JointState
+    , _jsX1up      :: Int -> V.Vector Int
+    , _jsX1        :: Int -> Int
+    , _jsNrPop     :: Int
+    , _jsMaxAf     :: Int
+    , _jsNrStates  :: Int
+    }
 
-data ModelEvent = ModelEvent {
-    meTime      :: Double,
-    meEventType ::EventType
-} deriving (Show, Read)
+data ModelEvent = ModelEvent
+    { meTime      :: Double
+    , meEventType :: EventType
+    }
+    deriving (Show, Read)
 
 data EventType = Join Int Int
-               | Split Int Int Double
-               | SetPopSize Int Double
-               | SetFreeze Int Bool
-               deriving (Show, Read)
+    | Split Int Int Double
+    | SetPopSize Int Double
+    | SetFreeze Int Bool
+    deriving (Show, Read)
 
-data ModelSpec = ModelSpec {
-    mNrPops :: Int,
-    mTimeSteps      :: [Double],
-    mTheta          :: Double,
-    mDiscoveryRates :: [Double],
-    mPopSizeRegularization :: Double,
-    mNoShortcut :: Bool,
-    mEvents         :: [ModelEvent]
-} deriving (Show)
+data ModelSpec = ModelSpec
+    { mNrPops                :: Int
+    , mTimeSteps             :: [Double]
+    , mTheta                 :: Double
+    , mDiscoveryRates        :: [Double]
+    , mPopSizeRegularization :: Double
+    , mNoShortcut            :: Bool
+    , mEvents                :: [ModelEvent]
+    }
+    deriving (Show)
 
-type CoreFunc = ModelSpec -> [Int] -> [Int] -> Either T.Text Double
+type CoreFunc = ModelSpec -> [Int] -> [Int] -> Either String Double
 
 -- makeJointStateSpace :: Int -> Int -> JointStateSpace
 -- makeJointStateSpace nrPop maxAf =
@@ -104,7 +104,7 @@ genericIdToState maxAf nrPop id_ = ass $ V.fromList (take nrPop (go id_))
 genericStateToId2 :: Int -> Int -> JointState -> Int
 genericStateToId2 maxAf nrPop state =
     let allPatterns = computeAllConfigs maxAf (replicate nrPop maxAf)
-        filtered = filter ((==stateV) . snd) . zip [0..] $ allPatterns    
+        filtered = filter ((==stateV) . snd) . zip [0..] $ allPatterns
     in  if null filtered
         then error $ "cannot find state " ++ show state
         else fst . head $ filtered
@@ -160,7 +160,7 @@ fillUpStateSpace jointStateSpace nonZeroStates =
             in  if maxVal == 0 then [vec_] else [vec_ V.// [(i, val)] | val <- [1..maxVal]]
 
 
-validateModel :: ModelSpec -> Either T.Text ()
+validateModel :: ModelSpec -> Either String ()
 validateModel (ModelSpec _ _ _ dr _ _ events) = do
     when (or [t < 0 | ModelEvent t _ <- events]) $ Left "Negative event times"
     when (or [r <= 0 || r > 1 | r <- dr]) $ Left "illegal discovery Rate"
@@ -172,31 +172,31 @@ validateModel (ModelSpec _ _ _ dr _ _ events) = do
     checkEvents [] = Right ()
     checkEvents e@(ModelEvent t (Join k l):rest) = do
         when (k >= length dr || l >= length dr || k < 0 || l < 0) $
-            Left (format ("illegal branch indices in event "%w) e)
+            Left ("illegal branch indices in event " ++ show e)
         let illegalEvents = or $ do
                 ModelEvent _ ee <- rest
                 case ee of
-                    Join k' l'           -> return $ k' == l || l' == l
-                    Split k' l' _        -> return $ k' == l || l' == l
-                    SetPopSize k' _      -> return $ k' == l
-                    SetFreeze k' _       -> return $ k' == l
+                    Join k' l'      -> return $ k' == l || l' == l
+                    Split k' l' _   -> return $ k' == l || l' == l
+                    SetPopSize k' _ -> return $ k' == l
+                    SetFreeze k' _  -> return $ k' == l
         if k == l || illegalEvents
-        then Left $ format ("Illegal join from "%d%" to "%d%" at time "%g) l k t
+        then Left ("Illegal join from " ++ show l ++ " to " ++ show k ++ " at time " ++ show t)
         else checkEvents rest
     checkEvents (e@(ModelEvent _ (SetPopSize k p)):rest) = do
         when (k >= length dr || k < 0) $
-            Left (format ("illegal branch indices in event "%w) e)
-        if p <= 0 then Left $ format ("Illegal population size: "%g) p else checkEvents rest
+            Left ("illegal branch indices in event " ++ show e)
+        if p <= 0 then Left ("Illegal population size: " ++ show p) else checkEvents rest
     checkEvents (e@(ModelEvent _ (Split l k m)):rest) = do
         when (k >= length dr || l >= length dr || k < 0 || l < 0) $
-            Left (format ("illegal branch indices in event "%w) e)
-        if m < 0.0 || m > 1.0 then Left $ format ("Illegal split rate"%g) m else checkEvents rest
+            Left ("illegal branch indices in event " ++ show e)
+        if m < 0.0 || m > 1.0 then Left ("Illegal split rate" ++ show m) else checkEvents rest
     checkEvents (e@(ModelEvent _ (SetFreeze k _)):rest) = do
         when (k >= length dr || k < 0) $
-            Left (format ("illegal branch indices in event "%w) e)
+            Left ("illegal branch indices in event " ++ show e)
         checkEvents rest
 
-getRegularizationPenalty :: ModelSpec -> Either T.Text Double
+getRegularizationPenalty :: ModelSpec -> Either String Double
 getRegularizationPenalty ms = do
     let initialPopSizes = V.replicate (mNrPops ms) 1.0
     return $ go 0 initialPopSizes sortedEvents

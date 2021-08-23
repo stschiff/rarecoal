@@ -1,7 +1,7 @@
-module Rarecoal.StateSpace.Test (tests, stateSpace, genPopIndex, genRestrictedIds, nrPops, maxAf, genStates) where
+module RarecoalLib.StateSpace.Test (tests, stateSpace, genPopIndex, genRestrictedIds, nrPops, maxAf, genStates) where
     
-import Rarecoal.StateSpace (JointStateSpace(..), makeJointStateSpace, JointState, fillUpStateSpace)
-import Rarecoal.Utils (computeAllConfigs, computeAllConfigsCrude)
+import RarecoalLib.StateSpace (JointStateSpace(..), makeJointStateSpace, JointState, fillUpStateSpace)
+import RarecoalLib.Utils (computeAllConfigs, computeAllConfigsCrude)
 
 import Control.Monad (replicateM, forM_)
 import Data.List (nub)

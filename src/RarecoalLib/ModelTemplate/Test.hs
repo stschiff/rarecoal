@@ -1,10 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Rarecoal.ModelTemplate.Test (tests) where
+module RarecoalLib.ModelTemplate.Test (tests) where
 
-import Rarecoal.ModelTemplate (ModelTemplate(..), MTEvent(..), MTConstraint(..), ParamSpec(..),
+import RarecoalLib.ModelTemplate (ModelTemplate(..), MTEvent(..), MTConstraint(..), ParamSpec(..),
     ConstraintOperator(..), getModelTemplate, ModelOptions(..))
 
-import Control.Error (runScript)
 import Test.Tasty
 import Test.Tasty.HUnit (testCase, Assertion, assertEqual)
 
@@ -32,7 +31,7 @@ template = ModelTemplate {
 
 testLoadTemplate :: Assertion
 testLoadTemplate = do
-    t <- runScript $ getModelTemplate (ModelByFile "exampleData/fourPop.template.txt")
+    t <- getModelTemplate (ModelByFile "exampleData/fourPop.template.txt")
     assertEqual "testLoadTemplate" t template
 
 -- testGetNewParams :: Assertion
